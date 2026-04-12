@@ -1,4 +1,4 @@
-"""Smoke test — tool install → broken deps → planner reinstall guidance."""
+"""Smoke test — wrapper install → broken deps → planner reinstall guidance."""
 
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ def mock_admin():
 
 
 class TestToolInstallHealthSmoke:
-    """End-to-end test: install tool with missing deps → check_deps catches it →
-    planner tool list shows [BROKEN] → planner prompt has reinstall guidance →
+    """End-to-end test: install wrapper with missing deps → check_deps catches it →
+    planner wrapper list shows [BROKEN] → planner prompt has reinstall guidance →
     validation error for null args includes example format."""
 
     def test_install_detects_missing_binary(self, tmp_path, capsys, mock_admin):
@@ -103,13 +103,13 @@ class TestToolInstallHealthSmoke:
         (tool_dir / "run.py").write_text("pass\n")
         (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        tools = discover_wrappers(tmp_path)
-        assert len(tools) == 1
-        assert tools[0]["healthy"] is False
-        assert "fake_binary" in tools[0]["missing_deps"]
+        wrappers = discover_wrappers(tmp_path)
+        assert len(wrappers) == 1
+        assert wrappers[0]["healthy"] is False
+        assert "fake_binary" in wrappers[0]["missing_deps"]
 
     def test_planner_wrapper_list_shows_broken(self, tmp_path):
-        """build_planner_wrapper_list annotates unhealthy tools."""
+        """build_planner_wrapper_list annotates unhealthy wrappers."""
         from kiso.wrappers import build_planner_wrapper_list, discover_wrappers
 
         tool_dir = tmp_path / "browser"
@@ -124,8 +124,8 @@ class TestToolInstallHealthSmoke:
         (tool_dir / "run.py").write_text("pass\n")
         (tool_dir / "pyproject.toml").write_text("[project]\nname = 'browser'\n")
 
-        tools = discover_wrappers(tmp_path)
-        result = build_planner_wrapper_list(tools)
+        wrappers = discover_wrappers(tmp_path)
+        result = build_planner_wrapper_list(wrappers)
         assert "[BROKEN" in result
         assert "fake_binary" in result
         assert "kiso wrapper remove" in result

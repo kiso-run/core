@@ -42,7 +42,7 @@ class TestPluginList:
             _plugin_list()
 
         out = capsys.readouterr().out
-        assert "Tools:" in out
+        assert "Wrappers:" in out
         assert "browser" in out
         assert "Recipes:" in out
         assert "data-analyst" in out
@@ -57,7 +57,7 @@ class TestPluginList:
             _plugin_list()
 
         out = capsys.readouterr().out
-        assert "Tools:" in out
+        assert "Wrappers:" in out
         assert "Recipes:" not in out
         assert "Connectors:" not in out
 
@@ -75,7 +75,7 @@ class TestPluginList:
 class TestPluginSearch:
     def test_search_across_types(self, capsys):
         registry = {
-            "tools": [{"name": "browser", "description": "Browser automation"}],
+            "wrappers": [{"name": "browser", "description": "Browser automation"}],
             "exclude_recipes": [],
             "connectors": [{"name": "discord", "description": "Discord bridge"}],
         }
@@ -84,13 +84,13 @@ class TestPluginSearch:
             _plugin_search(args)
 
         out = capsys.readouterr().out
-        assert "Tools:" in out
+        assert "Wrappers:" in out
         assert "browser" in out
         assert "Connectors:" in out
         assert "discord" in out
 
     def test_search_no_results(self, capsys):
-        registry = {"tools": [], "exclude_recipes": [], "connectors": []}
+        registry = {"wrappers": [], "exclude_recipes": [], "connectors": []}
         args = _FakeArgs(query="nonexistent")
         with patch("cli.plugin.fetch_registry", return_value=registry):
             _plugin_search(args)
@@ -114,12 +114,12 @@ class TestPluginInstallGitPull:
         from kiso.wrappers import _validate_manifest as validate_fn, check_deps
 
         # Create a fake installed plugin dir with kiso.toml
-        plugin_dir = tmp_path / "wrappers" / "test-tool"
+        plugin_dir = tmp_path / "wrappers" / "test-wrapper"
         plugin_dir.mkdir(parents=True)
         (plugin_dir / "kiso.toml").write_text(
-            '[kiso]\nname = "test-tool"\ntype = "wrapper"\n\n'
+            '[kiso]\nname = "test-wrapper"\ntype = "wrapper"\n\n'
             '[kiso.wrapper]\nsummary = "Test"\n\n'
-            '[kiso.tool.args]\n'
+            '[kiso.wrapper.args]\n'
         )
 
         calls = []
@@ -129,11 +129,11 @@ class TestPluginInstallGitPull:
             result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
             return result
 
-        args = type("A", (), {"no_deps": True, "target": "test-tool", "name": None, "show_deps": False})()
+        args = type("A", (), {"no_deps": True, "target": "test-wrapper", "name": None, "show_deps": False})()
 
         with patch("cli.plugin_ops.subprocess.run", side_effect=_mock_run):
             _plugin_install(
-                "tool", "tool-",
+                "wrapper", "wrapper-",
                 tmp_path / "wrappers",
                 validate_fn, check_deps,
                 args,

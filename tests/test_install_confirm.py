@@ -321,7 +321,7 @@ class TestRetryLoopUninstalledToolFlag:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return ["Task 1: tool 'browser' is not installed. Available tools: none."]
+                return ["Task 1: wrapper 'browser' is not installed. Available wrappers: none."]
             return []
 
         with patch("kiso.brain.call_llm", mock_llm):
@@ -332,7 +332,7 @@ class TestRetryLoopUninstalledToolFlag:
         assert result["_saw_uninstalled_wrapper"] is True
 
     async def test_flag_false_when_no_uninstalled_tool_errors(self):
-        """Normal validation (no tool errors) → _saw_uninstalled_wrapper=False."""
+        """Normal validation (no wrapper errors) → _saw_uninstalled_wrapper=False."""
         good_plan = json.dumps({
             "goal": "Say hello", "secrets": None, "extend_replan": None,
             "tasks": [{"type": "msg", "wrapper": None,
@@ -350,7 +350,7 @@ class TestRetryLoopUninstalledToolFlag:
         assert result["_saw_uninstalled_wrapper"] is False
 
     async def test_flag_set_even_with_multiple_error_types(self):
-        """If uninstalled-tool error mixed with other errors, flag still set."""
+        """If uninstalled-wrapper error mixed with other errors, flag still set."""
         bad = json.dumps({
             "goal": "X", "secrets": None, "extend_replan": None,
             "tasks": [{"type": "wrapper", "wrapper": "browser",
@@ -372,7 +372,7 @@ class TestRetryLoopUninstalledToolFlag:
             if call_count == 1:
                 return [
                     "Task 1: msg ordering wrong",
-                    "Task 2: tool 'browser' is not installed. Available: none.",
+                    "Task 2: wrapper 'browser' is not installed. Available: none.",
                 ]
             return []
 
@@ -432,7 +432,7 @@ def _exec_msg_plan():
 
 @pytest.mark.asyncio
 class TestM670MsgOnlyFreshInstanceProposal:
-    """Install proposal must reflect explicit install intent, not missing tools."""
+    """Install proposal must reflect explicit install intent, not missing wrappers."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -454,7 +454,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
             await run_planner(db, config, "sess1", "admin", "vai su google.com")
 
     async def test_msg_only_with_tools_installed_rejected(self, db):
-        """msg-only + tools installed + no needs_install → rejected."""
+        """msg-only + wrappers installed + no needs_install → rejected."""
         config = make_config()
         fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
         with (
@@ -466,7 +466,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
             await run_planner(db, config, "sess1", "admin", "ciao")
 
     async def test_msg_only_needs_install_explicit(self, db):
-        """msg-only + needs_install=["browser"] → True regardless of tools."""
+        """msg-only + needs_install=["browser"] → True regardless of wrappers."""
         config = make_config()
         with (
             patch("kiso.brain.call_llm", new_callable=AsyncMock,

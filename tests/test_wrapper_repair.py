@@ -1,4 +1,4 @@
-"""Tests for kiso.wrapper_repair — auto-repair unhealthy tools on startup."""
+"""Tests for kiso.wrapper_repair — auto-repair unhealthy wrappers on startup."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from kiso.wrapper_repair import (
 )
 
 
-# Minimal valid kiso.toml for a tool with a binary dep
+# Minimal valid kiso.toml for a wrapper with a binary dep
 _TOML_WITH_DEP = """\
 [kiso]
 type = "wrapper"
@@ -21,10 +21,10 @@ name = "{name}"
 version = "0.1.0"
 
 [kiso.wrapper]
-summary = "Test tool"
+summary = "Test wrapper"
 usage_guide = "test"
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 action = {{ type = "string", required = true }}
 
 [kiso.deps]
@@ -38,10 +38,10 @@ name = "{name}"
 version = "0.1.0"
 
 [kiso.wrapper]
-summary = "Test tool"
+summary = "Test wrapper"
 usage_guide = "test"
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 action = {{ type = "string", required = true }}
 """
 
@@ -113,9 +113,9 @@ class TestRepairUnhealthyTools:
         tools_dir.mkdir()
         m1 = tmp_path / "m1.marker"
         m2 = tmp_path / "m2.marker"
-        _create_tool(tools_dir, "tool-a", binary="nonexistent_a",
+        _create_tool(tools_dir, "wrapper-a", binary="nonexistent_a",
                       deps_sh=f"#!/bin/bash\ntouch {m1}")
-        _create_tool(tools_dir, "tool-b", binary="nonexistent_b",
+        _create_tool(tools_dir, "wrapper-b", binary="nonexistent_b",
                       deps_sh=f"#!/bin/bash\ntouch {m2}")
         result = await repair_unhealthy_wrappers(tools_dir)
         assert len(result) == 2
@@ -123,7 +123,7 @@ class TestRepairUnhealthyTools:
         assert m2.exists()
 
     async def test_healthy_tool_not_repaired(self, tmp_path):
-        """A healthy tool (bash exists) should not have deps.sh re-run."""
+        """A healthy wrapper (bash exists) should not have deps.sh re-run."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "should_not_exist.marker"
@@ -134,7 +134,7 @@ class TestRepairUnhealthyTools:
         assert not marker.exists()
 
     async def test_cache_invalidated_after_repair(self, tmp_path):
-        """Tools cache should be invalidated after repairs."""
+        """Wrappers cache should be invalidated after repairs."""
         from kiso.wrappers import _wrappers_cache
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
@@ -215,15 +215,15 @@ class TestContainerRebuildDetection:
 @pytest.mark.asyncio
 class TestRerunAllDeps:
     async def test_reruns_deps_for_all_tools(self, tmp_path):
-        """Re-runs deps.sh for ALL tools, not just unhealthy ones."""
+        """Re-runs deps.sh for ALL wrappers, not just unhealthy ones."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         m1 = tmp_path / "m1.marker"
         m2 = tmp_path / "m2.marker"
-        # Both tools are healthy (bash exists) but deps.sh still runs
-        _create_tool(tools_dir, "tool-a", binary="bash",
+        # Both wrappers are healthy (bash exists) but deps.sh still runs
+        _create_tool(tools_dir, "wrapper-a", binary="bash",
                       deps_sh=f"#!/bin/bash\ntouch {m1}")
-        _create_tool(tools_dir, "tool-b", binary="bash",
+        _create_tool(tools_dir, "wrapper-b", binary="bash",
                       deps_sh=f"#!/bin/bash\ntouch {m2}")
         result = await rerun_all_deps(tools_dir)
         assert len(result) == 2
@@ -238,7 +238,7 @@ class TestRerunAllDeps:
         assert result == []
 
     async def test_skips_tools_without_deps_sh(self, tmp_path):
-        """Tools without deps.sh are skipped."""
+        """Wrappers without deps.sh are skipped."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "no-deps", binary="bash", has_deps=False)

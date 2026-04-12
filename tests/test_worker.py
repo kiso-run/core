@@ -1261,7 +1261,7 @@ class TestRunWorker:
         assert plans[0] == "failed"  # old plan finalized to "failed"
         assert plans[1] == "done"    # new plan succeeded
 
-    async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
+    async def test_wrapper_review_error_fails_without_replan(self, db, tmp_path):
         """Wrapper task review error → plan fails (after replan attempts)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
@@ -1278,7 +1278,7 @@ class TestRunWorker:
         plan = await get_plan_for_session(db, "sess1")
         assert plan["status"] == "failed"
 
-    async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
+    async def test_wrapper_review_ok_still_fails_plan(self, db, tmp_path):
         """Even if reviewer says ok for a wrapper task, plan still fails (wrapper not installed)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
@@ -1685,11 +1685,11 @@ class TestBuildReplanContext:
         completed = [
             {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
             {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
-            {"type": "wrapper", "detail": "run tool", "status": "done", "output": "result"},
+            {"type": "wrapper", "detail": "run wrapper", "status": "done", "output": "result"},
         ]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "install" in ctx
-        assert "run tool" in ctx
+        assert "run wrapper" in ctx
         assert "intent message" not in ctx
         assert "hello user" not in ctx
 
@@ -1806,7 +1806,7 @@ class TestBuildReplanContext:
 
 
 class TestM949TaskTypeLabel:
-    """replan context includes tool name in task type labels."""
+    """replan context includes wrapper name in task type labels."""
 
     def test_wrapper_task_includes_wrapper_name(self):
         completed = [{"type": "wrapper", "wrapper": "ocr", "detail": "Extract text",
@@ -1940,7 +1940,7 @@ class TestExecutePlan:
         assert len(completed) == 1
         assert completed[0]["output"] == "hello"
 
-    async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
+    async def test_wrapper_not_installed_triggers_replan(self, db, tmp_path):
         """Wrapper not installed → replan with error message (M164)."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -1968,7 +1968,7 @@ class TestExecutePlan:
         assert len(_po) == 1
         assert "not installed" in _po[0]["output"]
 
-    async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
+    async def test_wrapper_invalid_args_json_triggers_replan(self, db, tmp_path):
         """Invalid JSON in wrapper args → replan with error (M164)."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
@@ -1992,7 +1992,7 @@ class TestExecutePlan:
         assert "Invalid wrapper args JSON" in result.stop_replan
         assert result.plan_output is not None
 
-    async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
+    async def test_wrapper_args_validation_failure_triggers_replan(self, db, tmp_path):
         """Wrapper args missing required field → replan with error (M164)."""
         config = make_config()
         tool_info = {
@@ -2020,7 +2020,7 @@ class TestExecutePlan:
         assert result.plan_output is not None
         assert result.plan_output["status"] == "failed"
 
-    async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
+    async def test_wrapper_execution_failure_reviewer_replan(self, db, tmp_path):
         """wrapper executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
@@ -2050,7 +2050,7 @@ class TestExecutePlan:
         assert result.stop_replan == "Task failed"
         assert result.plan_output is not None
 
-    async def test_skill_review_error(self, db, tmp_path):
+    async def test_wrapper_review_error(self, db, tmp_path):
         """Wrapper not installed → replan (M164); reviewer never reached."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -2903,7 +2903,7 @@ class TestMakePlanOutput:
         assert entry["index"] == 7
 
     def test_all_task_types(self):
-        for task_type in ("exec", "msg", "tool", "search"):
+        for task_type in ("exec", "msg", "wrapper", "search"):
             entry = _make_plan_output(1, task_type, "d", "o", "done")
             assert entry["type"] == task_type
 
@@ -3193,7 +3193,7 @@ class TestExecutePlanOutputChaining:
         # msg task had 1 preceding exec output
         assert "## Preceding Task Outputs" in msg_calls[0][1]["content"]
 
-    async def test_skill_output_in_plan_outputs(self, db, tmp_path):
+    async def test_wrapper_output_in_plan_outputs(self, db, tmp_path):
         """Wrapper task output should be accumulated in plan_outputs."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3226,7 +3226,7 @@ def _create_echo_skill(tmp_path: Path) -> dict:
     (skill_dir / "kiso.toml").write_text(
         '[kiso]\ntype = "wrapper"\nname = "echo"\n'
         '[kiso.wrapper]\nsummary = "Echo"\n'
-        '[kiso.tool.args]\ntext = { type = "string", required = true }\n'
+        '[kiso.wrapper.args]\ntext = { type = "string", required = true }\n'
     )
     (skill_dir / "pyproject.toml").write_text('[project]\nname = "echo"\nversion = "0.1.0"')
     return {
@@ -3252,7 +3252,7 @@ class TestToolTask:
         result = json.loads(stdout)
         assert result["text"] == "hello"
 
-    async def test_skill_receives_plan_outputs(self, tmp_path):
+    async def test_wrapper_receives_plan_outputs(self, tmp_path):
         # Create wrapper that dumps full input
         skill_dir = tmp_path / "wrappers" / "dump"
         skill_dir.mkdir(parents=True)
@@ -3279,7 +3279,7 @@ class TestToolTask:
         assert len(data["plan_outputs"]) == 1
         assert data["plan_outputs"][0]["output"] == "files"
 
-    async def test_skill_scoped_secrets(self, tmp_path):
+    async def test_wrapper_scoped_secrets(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "sec"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text(
@@ -3305,7 +3305,7 @@ class TestToolTask:
         result = json.loads(stdout)
         assert result == {"api_token": "tok_123"}
 
-    async def test_skill_failing_script(self, tmp_path):
+    async def test_wrapper_failing_script(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "fail"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
@@ -3326,7 +3326,7 @@ class TestToolTask:
         assert success is False
         assert "err msg" in stderr
 
-    async def test_skill_executable_not_found(self, tmp_path):
+    async def test_wrapper_executable_not_found(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "broken"
         skill_dir.mkdir(parents=True)
         # Point run.py to a nonexistent path
@@ -3353,7 +3353,7 @@ class TestToolTask:
         # Might be PermissionError or similar — just check it failed
         assert stderr != ""
 
-    async def test_skill_runs_in_workspace(self, tmp_path):
+    async def test_wrapper_runs_in_workspace(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "pwd"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
@@ -3386,7 +3386,7 @@ class TestExecutePlanTool:
         yield conn
         await conn.close()
 
-    async def test_skill_not_installed(self, db, tmp_path):
+    async def test_wrapper_not_installed(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
@@ -3403,7 +3403,7 @@ class TestExecutePlanTool:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "not installed" in tasks[0]["output"]
 
-    async def test_skill_invalid_args_json(self, db, tmp_path):
+    async def test_wrapper_invalid_args_json(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3425,7 +3425,7 @@ class TestExecutePlanTool:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "Invalid wrapper args JSON" in tasks[0]["output"]
 
-    async def test_skill_args_validation_error(self, db, tmp_path):
+    async def test_wrapper_args_validation_error(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         # Missing required arg 'text'
@@ -3447,7 +3447,7 @@ class TestExecutePlanTool:
         assert "validation failed" in tasks[0]["output"]
         assert "missing required arg: text" in tasks[0]["output"]
 
-    async def test_skill_executes_successfully(self, db, tmp_path):
+    async def test_wrapper_executes_successfully(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3472,7 +3472,7 @@ class TestExecutePlanTool:
         result = json.loads(skill_task["output"])
         assert result["text"] == "hello"
 
-    async def test_skill_passes_session_secrets(self, db, tmp_path):
+    async def test_wrapper_passes_session_secrets(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="sec",
@@ -3512,7 +3512,7 @@ class TestExecutePlanTool:
         # Session secrets are now sanitized in output
         assert result == {"api_token": "[REDACTED]"}
 
-    async def test_skill_review_replan(self, db, tmp_path):
+    async def test_wrapper_review_replan(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3532,7 +3532,7 @@ class TestExecutePlanTool:
         assert reason == "Task failed"
         assert len(remaining) == 1  # msg task remaining
 
-    async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
+    async def test_wrapper_review_replan_carries_retry_hint(self, db, tmp_path):
         """wrapper handler propagates retry_hint to plan_output on replan."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3562,7 +3562,7 @@ class TestExecutePlanTool:
         assert len(skill_outputs) == 1
         assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
 
-    async def test_skill_retry_on_transient_failure(self, db, tmp_path):
+    async def test_wrapper_retry_on_transient_failure(self, db, tmp_path):
         """wrapper retries internally when reviewer provides retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3595,7 +3595,7 @@ class TestExecutePlanTool:
         # Wrapper was reviewed twice (retry + success)
         assert reviewer_side.call_count == 2
 
-    async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
+    async def test_wrapper_retry_exhausted_escalates_to_replan(self, db, tmp_path):
         """wrapper escalates to replan after max_worker_retries exhausted."""
         config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3629,7 +3629,7 @@ class TestExecutePlanTool:
         skill_outputs = [po for po in plan_outputs if po.get("type") == "wrapper"]
         assert skill_outputs[0].get("retry_hint") == "try something else"
 
-    async def test_skill_no_retry_without_hint(self, db, tmp_path):
+    async def test_wrapper_no_retry_without_hint(self, db, tmp_path):
         """wrapper does NOT retry when reviewer returns replan without retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3661,7 +3661,7 @@ class TestExecutePlanTool:
 
 
 class TestPostInstallRescan:
-    """after an install exec with unhealthy tools, rescan once after delay."""
+    """after an install exec with unhealthy wrappers, rescan once after delay."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -3671,11 +3671,11 @@ class TestPostInstallRescan:
         await conn.close()
 
     async def test_rescan_triggered_after_install_exec(self, db, tmp_path):
-        """If exec detail contains 'install' and a tool is unhealthy, rescan."""
+        """If exec detail contains 'install' and a wrapper is unhealthy, rescan."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "install browser")
         await create_task(db, plan_id, "sess1", type="exec",
-                          detail="kiso wrapper install browser", expect="tool installed")
+                          detail="kiso wrapper install browser", expect="wrapper installed")
 
         unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
         healthy_tool = {"name": "browser", "healthy": True, "missing_deps": []}
@@ -3713,7 +3713,7 @@ class TestPostInstallRescan:
         )
 
     async def test_no_rescan_without_install_keyword(self, db, tmp_path):
-        """Non-install exec tasks don't trigger rescan even if tools unhealthy."""
+        """Non-install exec tasks don't trigger rescan even if wrappers unhealthy."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "check something")
         await create_task(db, plan_id, "sess1", type="exec",
@@ -4652,7 +4652,7 @@ class TestPerSessionSandbox:
 
         assert captured_kwargs.get("user") == 9999
 
-    async def test_skill_no_sandbox_uid_no_user_kwarg(self, tmp_path):
+    async def test_wrapper_no_sandbox_uid_no_user_kwarg(self, tmp_path):
         """When sandbox_uid is None, 'user' kwarg is NOT passed to wrapper subprocess."""
         captured_kwargs = {}
 
@@ -5096,7 +5096,7 @@ class TestOutputTruncation:
         assert len(stdout) <= 100
         assert stdout.endswith("[truncated]")
 
-    async def test_skill_output_truncated_when_large(self, tmp_path):
+    async def test_wrapper_output_truncated_when_large(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "big"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("print('B' * 2000)")
@@ -8070,7 +8070,7 @@ class TestM44gAppendCallsRobustness:
             if role == "briefer":
                 call_order.append("briefer")
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -8281,7 +8281,7 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_wrappers=None) -> _P
     from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
     if config is None:
         config = make_config()
-    tools = installed_wrappers or []
+    wrappers = installed_wrappers or []
     return _PlanCtx(
         db=db,
         config=config,
@@ -8293,7 +8293,7 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_wrappers=None) -> _P
         max_output_size=1024 * 1024,
         max_worker_retries=1,
         messenger_timeout=30,
-        installed_wrappers=tools,
+        installed_wrappers=wrappers,
         slog=None,
         sandbox_uid=None,
         plan_outputs=plan_outputs if plan_outputs is not None else [],
@@ -8508,7 +8508,7 @@ class TestTaskHandlers:
 
     async def test_handle_exec_install_blocked_with_needs_install(self, db, plan_id, tmp_path):
         """install blocked when plan has needs_install (mixed propose+install)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
         ctx = _make_ctx(db)
         ctx.plan_has_needs_install = True
         assert ctx.install_approved is False
@@ -8525,7 +8525,7 @@ class TestTaskHandlers:
 
     async def test_handle_exec_install_allowed_user_initiated(self, db, plan_id, tmp_path):
         """install allowed when plan has no needs_install (user asked directly)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
         ctx = _make_ctx(db)
         ctx.plan_has_needs_install = False
         assert ctx.install_approved is False
@@ -8543,7 +8543,7 @@ class TestTaskHandlers:
 
     async def test_handle_exec_install_allowed_with_approval(self, db, plan_id, tmp_path):
         """exec install command allowed when install_approved=True."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR tool")
+        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
         ctx = _make_ctx(db)
         ctx.install_approved = True
         with patch(
@@ -8572,7 +8572,7 @@ class TestTaskHandlers:
              _patch_kiso_dir(tmp_path):
             result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
-        # tool list should pass through — not an install command
+        # wrapper list should pass through — not an install command
         assert result.completed_row is not None
 
     # --- _handle_search_task ---
@@ -8642,7 +8642,7 @@ class TestTaskHandlers:
         assert result.plan_output["status"] == "done"
 
     async def test_handle_wrapper_task_repairs_unique_workspace_file_arg(self, db, plan_id, tmp_path):
-        """tool handler rewrites invented file pattern to exact local path."""
+        """wrapper handler rewrites invented file pattern to exact local path."""
         tool_info = {
             "name": "ocr",
             "summary": "OCR",
@@ -8655,7 +8655,7 @@ class TestTaskHandlers:
             "consumes": ["image"],
         }
         task_row = await _make_task_row(
-            db, plan_id, "tool", "extract text",
+            db, plan_id, "wrapper", "extract text",
             wrapper="ocr", args='{"file_path":"screenshot_*.png"}', expect="ocr text",
         )
         ctx = _make_ctx(db, installed_wrappers=[tool_info])
@@ -8673,11 +8673,11 @@ class TestTaskHandlers:
         assert passed_args["file_path"] == "screenshot.png"
 
 
-# --- M112c: tool cache invalidation after exec/tool tasks ---
+# --- M112c: wrapper cache invalidation after exec/wrapper tasks ---
 
 
 class TestToolCacheInvalidation:
-    """Verify invalidate_wrappers_cache + ctx refresh after exec/tool tasks."""
+    """Verify invalidate_wrappers_cache + ctx refresh after exec/wrapper tasks."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -9535,10 +9535,10 @@ class TestDetectCircularReplanUnit:
     def test_word_overlap_at_50pct_detected(self):
         """50% word overlap is enough to detect circular replan."""
         from kiso.worker.loop import _detect_circular_replan
-        # 5/10 words match = exactly 50%: {tool, not, found, in, the}
+        # 5/10 words match = exactly 50%: {wrapper, not, found, in, the}
         history = [
-            {"failure": "tool not found in the registry listing output check", "goal": "g"},
-            {"failure": "tool not found in the system after installation attempt", "goal": "g"},
+            {"failure": "wrapper not found in the registry listing output check", "goal": "g"},
+            {"failure": "wrapper not found in the system after installation attempt", "goal": "g"},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is True
 
@@ -9577,7 +9577,7 @@ class TestDetectCircularReplanUnit:
         """Goal mentions install but failure is unrelated → not stuck."""
         from kiso.worker.loop import _detect_circular_replan
         history = [
-            {"failure": "timeout waiting for response", "goal": "install websearch tool"},
+            {"failure": "timeout waiting for response", "goal": "install websearch wrapper"},
             {"failure": "network unreachable", "goal": "retry websearch installation"},
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is False
@@ -11006,7 +11006,7 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 return json.dumps({
                     "modules": [],
-                    "tools": [],
+                    "wrappers": [],
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
@@ -11110,7 +11110,7 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 call_roles.append(role)
                 return json.dumps({
-                    "modules": [], "tools": [],
+                    "modules": [], "wrappers": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
@@ -11155,7 +11155,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [],
+                    "modules": [], "wrappers": [], "exclude_recipes": [],
                     "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": ["self"],
@@ -11181,7 +11181,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "No relevant context.",
+                    "modules": [], "wrappers": [], "context": "No relevant context.",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -11201,7 +11201,7 @@ class TestM365MsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -11230,7 +11230,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -11258,7 +11258,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -11281,7 +11281,7 @@ class TestM365MsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -11330,7 +11330,7 @@ class TestExecTaskBrieferIntegration:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
@@ -11800,7 +11800,7 @@ REVIEW_STUCK = {
 class TestM336StuckHandling:
     """Verify stuck review status stops execution without triggering replan."""
 
-    async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
+    async def test_wrapper_handler_returns_stop_stuck(self, db, tmp_path):
         """Wrapper handler sets stop_stuck (not stop_replan) for stuck reviews."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -12359,7 +12359,7 @@ class TestFailTaskAndAudit:
         with patch("kiso.worker.loop.update_task", new_callable=AsyncMock) as mock_update, \
              patch("kiso.worker.loop.audit") as mock_audit, \
              patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
-            result = await _fail_task_and_audit(ctx, 42, "tool", "do stuff", "broken", 3)
+            result = await _fail_task_and_audit(ctx, 42, "wrapper", "do stuff", "broken", 3)
         assert result.stop is True
         assert result.stop_success is False
         assert result.stop_replan == "broken"
@@ -13051,7 +13051,7 @@ class TestWriteLastPlanSummary:
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             ws = _session_workspace("s-sum")
             pre = set(ws.rglob("*"))
-            # Simulate a tool producing a file
+            # Simulate a wrapper producing a file
             (ws / "screenshot.png").write_bytes(b"x" * 100)
             completed = [
                 {"type": "exec", "wrapper": "browser", "reviewer_summary": "Screenshot taken successfully"},
@@ -13095,7 +13095,7 @@ class TestWriteLastPlanSummary:
         """Without plan_outputs, source_tool/origin_task_index must be None.
 
         Regression: previously the loop would scan completed_tasks and
-        copy `wrapper`/`tool`/`index` from arbitrary task rows, fabricating
+        copy `wrapper`/`wrapper`/`index` from arbitrary task rows, fabricating
         a provenance tie that did not exist.
         """
         from kiso.worker.utils import _write_last_plan_summary, _session_workspace
@@ -13122,7 +13122,7 @@ class TestWriteLastPlanSummary:
             assert f.get("wrapper") is None
 
     def test_provenance_uses_plan_output_file_ref(self, tmp_path):
-        """When a plan_output declares a file_ref, that file gets the producing tool/index."""
+        """When a plan_output declares a file_ref, that file gets the producing wrapper/index."""
         from kiso.worker.utils import _write_last_plan_summary, _session_workspace
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             ws = _session_workspace("s-prov-one")
@@ -13166,7 +13166,7 @@ class TestWriteLastPlanSummary:
     def test_provenance_per_file_in_multitool_plan(self, tmp_path):
         """Two tasks producing different files: each file gets its own correct provenance.
 
-        Regression: previously every file got the *same* tool — whichever
+        Regression: previously every file got the *same* wrapper — whichever
         was iterated last in the completed_tasks loop. This test pins the
         per-file mapping.
         """
@@ -13297,7 +13297,7 @@ class TestLoadLastPlanSummary:
 
 
 class TestWorkspaceFileRouting:
-    """tool file args prefer exact existing workspace files."""
+    """wrapper file args prefer exact existing workspace files."""
 
     def test_resolve_workspace_file_reference_prefers_unique_existing_file(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
@@ -13403,7 +13403,7 @@ class TestWorkspaceFileRouting:
         task_row = await _make_task_row(
             conn,
             plan_id,
-            "tool",
+            "wrapper",
             detail="Use aider",
             wrapper="aider",
             args=json.dumps({
@@ -13425,7 +13425,7 @@ class TestWorkspaceFileRouting:
             "path": str(
                 Path(__file__).resolve().parents[2]
                 / "plugins"
-                / "tool-aider"
+                / "wrapper-aider"
             ),
             "version": "0.1.0",
             "description": "",
@@ -13454,7 +13454,7 @@ class TestWorkspaceFileRouting:
         task_row = await _make_task_row(
             conn,
             plan_id,
-            "tool",
+            "wrapper",
             detail="Use echo",
             wrapper="echo",
             args=json.dumps({"text": " raw "}),
@@ -13478,13 +13478,13 @@ class TestWorkspaceFileRouting:
         ctx = _make_ctx(conn, installed_wrappers=[tool_info])
         call_order: list[str] = []
 
-        def _repair(tool, args, context):
+        def _repair(wrapper, args, context):
             call_order.append("repair")
             repaired = dict(args)
             repaired["text"] = repaired["text"].strip()
             return repaired
 
-        def _semantic(tool, args, context):
+        def _semantic(wrapper, args, context):
             call_order.append(f"semantic:{args['text']}")
             return []
 
@@ -13547,7 +13547,7 @@ class TestSafetyRulePreExecCheck:
         assert result.completed_row is not None
 
 
-# --- M1211: Tool-arg file-reference harvesting boundary hardening ---
+# --- M1211: Wrapper-arg file-reference harvesting boundary hardening ---
 
 
 class TestBuildToolFileRefs:

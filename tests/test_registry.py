@@ -72,7 +72,7 @@ class TestRegistryJsonShape:
         assert len(names) == len(set(names))
 
     def test_official_tools_present(self, registry):
-        """Pin the canonical official tool list. New official tools
+        """Pin the canonical official wrapper list. New official wrappers
         must be added here so coverage stays explicit."""
         names = {e["name"] for e in registry["wrappers"]}
         official = {
@@ -80,7 +80,7 @@ class TestRegistryJsonShape:
             "docreader", "transcriber", "ocr",
         }
         missing = official - names
-        assert not missing, f"missing official tools in registry.json: {missing}"
+        assert not missing, f"missing official wrappers in registry.json: {missing}"
 
     def test_official_connectors_present(self, registry):
         names = {e["name"] for e in registry["connectors"]}

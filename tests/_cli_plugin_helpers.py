@@ -1,4 +1,4 @@
-"""Shared test infrastructure for CLI plugin tests (tool + connector)."""
+"""Shared test infrastructure for CLI plugin tests (wrapper + connector)."""
 
 from __future__ import annotations
 
@@ -17,15 +17,15 @@ from kiso.config import User
 # Each tuple: (plugin_type, subcommand, extra_args, checks)
 # checks: list of (attr_suffix, expected) — attr = f"{plugin_type}_command" for subcommand
 _PARSE_CASES = [
-    ("tool", "list", [], []),
-    ("tool", "search", [], [("query", "")]),
-    ("tool", "search", ["web"], [("query", "web")]),
-    ("tool", "install", ["search"], [("target", "search"), ("no_deps", False), ("show_deps", False)]),
-    ("tool", "install", ["search", "--no-deps"], [("no_deps", True)]),
-    ("tool", "install", ["search", "--show-deps"], [("show_deps", True)]),
-    ("tool", "update", ["search"], [("target", "search")]),
-    ("tool", "update", ["all"], [("target", "all")]),
-    ("tool", "remove", ["search"], [("name", "search")]),
+    ("wrapper", "list", [], []),
+    ("wrapper", "search", [], [("query", "")]),
+    ("wrapper", "search", ["web"], [("query", "web")]),
+    ("wrapper", "install", ["search"], [("target", "search"), ("no_deps", False), ("show_deps", False)]),
+    ("wrapper", "install", ["search", "--no-deps"], [("no_deps", True)]),
+    ("wrapper", "install", ["search", "--show-deps"], [("show_deps", True)]),
+    ("wrapper", "update", ["search"], [("target", "search")]),
+    ("wrapper", "update", ["all"], [("target", "all")]),
+    ("wrapper", "remove", ["search"], [("name", "search")]),
     ("connector", "list", [], []),
     ("connector", "search", [], [("query", "")]),
     ("connector", "search", ["discord"], [("query", "discord")]),
@@ -56,7 +56,7 @@ def test_parse_plugin_subcommand(plugin_type, subcommand, extra_args, checks):
         assert getattr(args, attr) == expected, f"{attr}={getattr(args, attr)!r}, expected {expected!r}"
 
 
-@pytest.mark.parametrize("plugin_type", ["tool", "connector"])
+@pytest.mark.parametrize("plugin_type", ["wrapper", "connector"])
 def test_parse_plugin_no_subcommand(plugin_type):
     """No subcommand → command attr is None."""
     parser = build_parser()
@@ -64,7 +64,7 @@ def test_parse_plugin_no_subcommand(plugin_type):
     assert getattr(args, f"{plugin_type}_command") is None
 
 
-@pytest.mark.parametrize("plugin_type", ["tool", "connector"])
+@pytest.mark.parametrize("plugin_type", ["wrapper", "connector"])
 def test_parse_plugin_install_url_with_name(plugin_type):
     """--name flag works with URL target."""
     parser = build_parser()
@@ -96,7 +96,7 @@ def _ok_run(cmd, **kwargs):
 
 
 def fake_clone_plugin(plugin_type: str, name: str = "test", **extra_manifest):
-    """Unified plugin clone factory for both tool and connector tests.
+    """Unified plugin clone factory for both wrapper and connector tests.
 
     Returns a callable suitable for ``subprocess.run`` side_effect.
     """
@@ -112,7 +112,7 @@ def fake_clone_plugin(plugin_type: str, name: str = "test", **extra_manifest):
                 f'platform = "{name}"\n'
             )
         else:
-            summary = extra_manifest.get("summary", f"{name} tool")
+            summary = extra_manifest.get("summary", f"{name} wrapper")
             usage = extra_manifest.get("usage_guide", "Use default guidance.")
             (dest / "kiso.toml").write_text(
                 f'[kiso]\ntype = "wrapper"\nname = "{name}"\n'

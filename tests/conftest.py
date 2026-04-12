@@ -274,8 +274,8 @@ LLM_ROLE_ONLY_TIMEOUT = 180   # direct role calls: planner/reviewer/worker/etc.
 # briefers are included.
 LLM_SINGLE_PLAN_TIMEOUT = 240
 LLM_REPLAN_TIMEOUT = 300      # single request expected to hit reviewer/planner recovery
-LLM_MULTI_PLAN_TIMEOUT = 600  # multi-tool or multi-plan request chains
-LLM_INSTALL_TIMEOUT = 900     # tool install/download + LLM
+LLM_MULTI_PLAN_TIMEOUT = 600  # multi-wrapper or multi-plan request chains
+LLM_INSTALL_TIMEOUT = 900     # wrapper install/download + LLM
 
 # Backward-compatible alias for older tests that haven't been migrated to the
 # more specific workflow classes yet.

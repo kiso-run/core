@@ -119,7 +119,7 @@ class TestRecipeEndToEnd:
         async def _capturing_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 captured_messages.extend(messages)
-                return '{"modules":[],"tools":[],"exclude_recipes":[],"context":"","output_indices":[],"relevant_tags":[],"relevant_entities":[]}'
+                return '{"modules":[],"wrappers":[],"exclude_recipes":[],"context":"","output_indices":[],"relevant_tags":[],"relevant_entities":[]}'
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \

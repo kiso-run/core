@@ -1,7 +1,7 @@
-"""End-to-end smoke test for tool lifecycle — broken → repair → healthy.
+"""End-to-end smoke test for wrapper lifecycle — broken → repair → healthy.
 
-Simulates the real failure scenario: tool dir persists on volume after image
-rebuild, system deps are gone, tool appears installed but broken, auto-repair
+Simulates the real failure scenario: wrapper dir persists on volume after image
+rebuild, system deps are gone, wrapper appears installed but broken, auto-repair
 fixes it.
 """
 
@@ -32,7 +32,7 @@ version = "0.1.0"
 summary = "{summary}"
 usage_guide = "test guide"
 
-[kiso.tool.args]
+[kiso.wrapper.args]
 action = {{ type = "string", required = true }}
 
 [kiso.deps]
@@ -60,7 +60,7 @@ class TestToolLifecycleRecovery:
     """Full cycle: broken wrapper → detected → planner warned → repaired → healthy."""
 
     def test_broken_tool_detected_and_annotated(self, tmp_path):
-        """Step 1-2: discover_wrappers finds tool with healthy=False,
+        """Step 1-2: discover_wrappers finds wrapper with healthy=False,
         build_planner_wrapper_list shows [BROKEN] annotation."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
@@ -68,14 +68,14 @@ class TestToolLifecycleRecovery:
                      binary="nonexistent_playwright_xyz")
 
         invalidate_wrappers_cache()
-        tools = discover_wrappers(tools_dir)
-        assert len(tools) == 1
-        assert tools[0]["name"] == "browser"
-        assert tools[0]["healthy"] is False
-        assert "nonexistent_playwright_xyz" in tools[0]["missing_deps"]
+        wrappers = discover_wrappers(tools_dir)
+        assert len(wrappers) == 1
+        assert wrappers[0]["name"] == "browser"
+        assert wrappers[0]["healthy"] is False
+        assert "nonexistent_playwright_xyz" in wrappers[0]["missing_deps"]
 
         # Planner sees the broken annotation
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         assert "[BROKEN" in tool_list
         assert "missing: nonexistent_playwright_xyz" in tool_list
         assert "kiso wrapper remove browser" in tool_list
@@ -99,10 +99,10 @@ class TestToolLifecycleRecovery:
         _create_tool(tools_dir, "browser", "Browser automation",
                      binary="fake_playwright", deps_sh=deps_script)
 
-        # Phase 1: tool is broken
+        # Phase 1: wrapper is broken
         invalidate_wrappers_cache()
-        tools = discover_wrappers(tools_dir)
-        assert tools[0]["healthy"] is False
+        wrappers = discover_wrappers(tools_dir)
+        assert wrappers[0]["healthy"] is False
 
         # Phase 2: repair runs deps.sh
         repaired = await repair_unhealthy_wrappers(tools_dir)
@@ -113,19 +113,19 @@ class TestToolLifecycleRecovery:
         invalidate_wrappers_cache()
         env_path = os.environ.get("PATH", "") + ":" + str(bin_dir)
         with patch.dict(os.environ, {"PATH": env_path}):
-            tools = discover_wrappers(tools_dir)
+            wrappers = discover_wrappers(tools_dir)
 
-        assert len(tools) == 1
-        assert tools[0]["healthy"] is True
-        assert tools[0]["missing_deps"] == []
+        assert len(wrappers) == 1
+        assert wrappers[0]["healthy"] is True
+        assert wrappers[0]["missing_deps"] == []
 
         # Planner no longer sees [BROKEN]
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         assert "[BROKEN" not in tool_list
         assert "- browser — Browser automation" in tool_list
 
     def test_healthy_tool_stays_healthy(self, tmp_path):
-        """Healthy tool is not touched by the repair flow."""
+        """Healthy wrapper is not touched by the repair flow."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         marker = tmp_path / "should_not_run.marker"
@@ -134,16 +134,16 @@ class TestToolLifecycleRecovery:
                      deps_sh=f"#!/bin/bash\ntouch {marker}")
 
         invalidate_wrappers_cache()
-        tools = discover_wrappers(tools_dir)
-        assert tools[0]["healthy"] is True
+        wrappers = discover_wrappers(tools_dir)
+        assert wrappers[0]["healthy"] is True
 
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         assert "- echo — Echo wrapper" in tool_list
         assert "[BROKEN" not in tool_list
         assert not marker.exists()  # deps.sh was never called
 
     def test_mixed_healthy_and_broken(self, tmp_path):
-        """Multiple tools: one healthy, one broken — only broken is flagged."""
+        """Multiple wrappers: one healthy, one broken — only broken is flagged."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", "Echo wrapper", binary="bash")
@@ -151,17 +151,17 @@ class TestToolLifecycleRecovery:
                      binary="nonexistent_xyz_12345")
 
         invalidate_wrappers_cache()
-        tools = discover_wrappers(tools_dir)
-        assert len(tools) == 2
+        wrappers = discover_wrappers(tools_dir)
+        assert len(wrappers) == 2
 
-        healthy = [s for s in tools if s["healthy"]]
-        broken = [s for s in tools if not s["healthy"]]
+        healthy = [s for s in wrappers if s["healthy"]]
+        broken = [s for s in wrappers if not s["healthy"]]
         assert len(healthy) == 1
         assert len(broken) == 1
         assert healthy[0]["name"] == "echo"
         assert broken[0]["name"] == "browser"
 
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         # echo is clean
         assert "- echo — Echo wrapper" in tool_list
         # browser is annotated
@@ -177,21 +177,21 @@ class TestToolLifecycleRecovery:
         bin_dir.mkdir()
         fake_bin = bin_dir / "my_tool"
 
-        # Simulate: tool was installed, binary existed, then image was rebuilt
-        # (binary is gone). Tool dir persists on volume.
+        # Simulate: wrapper was installed, binary existed, then image was rebuilt
+        # (binary is gone). Wrapper dir persists on volume.
         _create_tool(
-            tools_dir, "my-wrapper", "My tool",
+            tools_dir, "my-wrapper", "My wrapper",
             binary="my_tool",
             deps_sh=f"#!/bin/bash\ntouch {fake_bin} && chmod +x {fake_bin}",
         )
 
         # 1. Discovery: broken
         invalidate_wrappers_cache()
-        tools = discover_wrappers(tools_dir)
-        assert tools[0]["healthy"] is False
+        wrappers = discover_wrappers(tools_dir)
+        assert wrappers[0]["healthy"] is False
 
         # 2. Planner sees broken annotation
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         assert "[BROKEN" in tool_list
 
         # 3. Auto-repair on startup
@@ -203,11 +203,11 @@ class TestToolLifecycleRecovery:
         invalidate_wrappers_cache()
         env_path = os.environ.get("PATH", "") + ":" + str(bin_dir)
         with patch.dict(os.environ, {"PATH": env_path}):
-            tools = discover_wrappers(tools_dir)
+            wrappers = discover_wrappers(tools_dir)
 
-        assert tools[0]["healthy"] is True
+        assert wrappers[0]["healthy"] is True
 
-        # 5. Planner sees clean tool
-        tool_list = build_planner_wrapper_list(tools, "admin")
+        # 5. Planner sees clean wrapper
+        tool_list = build_planner_wrapper_list(wrappers, "admin")
         assert "[BROKEN" not in tool_list
-        assert "- my-wrapper — My tool" in tool_list
+        assert "- my-wrapper — My wrapper" in tool_list

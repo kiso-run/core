@@ -1,4 +1,4 @@
-"""Runtime-focused guards for the wrapper rename (M1306-M1319).
+"""Runtime-focused guards for the wrapper rename (M1306-M1320).
 
 These tests protect runtime invariants: the correct modules import,
 legacy files are gone, and the registry/schema use the expected names.
@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import re
 from pathlib import Path
 
 
@@ -97,18 +98,17 @@ class TestWrapperRenameRuntimeInvariants:
 
 
 class TestM1320NoStrayToolSkillReferences:
-    """M1320: source/tests/docs must not contain stray tool/skill refs.
+    """M1320: source must not contain stray tool/skill refs as kiso concepts.
 
     Allowed exceptions:
     - [tool.uv], [tool.pytest], [tool.hatch] TOML sections (Python ecosystem)
     - User-facing regex patterns matching natural language in common.py
-    - Inline comments documenting an exception
+      (marked with M1320-allow comment)
     """
 
-    EXCEPTIONS_PER_FILE_THRESHOLD = 30  # absolute fence; should be << this
+    EXCEPTIONS_PER_FILE_THRESHOLD = 30
 
     def _scan(self, paths: list[Path]) -> list[tuple[Path, int, str]]:
-        import re
         hits: list[tuple[Path, int, str]] = []
         word = re.compile(r"\b(tool|skill|Tool|Skill|TOOL|SKILL)\b")
         for base in paths:
@@ -128,13 +128,8 @@ class TestM1320NoStrayToolSkillReferences:
                 for lineno, line in enumerate(text.splitlines(), 1):
                     if not word.search(line):
                         continue
-                    # Skip TOML [tool.xxx] sections
                     if re.search(r"\[tool\.(uv|pytest|hatch|setuptools|poetry)", line):
                         continue
-                    # Skip lines that are part of a regex alternative (kiso/brain/common.py)
-                    if "\\b" in line and ("|tool" in line or "tool|" in line):
-                        continue
-                    # Skip lines explicitly documenting the exception
                     if "M1320-allow" in line:
                         continue
                     hits.append((f.relative_to(ROOT), lineno, line.strip()[:120]))

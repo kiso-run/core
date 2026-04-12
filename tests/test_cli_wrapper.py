@@ -1,4 +1,4 @@
-"""Tests for cli.wrapper — tool management CLI commands."""
+"""Tests for cli.wrapper — wrapper management CLI commands."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def test_require_admin_unknown_user_exits(capsys):
 # ── _skill_list ──────────────────────────────────────────────
 
 
-def test_skill_list_empty(capsys):
+def test_wrapper_list_empty(capsys):
     from cli.wrapper import _wrapper_list
 
     with patch("cli.wrapper.discover_wrappers", return_value=[]):
@@ -142,7 +142,7 @@ def test_skill_list_empty(capsys):
     assert "No wrappers installed." in out
 
 
-def test_skill_list_shows_skills(capsys):
+def test_wrapper_list_shows_skills(capsys):
     from cli.wrapper import _wrapper_list
 
     wrappers = [
@@ -159,7 +159,7 @@ def test_skill_list_shows_skills(capsys):
     assert "0.3.2" in out
 
 
-def test_skill_list_column_alignment(capsys):
+def test_wrapper_list_column_alignment(capsys):
     from cli.wrapper import _wrapper_list
 
     wrappers = [
@@ -191,7 +191,7 @@ FAKE_REGISTRY = {
 }
 
 
-def test_skill_search_no_query(capsys):
+def test_wrapper_search_no_query(capsys):
     from cli.wrapper import _wrapper_search
 
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
@@ -202,7 +202,7 @@ def test_skill_search_no_query(capsys):
     assert "aider" in out
 
 
-def test_skill_search_by_name(capsys):
+def test_wrapper_search_by_name(capsys):
     from cli.wrapper import _wrapper_search
 
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
@@ -213,7 +213,7 @@ def test_skill_search_by_name(capsys):
     assert "aider" not in out
 
 
-def test_skill_search_by_description(capsys):
+def test_wrapper_search_by_description(capsys):
     from cli.wrapper import _wrapper_search
 
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
@@ -224,7 +224,7 @@ def test_skill_search_by_description(capsys):
     assert "search" not in out
 
 
-def test_skill_search_network_error(capsys):
+def test_wrapper_search_network_error(capsys):
     import httpx
 
     with (
@@ -236,7 +236,7 @@ def test_skill_search_network_error(capsys):
         _wrapper_search(argparse.Namespace(query=""))
 
 
-def test_skill_search_no_results(capsys):
+def test_wrapper_search_no_results(capsys):
     from cli.wrapper import _wrapper_search
 
     with patch("cli.wrapper._fetch_registry", return_value=FAKE_REGISTRY):
@@ -245,7 +245,7 @@ def test_skill_search_no_results(capsys):
     assert "No wrappers found." in out
 
 
-def test_skill_search_cross_type_hint_shown(capsys):
+def test_wrapper_search_cross_type_hint_shown(capsys):
     """M102b: when wrapper search finds nothing, hint about matching connectors."""
     from cli.wrapper import _wrapper_search
 
@@ -257,7 +257,7 @@ def test_skill_search_cross_type_hint_shown(capsys):
     assert "discord" in out
 
 
-def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
+def test_wrapper_search_cross_type_hint_not_shown_when_no_match(capsys):
     """M102b: no cross-type hint when the other type also has no matches."""
     from cli.wrapper import _wrapper_search
 
@@ -268,7 +268,7 @@ def test_skill_search_cross_type_hint_not_shown_when_no_match(capsys):
     assert "kiso connector search" not in out
 
 
-def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
+def test_wrapper_search_cross_type_hint_not_shown_on_empty_query(capsys):
     """M102b: no cross-type hint when query is empty (all results shown)."""
     from cli.wrapper import _wrapper_search
 
@@ -284,11 +284,11 @@ def test_skill_search_cross_type_hint_not_shown_on_empty_query(capsys):
 
 
 def _fake_clone_with_manifest(name="search", summary="Web search", usage_guide="Use default guidance."):
-    """Tool-specific clone factory (delegates to shared helper)."""
+    """Wrapper-specific clone factory (delegates to shared helper)."""
     return fake_clone_plugin("wrapper", name, summary=summary, usage_guide=usage_guide)
 
 
-def test_skill_install_official(tmp_path, mock_admin, capsys):
+def test_wrapper_install_official(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -315,7 +315,7 @@ def test_skill_install_official(tmp_path, mock_admin, capsys):
     assert "installed successfully" in out
 
 
-def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
+def test_wrapper_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -347,7 +347,7 @@ def test_skill_install_unofficial_with_confirm(tmp_path, mock_admin, capsys):
     assert "installed successfully" in out
 
 
-def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
+def test_wrapper_install_unofficial_declined(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -379,7 +379,7 @@ def test_skill_install_unofficial_declined(tmp_path, mock_admin, capsys):
     assert not (tools_dir / "myskill").exists()
 
 
-def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
+def test_wrapper_install_custom_name(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -409,7 +409,7 @@ def test_skill_install_custom_name(tmp_path, mock_admin, capsys):
     assert (tools_dir / "custom").exists()
 
 
-def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
+def test_wrapper_install_no_deps_flag(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -452,7 +452,7 @@ def test_skill_install_no_deps_flag(tmp_path, mock_admin, capsys):
     assert len(bash_calls) == 0
 
 
-def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
+def test_wrapper_install_show_deps(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     deps_content = "#!/bin/bash\napt install ffmpeg\n"
@@ -473,7 +473,7 @@ def test_skill_install_show_deps(tmp_path, mock_admin, capsys):
     assert "apt install ffmpeg" in out
 
 
-def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
+def test_wrapper_install_already_installed(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -490,7 +490,7 @@ def test_skill_install_already_installed(tmp_path, mock_admin, capsys):
     assert "already installed" in out
 
 
-def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_install_already_installed_git_pull_failure_warns(tmp_path, mock_admin, capsys):
     """git pull failure in already-installed path prints a warning (does not abort)."""
     from cli.wrapper import _wrapper_install
 
@@ -518,7 +518,7 @@ def test_skill_install_already_installed_git_pull_failure_warns(tmp_path, mock_a
     assert "cannot fast-forward" in out
 
 
-def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, mock_admin, capsys):
+def test_wrapper_install_already_installed_git_pull_uses_safe_directory(tmp_path, mock_admin, capsys):
     """git pull in already-installed path passes safe.directory config."""
     from cli.wrapper import _wrapper_install
 
@@ -553,7 +553,7 @@ def test_skill_install_already_installed_git_pull_uses_safe_directory(tmp_path, 
     assert str(tool_dir) in safe_dir_arg
 
 
-def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
+def test_wrapper_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_install
 
     tools_dir = tmp_path / "wrappers"
@@ -582,7 +582,7 @@ def test_skill_install_git_clone_failure_cleanup(tmp_path, mock_admin, capsys):
 # ── _skill_update ────────────────────────────────────────────
 
 
-def test_skill_update_single(tmp_path, mock_admin, capsys):
+def test_wrapper_update_single(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_update
 
     tools_dir = tmp_path / "wrappers"
@@ -602,7 +602,7 @@ def test_skill_update_single(tmp_path, mock_admin, capsys):
     assert "updated" in out
 
 
-def test_skill_update_all(tmp_path, mock_admin, capsys):
+def test_wrapper_update_all(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_update
 
     tools_dir = tmp_path / "wrappers"
@@ -624,7 +624,7 @@ def test_skill_update_all(tmp_path, mock_admin, capsys):
     assert "search" in out
 
 
-def test_skill_update_nonexistent(tmp_path, mock_admin, capsys):
+def test_wrapper_update_nonexistent(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_update
 
     tools_dir = tmp_path / "wrappers"
@@ -640,7 +640,7 @@ def test_skill_update_nonexistent(tmp_path, mock_admin, capsys):
     assert "not installed" in out
 
 
-def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
+def test_wrapper_update_git_pull_failure(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_update
 
     tools_dir = tmp_path / "wrappers"
@@ -664,7 +664,7 @@ def test_skill_update_git_pull_failure(tmp_path, mock_admin, capsys):
 # ── _skill_remove ────────────────────────────────────────────
 
 
-def test_skill_remove_existing(tmp_path, mock_admin, capsys):
+def test_wrapper_remove_existing(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_remove
 
     tools_dir = tmp_path / "wrappers"
@@ -679,7 +679,7 @@ def test_skill_remove_existing(tmp_path, mock_admin, capsys):
     assert not (tools_dir / "search").exists()
 
 
-def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
+def test_wrapper_remove_nonexistent(tmp_path, mock_admin, capsys):
     from cli.wrapper import _wrapper_remove
 
     tools_dir = tmp_path / "wrappers"
@@ -698,7 +698,7 @@ def test_skill_remove_nonexistent(tmp_path, mock_admin, capsys):
 # ── Edge cases: _skill_install ──────────────────────────
 
 
-def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
+def test_wrapper_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
     """show-deps when git clone fails."""
     from cli.wrapper import _wrapper_install
 
@@ -716,7 +716,7 @@ def test_skill_install_show_deps_clone_fails(tmp_path, mock_admin, capsys):
     assert "not found" in capsys.readouterr().out
 
 
-def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
+def test_wrapper_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
     """show-deps when repo has no deps.sh."""
     from cli.wrapper import _wrapper_install
 
@@ -733,7 +733,7 @@ def test_skill_install_show_deps_no_deps_file(tmp_path, mock_admin, capsys):
     assert "No deps.sh" in capsys.readouterr().out
 
 
-def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
+def test_wrapper_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
     """Clone succeeds but no kiso.toml — cleaned up."""
     from cli.wrapper import _wrapper_install
 
@@ -759,7 +759,7 @@ def test_skill_install_missing_kiso_toml(tmp_path, mock_admin, capsys):
     assert not (tools_dir / "search").exists()
 
 
-def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
+def test_wrapper_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
     """kiso.toml exists but fails validation — cleaned up."""
     from cli.wrapper import _wrapper_install
 
@@ -789,7 +789,7 @@ def test_skill_install_manifest_validation_errors(tmp_path, mock_admin, capsys):
     assert not (tools_dir / "search").exists()
 
 
-def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails — warning printed but install continues."""
     from cli.wrapper import _wrapper_install
 
@@ -831,7 +831,7 @@ def test_skill_install_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     assert "installed successfully" in out
 
 
-def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries — warning printed."""
     from cli.wrapper import _wrapper_install
 
@@ -859,7 +859,7 @@ def test_skill_install_missing_binaries_warns(tmp_path, mock_admin, capsys):
     assert "installed successfully" in out
 
 
-def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, capsys):
+def test_wrapper_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, capsys):
     """check_deps_fn receives deps from manifest, not empty dict."""
     from cli.wrapper import _wrapper_install
 
@@ -907,7 +907,7 @@ def test_skill_install_check_deps_receives_manifest_deps(tmp_path, mock_admin, c
     assert "still missing binaries after install: playwright" in out
 
 
-def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin, capsys):
+def test_wrapper_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin, capsys):
     """auto-retry deps.sh when binaries missing after first install."""
     from cli.wrapper import _wrapper_install
 
@@ -957,7 +957,7 @@ def test_skill_install_auto_retry_deps_on_missing_binaries(tmp_path, mock_admin,
     assert check_call_count[0] == 2  # called twice
 
 
-def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
     """Env vars declared in manifest but not in environment — warning printed."""
     from cli.wrapper import _wrapper_install
 
@@ -1002,7 +1002,7 @@ def test_skill_install_env_var_not_set_warns(tmp_path, mock_admin, capsys):
 # ── Edge cases: _skill_update ───────────────────────────
 
 
-def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
+def test_wrapper_update_all_no_dir(tmp_path, mock_admin, capsys):
     """Update all when wrappers dir doesn't exist."""
     from cli.wrapper import _wrapper_update
 
@@ -1012,7 +1012,7 @@ def test_skill_update_all_no_dir(tmp_path, mock_admin, capsys):
     assert "No wrappers installed" in capsys.readouterr().out
 
 
-def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
+def test_wrapper_update_all_empty_dir(tmp_path, mock_admin, capsys):
     """Update all when wrappers dir is empty."""
     from cli.wrapper import _wrapper_update
 
@@ -1025,7 +1025,7 @@ def test_skill_update_all_empty_dir(tmp_path, mock_admin, capsys):
     assert "No wrappers installed" in capsys.readouterr().out
 
 
-def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     """deps.sh fails during update — warning printed but update continues."""
     from cli.wrapper import _wrapper_update
 
@@ -1057,7 +1057,7 @@ def test_skill_update_deps_sh_failure_warns(tmp_path, mock_admin, capsys):
     assert "updated" in out
 
 
-def test_skill_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
+def test_wrapper_update_missing_binaries_warns(tmp_path, mock_admin, capsys):
     """check_deps returns missing binaries during update — warning printed."""
     from cli.wrapper import _wrapper_update
 
@@ -1272,7 +1272,7 @@ class TestUpdatePlugin:
 
 
 # ---------------------------------------------------------------------------
-# kiso tool test
+# kiso wrapper test
 # ---------------------------------------------------------------------------
 
 class TestToolTest:

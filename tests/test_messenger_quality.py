@@ -120,7 +120,7 @@ class TestMessengerBrieferTagInjection:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -177,7 +177,7 @@ class TestMsgDetailValidation:
 
 
 class TestBrieferToolFilterNoTools:
-    """P55: M387 clears hallucinated tools when none installed."""
+    """P55: M387 clears hallucinated wrappers when none installed."""
 
     @pytest.fixture()
     def config(self):
@@ -185,10 +185,10 @@ class TestBrieferToolFilterNoTools:
 
     @pytest.mark.asyncio
     async def test_no_tools_clears_all(self, config):
-        """When context_pool has no tools, briefer tools are cleared."""
+        """When context_pool has no wrappers, briefer wrappers are cleared."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser", "aider"],
+            "wrappers": ["browser", "aider"],
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
@@ -196,38 +196,38 @@ class TestBrieferToolFilterNoTools:
         })
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", {})
-        assert result["tools"] == []
+        assert result["wrappers"] == []
 
     @pytest.mark.asyncio
     async def test_with_tools_filters_correctly(self, config):
-        """When context_pool has tools, only matching ones pass."""
+        """When context_pool has wrappers, only matching ones pass."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser", "fake_skill"],
+            "wrappers": ["browser", "fake_skill"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available wrappers:\n- browser — navigate, click, fill, screenshot"}
+        ctx = {"wrappers": "Available wrappers:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert "browser" in result["tools"]
-        assert "fake_skill" not in result["tools"]
+        assert "browser" in result["wrappers"]
+        assert "fake_skill" not in result["wrappers"]
 
     @pytest.mark.asyncio
     async def test_tool_filter_exact_name_no_substring(self, config):
-        """'git' installed must NOT match briefer tool 'github'."""
+        """'git' installed must NOT match briefer wrapper 'github'."""
         response = json.dumps({
             "modules": [],
-            "tools": ["github", "git"],
+            "wrappers": ["github", "git"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available wrappers:\n- git — version control operations"}
+        ctx = {"wrappers": "Available wrappers:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", ctx)
-        assert "git" in result["tools"]
-        assert "github" not in result["tools"]
+        assert "git" in result["wrappers"]
+        assert "github" not in result["wrappers"]

@@ -414,7 +414,7 @@ class TestResetFactory:
         conn = _create_test_db(db_path)
         conn.close()
 
-        for dirname in ("tools", "connectors", "presets", "roles", "reference", "sys"):
+        for dirname in ("wrappers", "connectors", "presets", "roles", "reference", "sys"):
             d = tmp_path / dirname
             d.mkdir(parents=True)
             (d / "test.txt").write_text("data")
@@ -428,7 +428,7 @@ class TestResetFactory:
         with patch("cli.reset.DB_PATH", db_path), patch("cli.reset.KISO_DIR", tmp_path):
             _reset_factory(_make_args(reset_command="factory"))
 
-        for dirname in ("sessions", "audit", "tools", "connectors", "presets", "roles", "reference", "sys"):
+        for dirname in ("sessions", "audit", "wrappers", "connectors", "presets", "roles", "reference", "sys"):
             assert not (tmp_path / dirname).exists(), f"{dirname}/ should be deleted"
         assert not (tmp_path / ".chat_history").exists()
         assert not (tmp_path / ".last_image_id").exists()

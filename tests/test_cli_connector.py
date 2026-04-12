@@ -253,20 +253,20 @@ def test_cross_type_hint_returns_none_when_no_match():
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "tools": [{"name": "search", "description": "Web search"}],
+        "wrappers": [{"name": "search", "description": "Web search"}],
     }
     assert cross_type_hint(registry, "connectors", "nonexistent") is None
 
 
 def test_cross_type_hint_tools_to_connectors():
-    """cross_type_hint works symmetrically: tools → connectors."""
+    """cross_type_hint works symmetrically: wrappers → connectors."""
     from cli.plugin_ops import cross_type_hint
 
     registry = {
         "connectors": [{"name": "discord", "description": "Discord bridge"}],
-        "tools": [{"name": "search", "description": "Web search"}],
+        "wrappers": [{"name": "search", "description": "Web search"}],
     }
-    result = cross_type_hint(registry, "tools", "discord")
+    result = cross_type_hint(registry, "wrappers", "discord")
     assert result is not None
     assert "kiso connector search discord" in result
 
@@ -299,19 +299,19 @@ def test_connector_search_cross_type_hint_not_shown_when_no_match(capsys):
         _connector_search(argparse.Namespace(query="nonexistent"))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso tool search" not in out
+    assert "kiso wrapper search" not in out
 
 
 def test_connector_search_cross_type_hint_not_shown_on_empty_query(capsys):
     """M102b: no cross-type hint when query is empty (all results shown)."""
     from cli.connector import _connector_search
 
-    empty_registry = {"connectors": [], "tools": [{"name": "search", "description": "Web search"}]}
+    empty_registry = {"connectors": [], "wrappers": [{"name": "search", "description": "Web search"}]}
     with patch("cli.connector.fetch_registry", return_value=empty_registry):
         _connector_search(argparse.Namespace(query=""))
     out = capsys.readouterr().out
     assert "No connectors found." in out
-    assert "kiso tool search" not in out
+    assert "kiso wrapper search" not in out
 
 
 # ── _connector_install ───────────────────────────────────────

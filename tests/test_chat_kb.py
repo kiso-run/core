@@ -69,7 +69,7 @@ class TestChatKBEntityFlow:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [],
+                    "modules": [], "wrappers": [], "exclude_recipes": [],
                     "context": "User asks about SSH key.",
                     "output_indices": [], "relevant_tags": ["ssh"],
                     "relevant_entities": ["self"],
@@ -93,7 +93,7 @@ class TestChatKBEntityFlow:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [],
+                    "modules": [], "wrappers": [],
                     "context": "General chat.",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
@@ -114,7 +114,7 @@ class TestChatKBEntityFlow:
             roles_called.append(role)
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [], "context": "",
+                    "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -313,7 +313,7 @@ class TestPlanChatKbPromotion:
     async def test_promotes_question_when_kb_has_match(self, db):
         """Question + KB match + non-imperative → promotion fires."""
         config = _config()
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Flask is a lightweight Python web framework",
             source="curator", session=None, category="general",
@@ -336,7 +336,7 @@ class TestPlanChatKbPromotion:
     async def test_does_not_promote_imperative_even_if_kb_match(self, db):
         """Imperative prefix → never promote even when KB matches."""
         config = _config()
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Flask is a Python web framework",
             source="curator", session=None, category="general",
@@ -374,7 +374,7 @@ class TestPlanChatKbPromotion:
     async def test_does_not_promote_declarative(self, db):
         """No question mark + no question word → no promotion."""
         config = _config()
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Flask is a Python web framework",
             source="curator", session=None, category="general",
@@ -432,7 +432,7 @@ class TestPlanChatKbPromotion:
         from kiso.store import get_recent_messages
 
         config = _config()
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Flask is a Python web framework",
             source="curator", session=None, category="general",
@@ -458,7 +458,7 @@ class TestPlanChatKbPromotion:
     async def test_unknown_lang_defaults_english(self, db):
         """Unknown user_lang → English transition message."""
         config = _config()
-        eid = await find_or_create_entity(db, "flask", "tool")
+        eid = await find_or_create_entity(db, "flask", "wrapper")
         await save_fact(
             db, "Flask is a Python web framework",
             source="curator", session=None, category="general",
@@ -479,7 +479,7 @@ class TestPlanChatKbPromotion:
 
 
 class TestMessengerSanitization:
-    """Messenger output sanitization strips hallucinated tool markup."""
+    """Messenger output sanitization strips hallucinated wrapper markup."""
 
     def test_tool_call_block_stripped(self):
         text = 'Hello!\n<tool_call name="search">{"q":"test"}</tool_call>\nHow are you?'
@@ -511,7 +511,7 @@ class TestMessengerSanitization:
 
     def test_sanitizer_strips_emoji(self):
         """M1300: messenger sanitizer also strips emoji deterministically."""
-        text = "**🎯 Interaction**\n💻 Code\n🌐 Net\n🛠 Tools\n🔬 Lab\n📚 Docs"
+        text = "**🎯 Interaction**\n💻 Code\n🌐 Net\n🛠 Wrappers\n🔬 Lab\n📚 Docs"
         result = _sanitize_messenger_output(text)
         for ch in ("🎯", "💻", "🌐", "🛠", "🔬", "📚"):
             assert ch not in result

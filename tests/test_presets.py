@@ -552,11 +552,11 @@ class TestDefaultPresetInRegistry:
         assert "default" in names
 
 
-# --- M758: preset install auto-installs tools ---
+# --- M758: preset install auto-installs wrappers ---
 
 
 class TestM758AutoInstallTools:
-    """install_preset auto-installs tools from manifest."""
+    """install_preset auto-installs wrappers from manifest."""
 
     def test_auto_install_calls_wrapper_install(self, tmp_path):
         """install_preset calls _auto_install_tools for manifest.wrappers."""
@@ -668,7 +668,7 @@ class TestM819CleanProgressOutput:
         assert "Fetching preset..." in out
 
     def test_show_summary_has_version_and_separator(self, capsys):
-        """_show_preset_summary shows version, separator, tools, and behaviors."""
+        """_show_preset_summary shows version, separator, wrappers, and behaviors."""
         from cli.preset import _show_preset_summary
 
         manifest = PresetManifest(
@@ -711,7 +711,7 @@ class TestM819CleanProgressOutput:
         assert "[1/1] test" in out
 
     def test_install_final_summary(self, tmp_path, capsys):
-        """install_preset shows '✓ Preset installed — N tools, N behaviors'."""
+        """install_preset shows '✓ Preset installed — N wrappers, N behaviors'."""
         from cli.preset_ops import install_preset
 
         manifest = PresetManifest(
@@ -730,7 +730,7 @@ class TestM819CleanProgressOutput:
 
         out = capsys.readouterr().out
         assert "Preset installed" in out
-        assert "2 tools" in out
+        assert "2 wrappers" in out
         assert "1 behaviors" in out
 
     def test_deps_sh_runs_via_plugin_install(self):

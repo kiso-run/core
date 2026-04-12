@@ -49,12 +49,12 @@ def _config(briefer_enabled=True) -> Config:
 
 
 def _briefing(
-    modules=None, tools=None, exclude_recipes=None, context="", output_indices=None,
+    modules=None, wrappers=None, exclude_recipes=None, context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
 ) -> dict:
     return {
         "modules": modules or [],
-        "tools": tools or [],
+        "wrappers": wrappers or [],
         "exclude_recipes": exclude_recipes or [],
         "context": context,
         "output_indices": output_indices or [],
@@ -107,7 +107,7 @@ class TestBrieferScenarios:
         """Web request → briefer selects web module + browser wrapper."""
         briefing = _briefing(
             modules=["web"],
-            tools=["browser"],
+            wrappers=["browser"],
             context="User wants to visit gazzetta.it for sports news.",
         )
 
@@ -198,7 +198,7 @@ class TestBrieferScenarios:
         """Complex request → briefer selects multiple modules."""
         briefing = _briefing(
             modules=["web", "data_flow"],
-            tools=["browser: navigate", "python: run scripts"],
+            wrappers=["browser: navigate", "python: run scripts"],
             context="User wants to scrape a site and process data with Python.",
         )
 
@@ -391,7 +391,7 @@ class TestBrieferPromptBudget:
             "recent_messages": "\n".join(
                 f"[user] marco: message {i}" for i in range(5)
             ),
-            "tools": "\n".join(f"tool_{i}: does thing {i}" for i in range(10)),
+            "wrappers": "\n".join(f"tool_{i}: does thing {i}" for i in range(10)),
             "pending": "- Question about API key\n- Question about deployment",
             "plan_outputs": "\n".join(
                 f"[{i}] exec: task {i} → output {i}" for i in range(5)
@@ -409,7 +409,7 @@ class TestBrieferPromptBudget:
             BRIEFER_SCHEMA["json_schema"]["schema"]["required"]
         )
         # validate_briefing checks each of these
-        expected = {"modules", "tools", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"}
+        expected = {"modules", "wrappers", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"}
         assert schema_required == expected
 
 
@@ -500,19 +500,19 @@ class TestRecipesInBriefer:
 
 
 # ---------------------------------------------------------------------------
-# — Tool injection: skip briefer filtering when few tools installed
+# — Wrapper injection: skip briefer filtering when few wrappers installed
 # ---------------------------------------------------------------------------
 
 
 class TestM824ToolFilterThreshold:
-    """briefer tool filter is skipped when installed wrappers <= threshold."""
+    """briefer wrapper filter is skipped when installed wrappers <= threshold."""
 
     async def test_few_tools_injects_all(self, db):
-        """5 tools installed with threshold=10 → planner sees all 5."""
+        """5 wrappers installed with threshold=10 → planner sees all 5."""
         # Briefer selects only 'browser' — but M824 overrides
         briefing = _briefing(
             modules=["web"],
-            tools=["browser"],
+            wrappers=["browser"],
             context="User wants to read a screenshot.",
         )
 
@@ -522,7 +522,7 @@ class TestM824ToolFilterThreshold:
             return "{}"
 
         fake_tools = [
-            {"name": n, "summary": f"{n} tool", "args_schema": {},
+            {"name": n, "summary": f"{n} wrapper", "args_schema": {},
              "env": {}, "session_secrets": [], "path": "/fake",
              "version": "0.1.0", "description": ""}
             for n in ["browser", "ocr", "aider", "docreader", "transcriber"]
@@ -547,15 +547,15 @@ class TestM824ToolFilterThreshold:
             )
 
         user_content = msgs[1]["content"]
-        # All 5 tools should be present, not just briefer's selection
+        # All 5 wrappers should be present, not just briefer's selection
         for name in ["browser", "ocr", "aider", "docreader", "transcriber"]:
             assert name in user_content, f"Wrapper '{name}' missing from planner context"
 
     async def test_many_tools_uses_briefer_filter(self, db):
-        """15 tools with threshold=10 → only briefer-selected tools appear."""
+        """15 wrappers with threshold=10 → only briefer-selected wrappers appear."""
         briefing = _briefing(
             modules=["web"],
-            tools=["browser"],
+            wrappers=["browser"],
             context="User wants to browse.",
         )
 
@@ -565,7 +565,7 @@ class TestM824ToolFilterThreshold:
             return "{}"
 
         fake_tools = [
-            {"name": f"tool{i}", "summary": f"tool{i} desc", "args_schema": {},
+            {"name": f"wrapper{i}", "summary": f"wrapper{i} desc", "args_schema": {},
              "env": {}, "session_secrets": [], "path": "/fake",
              "version": "0.1.0", "description": ""}
             for i in range(15)
@@ -596,18 +596,18 @@ class TestM824ToolFilterThreshold:
             )
 
         user_content = msgs[1]["content"]
-        # Only browser selected by briefer (16 tools > threshold 10)
+        # Only browser selected by briefer (16 wrappers > threshold 10)
         assert "browser" in user_content
         assert "Navigate pages" in user_content
-        # Other tools should NOT be present
+        # Other wrappers should NOT be present
         assert "tool0 desc" not in user_content
 
     async def test_threshold_zero_always_filters(self, db):
-        """threshold=0 → briefer filtering applies even with 1 tool."""
-        # Briefer selects only 'browser' out of 2 tools
+        """threshold=0 → briefer filtering applies even with 1 wrapper."""
+        # Briefer selects only 'browser' out of 2 wrappers
         briefing = _briefing(
             modules=["web"],
-            tools=["browser"],
+            wrappers=["browser"],
             context="User wants to browse.",
         )
 

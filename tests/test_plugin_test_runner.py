@@ -39,7 +39,7 @@ class TestResolveFilter:
         assert len(targets) == 3
 
     def test_tools_filter(self):
-        targets = _resolve_filter(SAMPLE_REGISTRY, "tools")
+        targets = _resolve_filter(SAMPLE_REGISTRY, "wrappers")
         assert all(t == "wrapper" for t, _ in targets)
         assert len(targets) == 2
 
@@ -72,14 +72,14 @@ class TestTestOnePlugin:
     def test_clone_failure(self, tmp_path):
         with patch("cli.plugin_test_runner.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="repo not found")
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert result.stage == "clone"
         assert not result.passed
         assert "repo not found" in result.error
 
     def test_missing_manifest(self, tmp_path):
-        plugin_dir = tmp_path / "tool-fake"
+        plugin_dir = tmp_path / "wrapper-fake"
 
         def mock_run(cmd, **kw):
             if "git" in cmd[0]:
@@ -88,13 +88,13 @@ class TestTestOnePlugin:
             return MagicMock(returncode=1, stderr="fail")
 
         with patch("cli.plugin_test_runner.subprocess.run", side_effect=mock_run):
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert result.stage == "validate"
         assert "kiso.toml" in result.error
 
     def test_install_failure(self, tmp_path):
-        plugin_dir = tmp_path / "tool-fake"
+        plugin_dir = tmp_path / "wrapper-fake"
 
         def mock_run(cmd, **kw):
             if "git" in cmd[0]:
@@ -106,13 +106,13 @@ class TestTestOnePlugin:
             return MagicMock(returncode=0)
 
         with patch("cli.plugin_test_runner.subprocess.run", side_effect=mock_run):
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert result.stage == "install"
         assert "uv sync" in result.error
 
     def test_no_tests_dir_skipped(self, tmp_path):
-        plugin_dir = tmp_path / "tool-fake"
+        plugin_dir = tmp_path / "wrapper-fake"
 
         def mock_run(cmd, **kw):
             if "git" in cmd[0]:
@@ -124,14 +124,14 @@ class TestTestOnePlugin:
             return MagicMock(returncode=0)
 
         with patch("cli.plugin_test_runner.subprocess.run", side_effect=mock_run):
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert result.skipped
         assert result.passed
         assert "no tests/" in result.error
 
     def test_tests_pass(self, tmp_path):
-        plugin_dir = tmp_path / "tool-fake"
+        plugin_dir = tmp_path / "wrapper-fake"
 
         call_count = {"n": 0}
 
@@ -151,7 +151,7 @@ class TestTestOnePlugin:
             return MagicMock(returncode=0)
 
         with patch("cli.plugin_test_runner.subprocess.run", side_effect=mock_run):
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert result.passed
         assert not result.skipped
@@ -159,7 +159,7 @@ class TestTestOnePlugin:
         assert result.stage == "done"
 
     def test_tests_fail(self, tmp_path):
-        plugin_dir = tmp_path / "tool-fake"
+        plugin_dir = tmp_path / "wrapper-fake"
 
         def mock_run(cmd, **kw):
             if "git" in cmd[0]:
@@ -179,7 +179,7 @@ class TestTestOnePlugin:
             return MagicMock(returncode=0)
 
         with patch("cli.plugin_test_runner.subprocess.run", side_effect=mock_run):
-            result = _test_one_plugin(tmp_path, "tool", "fake")
+            result = _test_one_plugin(tmp_path, "wrapper", "fake")
 
         assert not result.passed
         assert result.stage == "test"

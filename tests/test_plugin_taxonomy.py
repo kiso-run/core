@@ -1,6 +1,6 @@
 """Integration test — plugin taxonomy end-to-end.
 
-Verifies the three plugin types (tools, recipes, connectors) work together:
+Verifies the three plugin types (wrappers, recipes, connectors) work together:
 CLI entrypoints, plugin list aggregation, backward compat, registry structure.
 """
 
@@ -57,7 +57,7 @@ class TestPluginListAggregation:
             _plugin_list()
 
         out = capsys.readouterr().out
-        assert "Tools:" in out
+        assert "Wrappers:" in out
         assert "search" in out
         assert "Recipes:" in out
         assert "analyst" in out

@@ -190,24 +190,24 @@ class TestCollectBinaries:
         assert "kiso" in PROBE_BINARIES
 
     def test_m370_system_info_tools(self):
-        """PROBE_BINARIES includes common system info tools."""
-        for tool in ("free", "ps", "uptime", "uname", "id", "hostname", "df"):
-            assert tool in PROBE_BINARIES, f"Missing system tool: {tool}"
+        """PROBE_BINARIES includes common system info wrappers."""
+        for wrapper in ("free", "ps", "uptime", "uname", "id", "hostname", "df"):
+            assert wrapper in PROBE_BINARIES, f"Missing system wrapper: {wrapper}"
 
     def test_m370_ssh_tools(self):
-        """PROBE_BINARIES includes SSH tools."""
-        for tool in ("ssh", "ssh-keygen", "ssh-keyscan", "scp"):
-            assert tool in PROBE_BINARIES, f"Missing SSH tool: {tool}"
+        """PROBE_BINARIES includes SSH wrappers."""
+        for wrapper in ("ssh", "ssh-keygen", "ssh-keyscan", "scp"):
+            assert wrapper in PROBE_BINARIES, f"Missing SSH wrapper: {wrapper}"
 
     def test_m370_network_tools(self):
-        """PROBE_BINARIES includes network tools."""
-        for tool in ("ss", "ip", "ping", "dig"):
-            assert tool in PROBE_BINARIES, f"Missing network tool: {tool}"
+        """PROBE_BINARIES includes network wrappers."""
+        for wrapper in ("ss", "ip", "ping", "dig"):
+            assert wrapper in PROBE_BINARIES, f"Missing network wrapper: {wrapper}"
 
     def test_m370_process_tools(self):
-        """PROBE_BINARIES includes process management tools."""
-        for tool in ("kill", "pkill"):
-            assert tool in PROBE_BINARIES, f"Missing process tool: {tool}"
+        """PROBE_BINARIES includes process management wrappers."""
+        for wrapper in ("kill", "pkill"):
+            assert wrapper in PROBE_BINARIES, f"Missing process wrapper: {wrapper}"
 
 
 # --- _collect_connectors ---
@@ -431,7 +431,7 @@ class TestBuildSystemEnvSection:
 
     def test_contains_missing_tools(self, sample_env):
         section = build_system_env_section(sample_env)
-        assert "Missing common tools: docker, ffmpeg" in section
+        assert "Missing common wrappers: docker, ffmpeg" in section
 
     def test_contains_connectors_with_status(self, sample_env):
         section = build_system_env_section(sample_env)
@@ -444,9 +444,9 @@ class TestBuildSystemEnvSection:
         assert "Kiso CLI (usable in exec tasks):" not in section
 
     def test_no_registry_hints_in_full(self, sample_env):
-        """Registry hints removed — covered by registry tools section."""
+        """Registry hints removed — covered by registry wrappers section."""
         section = build_system_env_section(sample_env)
-        assert "Registry tools available:" not in section
+        assert "Registry wrappers available:" not in section
 
     def test_contains_blocked_commands(self, sample_env):
         section = build_system_env_section(sample_env)
@@ -467,7 +467,7 @@ class TestBuildSystemEnvSection:
     def test_no_missing_binaries_omits_line(self, sample_env):
         sample_env["missing_binaries"] = []
         section = build_system_env_section(sample_env)
-        assert "Missing common tools" not in section
+        assert "Missing common wrappers" not in section
 
     def test_max_output_size_formatting(self, sample_env):
         section = build_system_env_section(sample_env)
@@ -977,7 +977,7 @@ class TestM888LoadRegistryHints:
     """_load_registry_hints fetches from online registry."""
 
     def test_returns_tool_descriptions(self):
-        """Fetches online registry and returns tool name + description pairs."""
+        """Fetches online registry and returns wrapper name + description pairs."""
         registry_data = {
             "wrappers": [
                 {"name": "browser", "description": "Headless browser"},

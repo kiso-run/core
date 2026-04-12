@@ -225,7 +225,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("exec task must have expect describing WHAT RESULT" in e for e in errors)
 
-    def test_skill_without_expect(self):
+    def test_wrapper_without_expect(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": None, "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -349,7 +349,7 @@ class TestValidatePlan:
 
     # --- M7: wrapper validation in validate_plan ---
 
-    def test_skill_name_required(self):
+    def test_wrapper_name_required(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "do thing", "expect": "ok", "wrapper": None, "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -357,7 +357,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("wrapper task must have a non-null wrapper name" in e for e in errors)
 
-    def test_skill_not_installed(self):
+    def test_wrapper_not_installed(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -391,8 +391,8 @@ class TestValidatePlan:
         assert "not in the registry" in err
         assert "informing the user" in err
 
-    def test_skill_not_installed_feedback_informs_user(self):
-        """unknown tool → informs user, suggests alternatives."""
+    def test_wrapper_not_installed_feedback_informs_user(self):
+        """unknown wrapper → informs user, suggests alternatives."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search web", "expect": "results", "wrapper": "websearch", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -401,7 +401,7 @@ class TestValidatePlan:
         err = " ".join(errors)
         assert "informing the user" in err
 
-    def test_skill_not_installed_empty_list(self):
+    def test_wrapper_not_installed_empty_list(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -409,7 +409,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=[])
         assert any("not available" in e for e in errors)
 
-    def test_skill_not_installed_approved_suggests_exec_install(self):
+    def test_wrapper_not_installed_approved_suggests_exec_install(self):
         """when install_approved=True, error guides to exec install."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
@@ -420,8 +420,8 @@ class TestValidatePlan:
         assert any("kiso CLI" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
-    def test_skill_not_installed_not_approved_unknown_informs_user(self):
-        """unknown tool (not in registry) → inform user."""
+    def test_wrapper_not_installed_not_approved_unknown_informs_user(self):
+        """unknown wrapper (not in registry) → inform user."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report", "expect": None},
@@ -432,7 +432,7 @@ class TestValidatePlan:
         assert "informing the user" in err
 
     def test_m906_file_goal_no_exec_rejected(self):
-        """goal mentions file creation without exec/tool → rejected."""
+        """goal mentions file creation without exec/wrapper → rejected."""
         plan = {"goal": "Write a Python script word_count.py", "tasks": [
             {"type": "msg", "detail": "Here is your script", "expect": None,
              "wrapper": None, "args": None},
@@ -451,7 +451,7 @@ class TestValidatePlan:
         assert not any("Goal mentions creating" in e for e in errors)
 
     def test_wrapper_name_is_task_type_exec(self):
-        """tool='exec' is a task type confusion, not a real tool."""
+        """wrapper='exec' is a task type confusion, not a real wrapper."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "create file", "expect": "ok", "wrapper": "exec", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
@@ -461,7 +461,7 @@ class TestValidatePlan:
         assert any("type='exec'" in e for e in errors)
 
     def test_wrapper_name_is_task_type_msg(self):
-        """tool='msg' is a task type confusion."""
+        """wrapper='msg' is a task type confusion."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "send", "expect": "ok", "wrapper": "msg", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
@@ -470,7 +470,7 @@ class TestValidatePlan:
         assert any("'msg' is a task TYPE" in e for e in errors)
 
     def test_wrapper_name_is_prompt_module_web(self):
-        """tool='web' is a prompt module, not a tool."""
+        """wrapper='web' is a prompt module, not a wrapper."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse site", "expect": "ok", "wrapper": "web", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. done", "expect": None},
@@ -478,7 +478,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("prompt module" in e for e in errors)
 
-    def test_skill_installed_passes(self):
+    def test_wrapper_installed_passes(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -486,7 +486,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=["search"])
         assert errors == []
 
-    def test_skill_no_installed_list_skips_check(self):
+    def test_wrapper_no_installed_list_skips_check(self):
         """When installed_skills is None, skip wrapper-not-installed check."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
@@ -606,10 +606,10 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
-    # --- M1227: exec-after-tool codegen guardrail ---
+    # --- M1227: exec-after-wrapper codegen guardrail ---
 
     def test_m1227_codegen_exec_after_tool_rejected(self):
-        """validate_plan rejects [tool, exec, msg] when goal is codegen-only."""
+        """validate_plan rejects [wrapper, exec, msg] when goal is codegen-only."""
         plan = {
             "goal": "Create a Python script text_stats.py using aider for code generation.",
             "tasks": [
@@ -623,7 +623,7 @@ class TestValidatePlan:
         assert any("exec immediately after wrapper" in e for e in errors)
 
     def test_m1227_codegen_exec_after_tool_allowed_with_run(self):
-        """validate_plan allows [tool, exec, msg] when goal says 'run'."""
+        """validate_plan allows [wrapper, exec, msg] when goal says 'run'."""
         plan = {
             "goal": "Create text_stats.py then run it on the OCR text.",
             "tasks": [
@@ -641,7 +641,7 @@ class TestValidatePlan:
     # --- M1231: browser file:// URL rejection ---
 
     def test_m1231_browser_file_url_rejected(self):
-        """browser tool with file:// URL is rejected."""
+        """browser wrapper with file:// URL is rejected."""
         plan = {
             "goal": "View the file",
             "tasks": [
@@ -655,7 +655,7 @@ class TestValidatePlan:
         assert any("browser cannot open local files" in e for e in errors)
 
     def test_m1231_browser_http_url_allowed(self):
-        """browser tool with http URL passes."""
+        """browser wrapper with http URL passes."""
         plan = {
             "goal": "Visit website",
             "tasks": [
@@ -1146,7 +1146,7 @@ class TestBuildPlannerMessages:
         assert "### User" in content
         assert "### Wrapper" in content
         assert "### General" in content
-        # Verify order: project before user before tool before general
+        # Verify order: project before user before wrapper before general
         proj_pos = content.index("### Project")
         user_pos = content.index("### User")
         tool_pos = content.index("### Wrapper")
@@ -1262,7 +1262,7 @@ class TestBuildPlannerMessages:
         with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "search for X")
         content = msgs[1]["content"]
-        assert "## Tools" in content
+        assert "## Wrappers" in content
         assert "search — Web search" in content
         assert "query (string, required): search query" in content
 
@@ -1442,7 +1442,7 @@ class TestBuildPlannerMessages:
         assert "## Available Connectors" not in content
 
     async def test_briefer_forces_kiso_native_when_no_tools(self, db, config):
-        """briefer path forces kiso_native module when no tools installed."""
+        """briefer path forces kiso_native module when no wrappers installed."""
         await create_session(db, "sess1")
         # Enable briefer — the safety net should force kiso_native
         cfg = Config(
@@ -1458,7 +1458,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Mock briefer to return empty modules (simulates aggressive filtering)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
                 "exclude_recipes": [], "relevant_entities": [],
             }),
@@ -1478,7 +1478,7 @@ class TestBuildPlannerMessages:
         assert "System Environment" in user_content
 
     async def test_m1054_tools_rules_forced_when_tools_installed(self, db, config):
-        """tools_rules forced when tools are installed, even if briefer selects 0."""
+        """tools_rules forced when wrappers are installed, even if briefer selects 0."""
         await create_session(db, "sess1")
         cfg = Config(
             tokens=config.tokens,
@@ -1496,9 +1496,9 @@ class TestBuildPlannerMessages:
         with (
             patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
             patch("kiso.brain.discover_connectors", return_value=[]),
-            # Briefer selects 0 tools AND 0 modules — tools_rules still forced
+            # Briefer selects 0 wrappers AND 0 modules — tools_rules still forced
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [],
+                "modules": [], "wrappers": [], "exclude_recipes": [],
                 "context": "", "output_indices": [], "relevant_tags": [],
                 "relevant_entities": [],
             }),
@@ -1507,8 +1507,8 @@ class TestBuildPlannerMessages:
                 db, cfg, "sess1", "admin", "take a screenshot of example.com",
             )
         system = msgs[0]["content"]
-        # tools_rules must be present even when briefer skips tool selection
-        assert "Listed tools are confirmed installed" in system
+        # tools_rules must be present even when briefer skips wrapper selection
+        assert "Listed wrappers are confirmed installed" in system
 
     async def test_install_context_injected_with_kiso_native(self, db, config):
         """Install Context section injected when kiso_native is force-added."""
@@ -1525,7 +1525,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
                 "exclude_recipes": [], "relevant_entities": [],
             }),
@@ -1554,14 +1554,14 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer selects plugin_install → triggers full sysenv
             patch("kiso.brain.run_briefer", return_value={
-                "modules": ["plugin_install"], "tools": [],
+                "modules": ["plugin_install"], "wrappers": [],
                 "context": "", "output_indices": [],
                 "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git"),
         ):
             msgs, *_ = await build_planner_messages(
-                db, cfg, "sess1", "admin", "install browser tool",
+                db, cfg, "sess1", "admin", "install browser wrapper",
             )
         user_content = msgs[1]["content"]
         # Full sysenv already has binaries, Install Context should not be duplicated
@@ -1601,7 +1601,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [],
             }),
         ):
@@ -1645,7 +1645,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [],
             }),
         ):
@@ -1656,7 +1656,7 @@ class TestBuildPlannerMessages:
         assert "Route: system package" in user_content
 
     async def test_m1083_install_routing_injected_for_kiso_wrapper(self, db, config):
-        """deterministic kiso-tool routing is injected into planner context."""
+        """deterministic kiso-wrapper routing is injected into planner context."""
         await create_session(db, "sess1")
         cfg = Config(
             tokens=config.tokens,
@@ -1689,7 +1689,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [],
             }),
         ):
@@ -1724,7 +1724,7 @@ class TestBuildPlannerMessages:
             }),
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [],
             }),
         ):
@@ -1737,7 +1737,7 @@ class TestBuildPlannerMessages:
         assert "## Install Status" in user_content
 
     async def test_install_context_not_injected_when_tools_installed(self, db, config):
-        """Install Context skipped when tools are installed and no registry."""
+        """Install Context skipped when wrappers are installed and no registry."""
         await create_session(db, "sess1")
         cfg = Config(
             tokens=config.tokens,
@@ -1757,7 +1757,7 @@ class TestBuildPlannerMessages:
             # Empty registry → kiso_native not force-added
             patch("kiso.brain.get_registry_wrappers", return_value=""),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": ["browser — navigate"],
+                "modules": [], "wrappers": ["browser — navigate"],
                 "context": "", "output_indices": [],
                 "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [],
             }),
@@ -1767,7 +1767,7 @@ class TestBuildPlannerMessages:
                 db, cfg, "sess1", "admin", "take a screenshot",
             )
         user_content = msgs[1]["content"]
-        # Tools installed + empty registry → kiso_native not force-added → no Install Context
+        # Wrappers installed + empty registry → kiso_native not force-added → no Install Context
         assert "Install Context" not in user_content
 
     async def test_briefer_always_forces_planning_rules(self, db, config):
@@ -1788,9 +1788,9 @@ class TestBuildPlannerMessages:
         with (
             patch("kiso.brain.discover_wrappers", return_value=[fake_skill]),
             patch("kiso.brain.discover_connectors", return_value=[]),
-            # Briefer returns zero modules (single-tool task)
+            # Briefer returns zero modules (single-wrapper task)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "tools": ["browser — navigate"],
+                "modules": [], "wrappers": ["browser — navigate"],
                 "context": "User wants a screenshot.",
                 "output_indices": [], "relevant_tags": [],
                 "exclude_recipes": [], "relevant_entities": [],
@@ -1820,8 +1820,8 @@ class TestBuildPlannerMessages:
                 db, config, "sess1", "user", "hello", user_wrappers=["search"],
             )
         content = msgs[1]["content"]
-        # Tools section should only show search, not aider (restricted user)
-        tools_start = content.find("## Tools")
+        # Wrappers section should only show search, not aider (restricted user)
+        tools_start = content.find("## Wrappers")
         skills_section = content[tools_start:tools_start + 500] if tools_start >= 0 else ""
         assert "search" in skills_section
         assert "aider" not in skills_section
@@ -2868,7 +2868,7 @@ class TestRunCurator:
     async def test_entities_forwarded_to_messages(self, config):
         """run_curator forwards available_entities to build_curator_messages."""
         learnings = [{"id": 1, "content": "Uses Python"}]
-        entities = [{"name": "flask", "kind": "tool"}]
+        entities = [{"name": "flask", "kind": "wrapper"}]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR) as mock_llm:
             await run_curator(config, learnings, available_entities=entities)
         # The user message should contain the entities section
@@ -3570,7 +3570,7 @@ class TestM369MessengerSanitizer:
          "La tua chiave SSH pubblica è: ssh-ed25519 AAAA..."),
         ("", ""),
     ], ids=[
-        "tool-call-blocks", "function-call-blocks", "orphaned-tags",
+        "wrapper-call-blocks", "function-call-blocks", "orphaned-tags",
         "normal-text-preserved", "empty-string",
     ])
     def test_sanitize_messenger_output(self, text, expected):
@@ -3875,7 +3875,7 @@ class TestPlannerPromptContent:
         assert "search" in prompt.lower() and "msg" in prompt.lower()
 
     def test_m1214_planner_no_verify_after_codegen_tool(self):
-        """core planning rules say no exec after codegen tool."""
+        """core planning rules say no exec after codegen wrapper."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["planning_rules"])
         assert "codegen plan shape" in prompt.lower()
@@ -3890,7 +3890,7 @@ class TestPlannerPromptContent:
 
 
 class TestM166ValidatePlanSkillArgs:
-    """validate_plan checks tool args against schema."""
+    """validate_plan checks wrapper args against schema."""
 
     def test_missing_required_arg_rejected(self):
         plan = {"tasks": [
@@ -4390,9 +4390,9 @@ class TestClassifierPromptContent:
         assert "chat_kb" in CLASSIFIER_CATEGORIES
 
     def test_classifier_prompt_covers_ecosystem_management(self):
-        """plan category includes tool/connector/plugin management."""
+        """plan category includes wrapper/connector/plugin management."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "tools" in prompt or "tool" in prompt
+        assert "wrappers" in prompt or "wrapper" in prompt
         assert "connectors" in prompt or "connector" in prompt
 
     def test_classifier_prompt_supports_non_latin_languages(self):
@@ -4444,7 +4444,7 @@ class TestM276ClassifierContext:
         from kiso.brain import build_recent_context
         context = build_recent_context([
             {"role": "user", "user": "root", "content": "fai screenshot di guidance.studio"},
-            {"role": "assistant", "content": "Serve il browser tool. Vuoi che lo installi?"},
+            {"role": "assistant", "content": "Serve il browser wrapper. Vuoi che lo installi?"},
         ])
         msgs = build_classifier_messages("oh yeah", recent_context=context)
         user_content = msgs[1]["content"]
@@ -4505,7 +4505,7 @@ class TestRolePromptContent:
         ("planner", [
             (["background context only"], None),
         ]),
-        # M106a: planner install decision (Available Tools reference)
+        # M106a: planner install decision (Available Wrappers reference)
         ("planner", [
             (["Available Wrappers", "kiso wrapper"], "any"),
         ]),
@@ -4555,7 +4555,7 @@ class TestRolePromptContent:
             (["hint"], None),
             (["ABSOLUTE priority"], "exact"),
         ]),
-        # worker tool path awareness
+        # worker wrapper path awareness
         ("worker", [
             (["Wrapper binaries", "wrapper venv PATH"], "any_exact"),
         ]),
@@ -4569,7 +4569,7 @@ class TestRolePromptContent:
         "M6-substance-format", "M6-regardless",
         "M106d-no-find-root", "M106d-command-v",
         "M48-sudo-present", "M48-sudo-explicit", "M48-sudo-no-add",
-        "M47-hint-priority", "M284-tool-path",
+        "M47-hint-priority", "M284-wrapper-path",
     ])
     def test_prompt_contains_required_text(self, role, assertions):
         prompt = (_ROLES_DIR / f"{role}.md").read_text()
@@ -4955,7 +4955,7 @@ class TestPlannerContextualRules:
         assert "PROTECTION" not in system
         assert "Plugin installation flow:" not in system
 
-    async def test_skill_keyword_injects_kiso_commands(self, db):
+    async def test_wrapper_keyword_injects_kiso_commands(self, db):
         """Message mentioning 'wrapper' should inject kiso-commands appendix."""
         msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "install the search wrapper",
@@ -5045,7 +5045,7 @@ class TestM48CuratorCategoryField:
         assert "null" in types_in_anyof
 
     def test_48d_curator_schema_category_enum_contains_all_values(self):
-        """48d: category enum must contain project/user/tool/general."""
+        """48d: category enum must contain project/user/wrapper/general."""
         item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
         cat = item_props["category"]
         enum_values = [x.get("enum", []) for x in cat.get("anyOf", []) if x.get("type") == "string"]
@@ -5807,7 +5807,7 @@ class TestValidationRetryClassification:
 
     def test_failure_classifies_plan_shape(self):
         assert classify_failure_class(
-            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."]
+            ["Plan has only msg tasks — include at least one exec/wrapper/search task for action requests."]
         ) == FAILURE_CLASS_PLAN_SHAPE
 
     def test_classifies_task_repair_for_single_task_field_error(self):
@@ -5818,13 +5818,13 @@ class TestValidationRetryClassification:
 
     def test_classifies_plan_rewrite_for_msg_only_plan(self):
         classification = _classify_validation_errors(
-            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."]
+            ["Plan has only msg tasks — include at least one exec/wrapper/search task for action requests."]
         )
         assert classification == VALIDATION_RETRY_PLAN_REWRITE
 
     def test_classifies_approach_reset_for_missing_registry_tool(self):
         classification = _classify_validation_errors(
-            ["The requested tool does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."]
+            ["The requested wrapper does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."]
         )
         assert classification == VALIDATION_RETRY_APPROACH_RESET
 
@@ -5839,7 +5839,7 @@ class TestValidationRetryClassification:
     def test_build_validation_feedback_mentions_rewrite_scope(self):
         feedback = _build_validation_feedback(
             "Plan",
-            ["Plan has only msg tasks — include at least one exec/tool/search task for action requests."],
+            ["Plan has only msg tasks — include at least one exec/wrapper/search task for action requests."],
             1,
         )
         assert "rewrite the plan structure" in feedback
@@ -5958,7 +5958,7 @@ class TestMemoryPack:
     def test_build_validation_feedback_mentions_reset_scope(self):
         feedback = _build_validation_feedback(
             "Plan",
-            ["The requested tool does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."],
+            ["The requested wrapper does not exist in any registry. Plan ONLY msg tasks explaining the situation to the user."],
             2,
         )
         assert "Discard it and regenerate the plan from the original user request." in feedback
@@ -6038,7 +6038,7 @@ class TestPlannerSemanticToolValidation:
         tool_dir = (
             Path(__file__).resolve().parents[2]
             / "plugins"
-            / "tool-aider"
+            / "wrapper-aider"
         )
         tool_info = {
             "name": "aider",
@@ -6083,7 +6083,7 @@ class TestPlannerSemanticToolValidation:
         tool_dir = (
             Path(__file__).resolve().parents[2]
             / "plugins"
-            / "tool-aider"
+            / "wrapper-aider"
         )
         tool_info = {
             "name": "aider",
@@ -6131,7 +6131,7 @@ class TestPlannerSemanticToolValidation:
         tool_dir = (
             Path(__file__).resolve().parents[2]
             / "plugins"
-            / "tool-aider"
+            / "wrapper-aider"
         )
         tool_info = {
             "name": "aider",
@@ -6274,7 +6274,7 @@ class TestBrieferMessages:
             "summary": "User asked about weather",
             "facts": "- Python 3.12 is installed",
             "recent_messages": "[user] marco: ciao",
-            "tools": "browser: navigate, screenshot",
+            "wrappers": "browser: navigate, screenshot",
             "connectors": "telegram: messaging",
             "pending": "- What is your API key?",
             "paraphrased": "External user said hello",
@@ -6319,7 +6319,7 @@ class TestBrieferMessages:
         assert "Plan Outputs" in content
 
     def test_empty_pool_values_excluded(self):
-        pool = {"summary": "", "facts": "", "tools": "browser: navigate"}
+        pool = {"summary": "", "facts": "", "wrappers": "browser: navigate"}
         msgs = build_briefer_messages("planner", "do something", pool)
         content = msgs[1]["content"]
         assert "Session Summary" not in content
@@ -6386,16 +6386,16 @@ class TestBrieferMessages:
         assert "not in the input" in prompt.lower()
 
     def test_m265_messenger_no_modules_or_skills_rule(self):
-        """briefer prompt says messenger gets modules=[] and tools=[] always."""
+        """briefer prompt says messenger gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and tools=[] always" in system
+        assert "For messenger/worker: modules=[] and wrappers=[] always" in system
 
     def test_m265_worker_no_modules_or_tools_rule(self):
-        """briefer prompt says worker gets modules=[] and tools=[] always."""
+        """briefer prompt says worker gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("worker", "translate command", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and tools=[] always" in system
+        assert "For messenger/worker: modules=[] and wrappers=[] always" in system
 
 
 class TestValidateBriefing:
@@ -6404,7 +6404,7 @@ class TestValidateBriefing:
     def test_valid_briefing(self):
         briefing = {
             "modules": ["web"],
-            "tools": ["browser: navigate, screenshot"],
+            "wrappers": ["browser: navigate, screenshot"],
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
             "relevant_tags": ["browser"],
@@ -6415,7 +6415,7 @@ class TestValidateBriefing:
     def test_empty_briefing(self):
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6426,7 +6426,7 @@ class TestValidateBriefing:
     def test_unknown_module(self):
         briefing = {
             "modules": ["web", "nonexistent_module"],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6439,7 +6439,7 @@ class TestValidateBriefing:
     def test_invalid_modules_type(self):
         briefing = {
             "modules": "web",
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6451,7 +6451,7 @@ class TestValidateBriefing:
     def test_invalid_context_type(self):
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": None,
             "output_indices": [],
             "relevant_tags": [],
@@ -6463,7 +6463,7 @@ class TestValidateBriefing:
     def test_all_valid_modules(self):
         briefing = {
             "modules": list(BRIEFER_MODULES),
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6475,7 +6475,7 @@ class TestValidateBriefing:
         """relevant_tags must be an array."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": "browser",  # should be array
@@ -6487,7 +6487,7 @@ class TestValidateBriefing:
         """missing relevant_tags is an error."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
         }
@@ -6513,36 +6513,36 @@ class TestRunBriefer:
     async def test_success(self, config):
         response = json.dumps({
             "modules": ["web"],
-            "tools": ["browser"],
+            "wrappers": ["browser"],
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available wrappers:\n- browser — Navigate, click, fill"}
+        ctx = {"wrappers": "Available wrappers:\n- browser — Navigate, click, fill"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit a website", ctx)
         assert result["modules"] == ["web"]
-        assert result["tools"] == ["browser"]
+        assert result["wrappers"] == ["browser"]
         assert result["context"] == "User wants to browse"
         assert result["output_indices"] == [1]
         assert result["relevant_tags"] == ["browser"]
 
     @pytest.mark.asyncio
     async def test_real_tool_description_in_context_pool(self, config):
-        """briefer works with realistic tool descriptions containing newlines/quotes.
+        """briefer works with realistic wrapper descriptions containing newlines/quotes.
 
         The key insight: descriptions stay in context_pool and are never put into
-        the briefer's JSON output. The briefer only returns tool names.
+        the briefer's JSON output. The briefer only returns wrapper names.
         """
-        # Realistic browser tool description with newlines, quotes, special chars
+        # Realistic browser wrapper description with newlines, quotes, special chars
         real_description = (
             "Available wrappers:\n"
             "- browser — Navigate to specific URLs, inspect page elements, click, fill forms, take screenshots\n"
             '  args: action (string, required): one of: navigate, text, links, forms, snapshot, click, fill, screenshot\n'
             '  args: url (string, optional): URL to navigate to (required for \'navigate\')\n'
             '  args: element (string, optional): element reference like [3] or a CSS selector\n'
-            '  guide: This tool is for navigating to SPECIFIC known URLs.\n'
+            '  guide: This wrapper is for navigating to SPECIFIC known URLs.\n'
             '  NEVER use it for web searches — use search instead.\n'
             '\n'
             'Actions:\n'
@@ -6555,27 +6555,27 @@ class TestRunBriefer:
         # Briefer returns just the name — no description in JSON
         response = json.dumps({
             "modules": [],
-            "tools": ["browser"],
+            "wrappers": ["browser"],
             "context": "Navigate to guidance.studio and screenshot.",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": real_description}
+        ctx = {"wrappers": real_description}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "go to guidance.studio", ctx)
         # Briefer output has the name, not the description
-        assert result["tools"] == ["browser"]
-        # No newlines/quotes in the tools field — it's just a name
-        for tool in result["tools"]:
-            assert "\n" not in tool
-            assert len(tool) < 50  # names are short
+        assert result["wrappers"] == ["browser"]
+        # No newlines/quotes in the wrappers field — it's just a name
+        for wrapper in result["wrappers"]:
+            assert "\n" not in wrapper
+            assert len(wrapper) < 50  # names are short
 
     @pytest.mark.asyncio
     async def test_empty_briefing(self, config):
         response = json.dumps({
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6584,7 +6584,7 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "what time is it", {})
         assert result["modules"] == []
-        assert result["tools"] == []
+        assert result["wrappers"] == []
 
     @pytest.mark.asyncio
     async def test_llm_error_raises_briefer_error(self, config):
@@ -6602,45 +6602,45 @@ class TestRunBriefer:
 
     @pytest.mark.asyncio
     async def test_m368_filters_hallucinated_skills(self, config):
-        """run_briefer filters tool names not matching installed wrappers."""
+        """run_briefer filters wrapper names not matching installed wrappers."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser", "cpu-info"],
+            "wrappers": ["browser", "cpu-info"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available wrappers:\n- browser — navigate, click, fill, screenshot, text"}
+        ctx = {"wrappers": "Available wrappers:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
         # "browser" matches installed wrappers, "cpu-info" does not
-        assert "browser" in result["tools"]
-        assert "cpu-info" not in result["tools"]
+        assert "browser" in result["wrappers"]
+        assert "cpu-info" not in result["wrappers"]
 
     @pytest.mark.asyncio
     async def test_m368_preserves_valid_skills(self, config):
-        """run_briefer preserves tool names that match installed wrappers."""
+        """run_briefer preserves wrapper names that match installed wrappers."""
         response = json.dumps({
             "modules": [],
-            "tools": ["search"],
+            "wrappers": ["search"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
-        ctx = {"tools": "Available wrappers:\n- search — web search for queries, max_results option"}
+        ctx = {"wrappers": "Available wrappers:\n- search — web search for queries, max_results option"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "find info", ctx)
-        assert len(result["tools"]) == 1
-        assert result["tools"][0] == "search"
+        assert len(result["wrappers"]) == 1
+        assert result["wrappers"][0] == "search"
 
     @pytest.mark.asyncio
     async def test_m387_clears_skills_when_none_installed(self, config):
         """all briefer wrappers cleared when no wrappers in context pool."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser: navigate", "aider: code refactoring"],
+            "wrappers": ["browser: navigate", "aider: code refactoring"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6649,29 +6649,29 @@ class TestRunBriefer:
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
         # No wrappers installed → all hallucinated wrappers cleared
-        assert result["tools"] == []
+        assert result["wrappers"] == []
 
     @pytest.mark.asyncio
     async def test_m387_clears_skills_with_empty_string_pool(self, config):
         """all briefer wrappers cleared when wrappers key is empty string."""
         response = json.dumps({
             "modules": [],
-            "tools": ["browser: navigate"],
+            "wrappers": ["browser: navigate"],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
-            result = await run_briefer(config, "planner", "task", {"tools": ""})
-        assert result["tools"] == []
+            result = await run_briefer(config, "planner", "task", {"wrappers": ""})
+        assert result["wrappers"] == []
 
     @pytest.mark.asyncio
     async def test_m387_no_skills_returned_passes_through(self, config):
         """when briefer returns no wrappers, nothing to filter."""
         response = json.dumps({
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6679,7 +6679,7 @@ class TestRunBriefer:
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
-        assert result["tools"] == []
+        assert result["wrappers"] == []
 
 
 class TestBrieferSchema:
@@ -6688,7 +6688,7 @@ class TestBrieferSchema:
     def test_schema_validates_valid_briefing(self):
         valid = {
             "modules": ["web", "replan"],
-            "tools": ["browser: navigate"],
+            "wrappers": ["browser: navigate"],
             "context": "some context",
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
@@ -6699,7 +6699,7 @@ class TestBrieferSchema:
     def test_schema_rejects_missing_field(self):
         invalid = {
             "modules": ["web"],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             # missing output_indices and relevant_tags
         }
@@ -6709,7 +6709,7 @@ class TestBrieferSchema:
     def test_schema_rejects_wrong_type(self):
         invalid = {
             "modules": "web",  # should be array
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6722,7 +6722,7 @@ class TestBrieferSchema:
         """empty relevant_tags is valid."""
         valid = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -6848,7 +6848,7 @@ class TestBrieferPlannerIntegration:
         """When briefer succeeds, planner prompt uses selected modules only."""
         briefing = {
             "modules": ["web"],
-            "tools": ["browser"],
+            "wrappers": ["browser"],
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6967,7 +6967,7 @@ class TestBrieferPlannerIntegration:
         """With briefer, raw summary/facts/recent are replaced by synthesized context."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "Synthesized context from briefer.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6998,7 +6998,7 @@ class TestBrieferPlannerIntegration:
         """Keyword-based appendices are still injected even when briefer is active."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "User wants to install a wrapper.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7060,7 +7060,7 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "User asks about infrastructure.",
             "output_indices": [],
             "relevant_tags": ["infra", "cache"],
@@ -7092,7 +7092,7 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "User asks about Python.",
             "output_indices": [],
             "relevant_tags": ["tech-stack"],
@@ -7120,7 +7120,7 @@ class TestBrieferTagRetrieval:
         """empty relevant_tags produces no additional facts section."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "Simple question.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7154,7 +7154,7 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -7181,7 +7181,7 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -7234,7 +7234,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Python version 3.12 deployed", "test", category="project")
 
         briefing = {
-            "modules": [], "tools": [], "exclude_recipes": [],
+            "modules": [], "wrappers": [], "exclude_recipes": [],
             "context": "User asks about their company.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["acmecorp"],
@@ -7264,7 +7264,7 @@ class TestM346BrieferEntityRetrieval:
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
         briefing = {
-            "modules": [], "tools": [], "exclude_recipes": [], "context": "About Flask.",
+            "modules": [], "wrappers": [], "exclude_recipes": [], "context": "About Flask.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["flask"],
         }
@@ -7296,7 +7296,7 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -7325,7 +7325,7 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -7353,7 +7353,7 @@ class TestM346BrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "tools": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                     "exclude_recipes": [], "relevant_entities": [],
                 })
@@ -7372,7 +7372,7 @@ class TestM346BrieferEntityRetrieval:
     async def test_empty_relevant_entities_no_section(self, db):
         """empty relevant_entities produces no entity-matched section."""
         briefing = {
-            "modules": [], "tools": [], "exclude_recipes": [], "context": "Simple.",
+            "modules": [], "wrappers": [], "exclude_recipes": [], "context": "Simple.",
             "output_indices": [], "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         }
@@ -7423,7 +7423,7 @@ class TestM258SysEnvAndGapFiltering:
         """System Environment always included — planner needs registry_hints."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7466,7 +7466,7 @@ class TestM258SysEnvAndGapFiltering:
                 captured_messages.extend(messages)
                 return json.dumps({
                     "modules": [],
-                    "tools": [],
+                    "wrappers": [],
                     "context": "Simple request.",
                     "output_indices": [],
                     "relevant_tags": [],
@@ -7518,7 +7518,7 @@ class TestM266BrowserAvailability:
         """Briefer selects web module, browser not installed → warning present."""
         briefing = {
             "modules": ["web"],
-            "tools": [],
+            "wrappers": [],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7545,7 +7545,7 @@ class TestM266BrowserAvailability:
         """Briefer selects web module, browser IS installed → no warning."""
         briefing = {
             "modules": ["web"],
-            "tools": ["browser — navigate pages"],
+            "wrappers": ["browser — navigate pages"],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7576,7 +7576,7 @@ class TestM266BrowserAvailability:
         """Briefer does NOT select web module → no warning regardless."""
         briefing = {
             "modules": [],
-            "tools": [],
+            "wrappers": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7645,7 +7645,7 @@ class TestM954BuiltinSearchNote:
         """When websearch is in registry but not installed, note is shown."""
         briefing = {
             "modules": [],  # briefer doesn't select web module
-            "tools": [],
+            "wrappers": [],
             "context": "User wants to search for programming languages.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7674,7 +7674,7 @@ class TestM954BuiltinSearchNote:
         """When websearch IS installed, registry_text won't contain it → no note."""
         briefing = {
             "modules": [],
-            "tools": ["websearch — web search"],
+            "wrappers": ["websearch — web search"],
             "context": "User wants to search.",
             "output_indices": [],
             "relevant_tags": [],
@@ -7715,7 +7715,7 @@ class TestM954BuiltinSearchNote:
 
         user_content = msgs[1]["content"]
         # note uses "without any wrapper installation"; Browser Availability
-        # section uses "it requires no tool" — check the M954-specific phrase.
+        # section uses "it requires no wrapper" — check the M954-specific phrase.
         assert "without any wrapper installation" not in user_content
 
     async def test_fallback_path_also_shows_note(self, db):
@@ -7856,7 +7856,7 @@ class TestM1083InstallRoutingHelper:
 
     def test_unknown_named_tool_mode(self):
         route = _classify_install_mode(
-            "installa e usa il tool 'zzz_test_notreal' per analizzare il sistema",
+            "installa e usa il wrapper 'zzz_test_notreal' per analizzare il sistema",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
             installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
@@ -7877,7 +7877,7 @@ class TestM1083InstallRoutingHelper:
             {
                 "mode": "unknown_kiso_wrapper",
                 "target": "zzz_test_notreal",
-                "reason": "user explicitly requested a named tool/plugin not present in current kiso tool context",
+                "reason": "user explicitly requested a named wrapper/plugin not present in current kiso wrapper context",
             },
             {"os": {"pkg_manager": "apt"}},
         )
@@ -7905,7 +7905,7 @@ class TestM1083InstallRoutingHelper:
 
     def test_install_target_normalizes_trailing_punctuation(self):
         route = _classify_install_mode(
-            "sì, installa il tool browser.",
+            "sì, installa il wrapper browser.",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
             installed_wrapper_names=[],
             registry_hint_names={"browser", "aider"},
@@ -7941,7 +7941,7 @@ class TestM261BrieferModuleCoverage:
         """Run build_planner_messages with a briefer that returns given modules."""
         briefing = {
             "modules": modules,
-            "tools": [],
+            "wrappers": [],
             "context": "Briefer context.",
             "output_indices": [],
             "relevant_tags": [],
@@ -8029,7 +8029,7 @@ class TestM261MessengerContextReduction:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "tools": [],
+                    "modules": [], "wrappers": [],
                     "context": "User asked about weather in Rome.",
                     "output_indices": [4, 5],
                     "relevant_tags": [],
@@ -8367,7 +8367,7 @@ class TestM309ReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "tools": [], "context": "ctx",
+            return {"modules": ["core"], "wrappers": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -8393,7 +8393,7 @@ class TestM309ReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "tools": [], "context": "ctx",
+            return {"modules": ["core"], "wrappers": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -8448,7 +8448,7 @@ class TestM272BrieferSimpleConsumers:
 
     def _pool(self):
         return {
-            "tools": "browser: navigate websites",
+            "wrappers": "browser: navigate websites",
             "system_env": "OS: Linux\nArch: x86_64",
             "connectors": "slack: send messages",
             "summary": "User asked about guidance.studio",
@@ -8548,7 +8548,7 @@ class TestM274NoItalianKeywords:
 
 @pytest.mark.asyncio
 class TestM899RegistryToolsInjection:
-    """registry tools always injected into planner context."""
+    """registry wrappers always injected into planner context."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -8561,7 +8561,7 @@ class TestM899RegistryToolsInjection:
         return _make_brain_config()
 
     async def test_registry_tools_in_context_when_uninstalled(self, db):
-        """Planner context includes registry tools when some are uninstalled."""
+        """Planner context includes registry wrappers when some are uninstalled."""
         fake_skills = [{"name": "browser", "version": "1.0", "summary": "Browse", "commands": {}}]
         registry = "- ocr — Image OCR\n- aider — Code editing"
         with patch("kiso.brain.discover_wrappers", return_value=fake_skills), \
@@ -8692,7 +8692,7 @@ class TestM298NoTimeoutPartitioning:
             settings=full_settings(llm_timeout=250),
             raw={},
         )
-        plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"Answer in English. report results","tool":null,"args":null,"expect":null}]}'
+        plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"Answer in English. report results","wrapper":null,"args":null,"expect":null}]}'
         with patch("kiso.llm._http_client") as mock_client:
             mock_client.stream = MagicMock(return_value=_brain_stream_cm(plan_content))
             await call_llm(
@@ -9073,7 +9073,7 @@ class TestM304BrieferModuleValidationSkip:
         """Default: unknown modules are rejected."""
         briefing = {
             "modules": ["nonexistent"],
-            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=True)
@@ -9083,7 +9083,7 @@ class TestM304BrieferModuleValidationSkip:
         """With check_modules=False, any module names pass validation."""
         briefing = {
             "modules": ["hallucinated_module", "another_fake"],
-            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -9093,7 +9093,7 @@ class TestM304BrieferModuleValidationSkip:
         """Even with check_modules=False, modules must be an array."""
         briefing = {
             "modules": "not_a_list",
-            "tools": [], "context": "", "output_indices": [], "relevant_tags": [],
+            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -9103,13 +9103,13 @@ class TestM304BrieferModuleValidationSkip:
         """check_modules=False doesn't skip validation of other fields."""
         briefing = {
             "modules": ["whatever"],
-            "tools": "not_a_list",  # invalid
+            "wrappers": "not_a_list",  # invalid
             "context": None,  # invalid
             "output_indices": [], "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
-        assert any("tools" in e for e in errors)
+        assert any("wrappers" in e for e in errors)
         assert any("context" in e for e in errors)
 
 
@@ -9132,7 +9132,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Messenger briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["install_skill", "navigate_and_summarize"],
-            "tools": [], "context": "About to install browser", "output_indices": [],
+            "wrappers": [], "context": "About to install browser", "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
@@ -9146,7 +9146,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Worker briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["BrowserSkill"],
-            "tools": [], "context": "", "output_indices": [],
+            "wrappers": [], "context": "", "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
@@ -9158,7 +9158,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Planner briefer still rejects unknown module names."""
         response = json.dumps({
             "modules": ["nonexistent_module"],
-            "tools": [], "context": "", "output_indices": [],
+            "wrappers": [], "context": "", "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
@@ -9170,7 +9170,7 @@ class TestM304RunBrieferSimpleConsumers:
         """Messenger briefer with hallucinated modules uses exactly 1 LLM call."""
         response = json.dumps({
             "modules": ["fake_module"],
-            "tools": [], "context": "test", "output_indices": [],
+            "wrappers": [], "context": "test", "output_indices": [],
             "relevant_tags": [],
             "exclude_recipes": [], "relevant_entities": [],
         })
@@ -9477,7 +9477,7 @@ class TestM1052MsgOnlyValidation:
     def test_msg_only_allowed_structural_fallback(self):
         """M1205b: structural fallback cases may legitimately end msg-only."""
         from kiso.brain import _validate_plan_ordering
-        tasks = [{"type": "msg", "detail": "Answer in English. tool unavailable"}]
+        tasks = [{"type": "msg", "detail": "Answer in English. wrapper unavailable"}]
         errors = _validate_plan_ordering(
             tasks, is_replan=False, install_approved=False,
             allow_msg_only=True,
@@ -9525,7 +9525,7 @@ class TestM1052MsgOnlyValidation:
         assert any("msg task must come after" in e for e in errors)
 
     def test_exec_after_tool_rejected_without_run_goal(self):
-        """[tool, exec, msg] rejected when goal doesn't mention running."""
+        """[wrapper, exec, msg] rejected when goal doesn't mention running."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "wrapper", "detail": "create script", "wrapper": "aider",
@@ -9540,7 +9540,7 @@ class TestM1052MsgOnlyValidation:
         assert any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_with_run_goal(self):
-        """[tool, exec, msg] allowed when goal mentions running."""
+        """[wrapper, exec, msg] allowed when goal mentions running."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "wrapper", "detail": "create script", "wrapper": "aider",
@@ -9555,7 +9555,7 @@ class TestM1052MsgOnlyValidation:
         assert not any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_with_test_goal(self):
-        """[tool, exec, msg] allowed when goal mentions testing."""
+        """[wrapper, exec, msg] allowed when goal mentions testing."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "wrapper", "detail": "add multiply method", "wrapper": "aider",
@@ -9570,7 +9570,7 @@ class TestM1052MsgOnlyValidation:
         assert not any("exec immediately after wrapper" in e for e in errors)
 
     def test_exec_after_tool_allowed_in_multistep_workflow(self):
-        """[search, tool, tool, exec, msg] — exec not at position 1, allowed."""
+        """[search, wrapper, wrapper, exec, msg] — exec not at position 1, allowed."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
             {"type": "search", "detail": "find programming languages", "expect": "results"},
@@ -9596,18 +9596,18 @@ class TestM1052MsgOnlyValidation:
         assert any("Plan has only msg tasks" in e for e in errors)
 
     def test_msg_only_allowed_for_unknown_tool_route(self):
-        """M1205b: unknown named-tool routes may resolve to a single msg task."""
+        """M1205b: unknown named-wrapper routes may resolve to a single msg task."""
         plan = {
-            "goal": "Use missing tool",
+            "goal": "Use missing wrapper",
             "secrets": [],
             "tasks": [
-                {"type": "msg", "detail": "Answer in English. missing tool", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. missing wrapper", "expect": None, "wrapper": None, "args": None},
             ],
         }
         errors = validate_plan(
             plan,
             installed_skills=[],
-            install_route={"mode": "unknown_kiso_wrapper", "target": "missing-tool"},
+            install_route={"mode": "unknown_kiso_wrapper", "target": "missing-wrapper"},
         )
         assert not any("Plan has only msg tasks" in e for e in errors)
 
@@ -9682,7 +9682,7 @@ class TestM1303KbAnswerFlag:
     def test_kb_answer_rejects_mixed_plan_with_tool(self):
         """kb_answer=True + wrapper task → coherence rejection."""
         plan = {
-            "goal": "Answer from KB and use a tool",
+            "goal": "Answer from KB and use a wrapper",
             "secrets": [],
             "kb_answer": True,
             "tasks": [
@@ -9756,11 +9756,11 @@ class TestM1303KbAnswerFlag:
     def test_msg_only_allowed_for_unavailable_named_tool_marker(self):
         """M1205b: returned plans remain valid without the original install route context."""
         plan = {
-            "goal": "Use missing tool",
+            "goal": "Use missing wrapper",
             "secrets": [],
             "msg_only_fallback": "unavailable_named_tool",
             "tasks": [
-                {"type": "msg", "detail": "Answer in English. missing tool", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. missing wrapper", "expect": None, "wrapper": None, "args": None},
             ],
         }
         errors = validate_plan(plan, installed_skills=[])
@@ -9885,7 +9885,7 @@ class TestNonActionableExecDetail:
 
     def test_identify_rejected(self):
         errors = validate_plan(self._plan(
-            "Identify required environment variables for the browser tool"
+            "Identify required environment variables for the browser wrapper"
         ))
         assert any("analytical" in e for e in errors)
 
@@ -9919,7 +9919,7 @@ class TestNonActionableExecDetail:
 
 
 class TestInstalledToolExecRouting:
-    """installed kiso tools must be routed via tool tasks, not exec."""
+    """installed kiso wrappers must be routed via wrapper tasks, not exec."""
 
     def _plan(self, detail):
         return {"goal": "test", "tasks": [
@@ -10078,7 +10078,7 @@ class TestRegistryInstallValidation:
 
     def test_kiso_install_with_git_url_accepted(self):
         errors = validate_plan(
-            self._plan("kiso wrapper install https://github.com/someone/my-tool.git"),
+            self._plan("kiso wrapper install https://github.com/someone/my-wrapper.git"),
             registry_hint_names=self._HINTS,
         )
         assert not any("not in the kiso plugin registry" in e for e in errors)
@@ -10142,10 +10142,10 @@ class TestSelfInspectionPlanSemantics:
 
 
 class TestM950ForceMsgOnly:
-    """force_msg_only rejects non-msg tasks after tool-not-in-registry."""
+    """force_msg_only rejects non-msg tasks after wrapper-not-in-registry."""
 
     _MSG_ONLY_PLAN = {"tasks": [
-        {"type": "msg", "detail": "Answer in English. Tool not available"},
+        {"type": "msg", "detail": "Answer in English. Wrapper not available"},
     ]}
     _EXEC_PLAN = {"tasks": [
         {"type": "exec", "detail": "curl registry", "expect": "found"},
@@ -10174,7 +10174,7 @@ class TestM950ForceMsgOnly:
         assert not any("ONLY msg tasks" in e for e in errors)
 
     def test_marker_in_unavailable_error(self):
-        """The unavailable-tool error contains the marker string."""
+        """The unavailable-wrapper error contains the marker string."""
         from kiso.brain import _WRAPPER_UNAVAILABLE_MARKER
         plan = {"tasks": [
             {"type": "wrapper", "detail": "magic", "expect": "ok",
@@ -10215,7 +10215,7 @@ class TestM1198InstallRouteValidation:
             self._exec_msg_plan("Install zzz_test_notreal with apt-get"),
             install_route={"mode": "unknown_kiso_wrapper", "target": "zzz_test_notreal"},
         )
-        assert any("ONLY msg tasks" in e or "not available in the current kiso tool context" in e for e in errors)
+        assert any("ONLY msg tasks" in e or "not available in the current kiso wrapper context" in e for e in errors)
 
     def test_unknown_named_tool_route_rejects_needs_install(self):
         plan = self._msg_only_plan()
@@ -10236,7 +10236,7 @@ class TestM1198InstallRouteValidation:
         assert not any("requires an exec task" in e for e in errors)
 
     def test_approved_kiso_wrapper_route_rejects_unrelated_exec(self):
-        """Exec that doesn't mention the target tool → rejected."""
+        """Exec that doesn't mention the target wrapper → rejected."""
         errors = validate_plan(
             self._exec_msg_plan("Set up the environment"),
             install_approved=True,
@@ -10288,7 +10288,7 @@ class TestM1198InstallRouteValidation:
 class TestM1210ExplicitInstallRequest:
     """explicit user install request allows direct exec without prior approval.
 
-    M1212 fix: natural-language detail (e.g. "Install the browser tool") is
+    M1212 fix: natural-language detail (e.g. "Install the browser wrapper") is
     accepted — the validation no longer requires the shell command pattern.
     """
 
@@ -10297,7 +10297,7 @@ class TestM1210ExplicitInstallRequest:
     _KISO_ROUTE_NO_EXPLICIT = {"mode": "kiso_wrapper", "target": "browser",
                                 "target_installed": False}
 
-    def _install_replan_plan(self, detail="Install the browser tool"):
+    def _install_replan_plan(self, detail="Install the browser wrapper"):
         return {
             "goal": "install browser", "needs_install": None, "tasks": [
                 {"type": "exec", "detail": detail, "expect": "installed"},
@@ -10305,7 +10305,7 @@ class TestM1210ExplicitInstallRequest:
             ],
         }
 
-    def _install_msg_plan(self, detail="Install the browser tool"):
+    def _install_msg_plan(self, detail="Install the browser wrapper"):
         return {
             "goal": "install browser", "needs_install": None, "tasks": [
                 {"type": "exec", "detail": detail, "expect": "installed"},
@@ -10338,7 +10338,7 @@ class TestM1210ExplicitInstallRequest:
     def test_approval_natural_language_detail_accepted(self):
         """install_approved + natural-language detail mentioning target → accepted."""
         errors = validate_plan(
-            self._install_replan_plan(detail="Install the browser tool"),
+            self._install_replan_plan(detail="Install the browser wrapper"),
             install_approved=True,
             install_route=self._KISO_ROUTE_NO_EXPLICIT,
         )
@@ -10355,7 +10355,7 @@ class TestM1210ExplicitInstallRequest:
         assert not any("requires an exec task" in e for e in errors)
 
     def test_exec_without_target_mention_rejected(self):
-        """Exec detail that doesn't mention the target tool → rejected."""
+        """Exec detail that doesn't mention the target wrapper → rejected."""
         plan = self._install_replan_plan(detail="Set up the development environment")
         errors = validate_plan(plan, install_route=self._KISO_ROUTE)
         assert any("is not installed yet" in e for e in errors)
@@ -10369,7 +10369,7 @@ class TestM1210ExplicitInstallRequest:
 
 
 class TestNeedsInstallCoherence:
-    """needs_install + wrapper task for same tool → error."""
+    """needs_install + wrapper task for same wrapper → error."""
 
     def test_tool_in_needs_install_used_as_task_rejected(self):
         plan = {"goal": "test", "needs_install": ["browser"], "tasks": [
@@ -10381,7 +10381,7 @@ class TestNeedsInstallCoherence:
         assert any("needs_install" in e for e in errors)
 
     def test_tool_not_in_needs_install_rejected(self):
-        """needs_install is set → only msg tasks allowed, even if tool not in needs_install."""
+        """needs_install is set → only msg tasks allowed, even if wrapper not in needs_install."""
         plan = {"goal": "test", "needs_install": ["aider"], "tasks": [
             {"type": "wrapper", "detail": "navigate", "wrapper": "browser",
              "args": '{"url": "http://x"}', "expect": "page loaded"},
@@ -10427,7 +10427,7 @@ class TestM984NeedsInstallMsgOnly:
 
     def test_needs_install_with_msg_only_accepted(self):
         plan = {"goal": "Install browser", "needs_install": ["browser"], "tasks": [
-            {"type": "msg", "detail": "Answer in English. Shall I install the browser tool?"},
+            {"type": "msg", "detail": "Answer in English. Shall I install the browser wrapper?"},
         ]}
         errors = validate_plan(plan)
         assert not any("needs_install is set" in e for e in errors)
@@ -10549,7 +10549,7 @@ class TestBuildStrictSchema:
         from kiso.brain import BRIEFER_SCHEMA
         schema = BRIEFER_SCHEMA["json_schema"]["schema"]
         assert set(schema["required"]) == {
-            "modules", "tools", "exclude_recipes", "context", "output_indices",
+            "modules", "wrappers", "exclude_recipes", "context", "output_indices",
             "relevant_tags", "relevant_entities",
         }
 
@@ -10688,8 +10688,8 @@ class TestCompressInstallTurns:
         lines = [
             "[user] root: Use aider to write a script",
             "[kiso] Vuoi installare aider? needs_install...",
-            "[user] root: sì, installa il tool aider",
-            "[kiso] Tool aider installato. Replan...",
+            "[user] root: sì, installa il wrapper aider",
+            "[kiso] Wrapper aider installato. Replan...",
         ]
         result = _compress_install_turns(lines)
         assert len(result) == 2  # original request + compressed install

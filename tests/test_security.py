@@ -445,7 +445,7 @@ class TestRevalidatePermissions:
         assert result.role == "user"
 
     def test_revalidate_skill_name_none_skips_check(self):
-        """wrapper_name=None with task_type='wrapper' skips tool-level check."""
+        """wrapper_name=None with task_type='wrapper' skips wrapper-level check."""
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "wrapper", wrapper_name=None)
         assert result.allowed is True

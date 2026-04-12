@@ -79,8 +79,8 @@ suites already do well.
 - **`kiso_client`** — authenticated httpx AsyncClient wired to the
   FastAPI app via ASGI, with mocked LLM and webhook delivery routed
   through the collector.
-- **`fake_tool`** — fixture that creates a Kiso tool package in a temp
-  dir whose `tool.py` reads stdin as JSON and prints a containment
+- **`fake_tool`** — fixture that creates a Kiso wrapper package in a temp
+  dir whose `wrapper.py` reads stdin as JSON and prints a containment
   report (stdin keys, declared session_secrets, visible env vars). Used
   by M1273 to assert secret containment end-to-end.
 - **`fake_connector_dir`** — fixture that creates a connector directory
@@ -117,7 +117,7 @@ part of the oracle.
 | Circular replan stop | integration `test_replan_stop.py` (M1275) + unit `test_worker.py::TestDetectCircularReplan` (M1229) | blocking semantic |
 | Connector daemon lifecycle | unit `test_supervisor.py` + `test_cli_connector.py::TestConnectorLifecycleMatrix` (M1276) | blocking semantic |
 | Connector install/update/remove health | unit `test_cli_connector.py` (M1277) | blocking semantic |
-| Tool/plugin refresh after install | unit `test_cli_tool.py` (M1278 audit) | blocking semantic |
+| wrapper/plugin refresh after install | unit `test_cli_tool.py` (M1278 audit) | blocking semantic |
 | Negative install paths | unit `test_cli_tool.py::test_skill_install_git_clone_failure_cleanup` + connector counterpart (M1279) | blocking semantic |
 | Registry shape consistency | unit `test_registry.py::TestRegistryJsonShape` (M1280) | blocking semantic |
 | LLM stall → fallback model switch | unit `test_brain.py::test_stall_uses_fallback_model` + neighbors (M1232) | blocking semantic |
@@ -350,7 +350,7 @@ uv run pytest tests/test_brain.py -v
   7  Functional tests        ~55 tests, ~10min
      Single-plan end-to-end: classify → plan → exec → msg
   8  Extended tests          ~15min, nightly
-     Multi-plan orchestration (tool install → use → report)
+     Multi-plan orchestration (wrapper install → use → report)
 
   ── Special ──────────────────────────────────
   9  Interactive tests       requires human at terminal
@@ -436,7 +436,7 @@ with no secrets leaked from the parent process.
 
 **72 tests, ~15 minutes, needs API key.**
 
-Real LLM API calls but everything else is mocked (subprocess, filesystem, tools).
+Real LLM API calls but everything else is mocked (subprocess, filesystem, wrappers).
 Isolates the LLM-compliance question from infrastructure concerns.
 
 Organized by scope: `test_roles.py` (each role in isolation), `test_flows.py`
@@ -453,7 +453,7 @@ coverage for a feature.
 
 **~55 tests, ~10 minutes, Docker + API key.**
 
-Full pipeline end-to-end: real LLM, real subprocess execution, real tool
+Full pipeline end-to-end: real LLM, real subprocess execution, real wrapper
 installation, real file I/O. The most expensive and most realistic level.
 
 Each test sends a natural-language message through `_process_message()` and
@@ -466,13 +466,13 @@ Prefer assertions on side effects and workflow structure:
 - created/reused workspace files
 - published artifacts and URLs
 - persisted DB/session/project state
-- concrete exec/search/tool outputs
+- concrete exec/search/wrapper outputs
 
 Assistant wording checks should be secondary unless the user-facing wording is
 the feature being tested.
 
 **Extended tests** (`@pytest.mark.extended`) include multi-plan tests and
-post-preset workflow tests (tools pre-installed via session fixture).
+post-preset workflow tests (wrappers pre-installed via session fixture).
 Excluded from option 7 and run separately via option 8 or `--extended`.
 
 Post-preset workflows (`test_preset_workflows.py`): install browser/ocr/aider
@@ -518,7 +518,7 @@ Gating logic is in `tests/conftest.py:pytest_collection_modifyitems`.
 ```
 tests/
 ├── conftest.py              # Global fixtures, markers, autouse helpers
-├── _cli_plugin_helpers.py   # Shared parametrize cases for tool/connector CLI
+├── _cli_plugin_helpers.py   # Shared parametrize cases for wrapper/connector CLI
 ├── _cli_user_helpers.py     # Shared user CLI helpers
 │
 ├── test_*.py                # Unit tests (~72 files)

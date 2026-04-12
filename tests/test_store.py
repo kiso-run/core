@@ -1361,7 +1361,7 @@ async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connecti
 
 
 async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connection):
-    """M43: project / tool / general facts are returned regardless of session."""
+    """M43: project / wrapper / general facts are returned regardless of session."""
     await save_fact(db, "Uses FastAPI", "curator", session="session-X", category="project")
     await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="wrapper")
     await save_fact(db, "Async preferred", "curator", session="session-X", category="general")
@@ -2793,19 +2793,19 @@ async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection
     from kiso.store import list_knowledge
     await create_session(db, "s1")
     # Create facts with different categories and tags
-    await save_fact(db, "Flask is a Python web framework tool", "admin",
+    await save_fact(db, "Flask is a Python web framework wrapper", "admin",
                     category="wrapper", tags=["python", "web"])
-    await save_fact(db, "React is a JavaScript UI library tool", "admin",
+    await save_fact(db, "React is a JavaScript UI library wrapper", "admin",
                     category="wrapper", tags=["javascript", "web"])
     await save_fact(db, "Python async programming is a general topic", "admin",
                     category="general", tags=["python"])
 
-    # Combined filter: category=tool AND tag=python → only Flask fact
+    # Combined filter: category=wrapper AND tag=python → only Flask fact
     results = await list_knowledge(db, category="wrapper", tag="python")
     assert len(results) == 1
     assert "Flask" in results[0]["content"]
 
-    # Combined filter: category=tool AND tag=web → both tool facts
+    # Combined filter: category=wrapper AND tag=web → both wrapper facts
     results = await list_knowledge(db, category="wrapper", tag="web")
     assert len(results) == 2
 

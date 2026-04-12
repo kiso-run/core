@@ -1,6 +1,6 @@
-"""End-to-end smoke test for tool args correction via replan.
+"""End-to-end smoke test for wrapper args correction via replan.
 
-Simulates the real failure trace: browser tool is installed, planner sends
+Simulates the real failure trace: browser wrapper is installed, planner sends
 args: null, system detects the error and replans with corrected args.
 """
 
@@ -76,7 +76,7 @@ class TestToolArgsReplanFlow:
         """Full flow: null args → setup fail → replan → corrected args → success."""
         config = make_config()
 
-        # Initial plan: browser tool with null args (bad)
+        # Initial plan: browser wrapper with null args (bad)
         bad_plan = {
             "goal": "Take screenshot",
             "secrets": None,
@@ -88,7 +88,7 @@ class TestToolArgsReplanFlow:
             ],
         }
 
-        # Corrected plan: browser tool with proper args
+        # Corrected plan: browser wrapper with proper args
         good_plan = {
             "goal": "Take screenshot",
             "secrets": None,

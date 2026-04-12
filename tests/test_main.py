@@ -216,7 +216,7 @@ class TestInitKisoDirs:
     # -- All KISO_DIR subdirectories pre-created at init --
 
     def test_creates_tools_directory(self, tmp_path):
-        """_init_kiso_dirs creates tools/ for installed kiso tools."""
+        """_init_kiso_dirs creates wrappers/ for installed kiso wrappers."""
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
         assert (tmp_path / "wrappers").is_dir()

@@ -1,4 +1,4 @@
-"""Tests for kiso/tools.py — tool discovery, validation, and execution."""
+"""Tests for kiso/wrappers.py — wrapper discovery, validation, and execution."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ MINIMAL_TOML = """\
 type = "wrapper"
 name = "echo"
 version = "0.1.0"
-description = "Echo tool"
+description = "Echo wrapper"
 
 [kiso.wrapper]
 summary = "Echoes input back"
@@ -75,7 +75,7 @@ bin = ["curl"]
 
 
 def _create_tool(tmp_path: Path, name: str, toml_content: str) -> Path:
-    """Create a tool directory with kiso.toml, run.py, pyproject.toml."""
+    """Create a wrapper directory with kiso.toml, run.py, pyproject.toml."""
     tool_dir = tmp_path / name
     tool_dir.mkdir()
     (tool_dir / "kiso.toml").write_text(toml_content)
@@ -85,7 +85,7 @@ def _create_tool(tmp_path: Path, name: str, toml_content: str) -> Path:
 
 
 def _write_validator(tool_dir: Path, body: str) -> None:
-    """Write a validator.py file for a fake tool."""
+    """Write a validator.py file for a fake wrapper."""
     (tool_dir / "validator.py").write_text(body)
 
 
@@ -171,7 +171,7 @@ class TestValidateManifest:
         assert any("kiso.name is required" in e for e in errors)
 
     def test_missing_tool_section(self, tmp_path):
-        toml = "[kiso]\ntype = \"tool\"\nname = \"x\"\n"
+        toml = "[kiso]\ntype = \"wrapper\"\nname = \"x\"\n"
         _create_tool(tmp_path, "bad", toml)
         import tomllib
         with open(tmp_path / "bad" / "kiso.toml", "rb") as f:
@@ -305,7 +305,7 @@ class TestEnvVarName:
         assert _env_var_name("search", "api_key") == "KISO_WRAPPER_SEARCH_API_KEY"
 
     def test_with_dashes(self):
-        assert _env_var_name("my-tool", "auth-token") == "KISO_WRAPPER_MY_TOOL_AUTH_TOKEN"
+        assert _env_var_name("my-wrapper", "auth-token") == "KISO_WRAPPER_MY_WRAPPER_AUTH_TOKEN"
 
     def test_uppercase(self):
         assert _env_var_name("Echo", "Key") == "KISO_WRAPPER_ECHO_KEY"
@@ -356,7 +356,7 @@ class TestDiscoverTools:
         assert result == []
 
     def test_logs_scan_path_and_found_tools(self, tmp_path, caplog):
-        """discover_wrappers logs the scanned path and found tool names."""
+        """discover_wrappers logs the scanned path and found wrapper names."""
         import logging
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
@@ -364,17 +364,17 @@ class TestDiscoverTools:
         with caplog.at_level(logging.DEBUG, logger="kiso.wrappers"):
             discover_wrappers(tools_dir)
         assert f"scanning {tools_dir}" in caplog.text
-        assert "found 1 tools: echo" in caplog.text
+        assert "found 1 wrappers: echo" in caplog.text
 
     def test_logs_empty_scan_with_subdirs(self, tmp_path, caplog):
-        """discover_wrappers logs subdirectory names when 0 tools found."""
+        """discover_wrappers logs subdirectory names when 0 wrappers found."""
         import logging
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         (tools_dir / "broken").mkdir()  # no kiso.toml → skipped
         with caplog.at_level(logging.DEBUG, logger="kiso.wrappers"):
             discover_wrappers(tools_dir)
-        assert "0 tools found" in caplog.text
+        assert "0 wrappers found" in caplog.text
         assert "broken" in caplog.text
 
     def test_skips_invalid_manifest(self, tmp_path):
@@ -469,17 +469,17 @@ class TestCheckDeps:
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", MINIMAL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
-        result = check_deps(tool)
+        wrapper = discover_wrappers(tools_dir)[0]
+        result = check_deps(wrapper)
         assert result == []
 
     def test_existing_bin(self, tmp_path):
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "search", FULL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
+        wrapper = discover_wrappers(tools_dir)[0]
         # curl should be available in most test environments
-        result = check_deps(tool)
+        result = check_deps(wrapper)
         # Don't assert empty — curl might not be installed, just ensure it returns a list
         assert isinstance(result, list)
 
@@ -488,8 +488,8 @@ class TestCheckDeps:
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz"]')
         _create_tool(tools_dir, "search", toml)
-        tool = discover_wrappers(tools_dir)[0]
-        result = check_deps(tool)
+        wrapper = discover_wrappers(tools_dir)[0]
+        result = check_deps(wrapper)
         assert "nonexistent_binary_xyz" in result
 
     def test_bin_not_a_list(self, tmp_path):
@@ -497,35 +497,35 @@ class TestCheckDeps:
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = "curl"')
         _create_tool(tools_dir, "search", toml)
-        tool = discover_wrappers(tools_dir)[0]
-        result = check_deps(tool)
+        wrapper = discover_wrappers(tools_dir)[0]
+        result = check_deps(wrapper)
         assert result == []
 
     def test_no_file_io_after_discover(self, tmp_path):
-        """check_deps must not re-read kiso.toml; it uses tool['deps'] from discover_wrappers."""
+        """check_deps must not re-read kiso.toml; it uses wrapper['deps'] from discover_wrappers."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz"]')
         tool_dir = _create_tool(tools_dir, "search", toml)
-        tool = discover_wrappers(tools_dir)[0]
+        wrapper = discover_wrappers(tools_dir)[0]
 
         # Delete kiso.toml — check_deps must still work from in-memory deps
         (tool_dir / "kiso.toml").unlink()
-        result = check_deps(tool)
+        result = check_deps(wrapper)
         assert "nonexistent_binary_xyz" in result
 
     def test_venv_bin_found(self, tmp_path):
-        """check_deps finds binaries in the tool's .venv/bin/ directory."""
+        """check_deps finds binaries in the wrapper's .venv/bin/ directory."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["myfakebin"]')
         tool_dir = _create_tool(tools_dir, "search", toml)
-        tool = discover_wrappers(tools_dir)[0]
+        wrapper = discover_wrappers(tools_dir)[0]
 
         # Binary not on system PATH
-        assert check_deps(tool) == ["myfakebin"]
+        assert check_deps(wrapper) == ["myfakebin"]
 
-        # Create it in tool's .venv/bin/
+        # Create it in wrapper's .venv/bin/
         venv_bin = tool_dir / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
         fake_bin = venv_bin / "myfakebin"
@@ -533,24 +533,24 @@ class TestCheckDeps:
         fake_bin.chmod(0o755)
 
         # Now check_deps should find it
-        assert check_deps(tool) == []
+        assert check_deps(wrapper) == []
 
     def test_discover_includes_deps_key(self, tmp_path):
         """discover_wrappers must include 'deps' key with the manifest's [kiso.deps] section."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "search", FULL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
-        assert "deps" in tool
-        assert tool["deps"].get("bin") == ["curl"]
+        wrapper = discover_wrappers(tools_dir)[0]
+        assert "deps" in wrapper
+        assert wrapper["deps"].get("bin") == ["curl"]
 
     def test_discover_deps_empty_when_absent(self, tmp_path):
         """discover_wrappers returns empty deps dict when [kiso.deps] is not in kiso.toml."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", MINIMAL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
-        assert tool["deps"] == {}
+        wrapper = discover_wrappers(tools_dir)[0]
+        assert wrapper["deps"] == {}
 
     def test_discover_healthy_when_deps_present(self, tmp_path):
         """Wrapper with all binary deps present is healthy=True."""
@@ -558,9 +558,9 @@ class TestCheckDeps:
         tools_dir.mkdir()
         # FULL_TOML requires bin=["curl"] — curl should be available in test env
         _create_tool(tools_dir, "search", FULL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
-        assert tool["healthy"] is True
-        assert tool["missing_deps"] == []
+        wrapper = discover_wrappers(tools_dir)[0]
+        assert wrapper["healthy"] is True
+        assert wrapper["missing_deps"] == []
 
     def test_discover_unhealthy_when_deps_missing(self, tmp_path):
         """Wrapper with missing binary deps is healthy=False."""
@@ -568,24 +568,24 @@ class TestCheckDeps:
         tools_dir.mkdir()
         toml = FULL_TOML.replace('bin = ["curl"]', 'bin = ["nonexistent_binary_xyz_12345"]')
         _create_tool(tools_dir, "search", toml)
-        tool = discover_wrappers(tools_dir)[0]
-        assert tool["healthy"] is False
-        assert "nonexistent_binary_xyz_12345" in tool["missing_deps"]
+        wrapper = discover_wrappers(tools_dir)[0]
+        assert wrapper["healthy"] is False
+        assert "nonexistent_binary_xyz_12345" in wrapper["missing_deps"]
 
     def test_discover_healthy_no_deps_declared(self, tmp_path):
         """Wrapper with no [kiso.deps].bin is healthy=True."""
         tools_dir = tmp_path / "wrappers"
         tools_dir.mkdir()
         _create_tool(tools_dir, "echo", MINIMAL_TOML)
-        tool = discover_wrappers(tools_dir)[0]
-        assert tool["healthy"] is True
-        assert tool["missing_deps"] == []
+        wrapper = discover_wrappers(tools_dir)[0]
+        assert wrapper["healthy"] is True
+        assert wrapper["missing_deps"] == []
 
 
 # --- build_planner_wrapper_list ---
 
 class TestBuildPlannerToolList:
-    def _make_tool(self, name="echo", summary="Echo tool", args_schema=None):
+    def _make_wrapper(self, name="echo", summary="Echo wrapper", args_schema=None):
         return {
             "name": name,
             "summary": summary,
@@ -601,30 +601,30 @@ class TestBuildPlannerToolList:
         assert build_planner_wrapper_list([]) == ""
 
     def test_admin_sees_all(self):
-        tools = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
-        result = build_planner_wrapper_list(tools, "admin")
+        wrappers = [self._make_wrapper("a", "Wrapper A"), self._make_wrapper("b", "Wrapper B")]
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "- a — Wrapper A" in result
         assert "- b — Wrapper B" in result
 
     def test_user_star_sees_all(self):
-        tools = [self._make_tool("a", "Wrapper A")]
-        result = build_planner_wrapper_list(tools, "user", "*")
+        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        result = build_planner_wrapper_list(wrappers, "user", "*")
         assert "- a — Wrapper A" in result
 
     def test_user_list_filters(self):
-        tools = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
-        result = build_planner_wrapper_list(tools, "user", ["a"])
+        wrappers = [self._make_wrapper("a", "Wrapper A"), self._make_wrapper("b", "Wrapper B")]
+        result = build_planner_wrapper_list(wrappers, "user", ["a"])
         assert "- a — Wrapper A" in result
         assert "- b — Wrapper B" not in result
 
     def test_user_empty_list(self):
-        tools = [self._make_tool("a", "Wrapper A")]
-        result = build_planner_wrapper_list(tools, "user", [])
+        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        result = build_planner_wrapper_list(wrappers, "user", [])
         assert result == ""
 
     def test_user_none_tools(self):
-        tools = [self._make_tool("a", "Wrapper A")]
-        result = build_planner_wrapper_list(tools, "user", None)
+        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        result = build_planner_wrapper_list(wrappers, "user", None)
         assert result == ""
 
     def test_includes_args_schema(self):
@@ -632,26 +632,26 @@ class TestBuildPlannerToolList:
             "query": {"type": "string", "required": True, "description": "search query"},
             "limit": {"type": "int", "required": False, "default": 5, "description": "max results"},
         }
-        tools = [self._make_tool("search", "Search", schema)]
-        result = build_planner_wrapper_list(tools, "admin")
+        wrappers = [self._make_wrapper("search", "Search", schema)]
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "query (string, required): search query" in result
         assert "limit (int, optional, default=5): max results" in result
 
     def test_header_present(self):
-        tools = [self._make_tool()]
-        result = build_planner_wrapper_list(tools, "admin")
-        assert result.startswith("Available tools:")
+        wrappers = [self._make_wrapper()]
+        result = build_planner_wrapper_list(wrappers, "admin")
+        assert result.startswith("Available wrappers:")
 
     def test_planner_list_includes_guide(self):
-        tool = self._make_tool()
-        tool["usage_guide"] = "Use short queries"
-        result = build_planner_wrapper_list([tool], "admin")
+        wrapper = self._make_wrapper()
+        wrapper["usage_guide"] = "Use short queries"
+        result = build_planner_wrapper_list([wrapper], "admin")
         assert "guide: Use short queries" in result
 
     def test_planner_list_no_guide(self):
-        tool = self._make_tool()
-        tool["usage_guide"] = ""
-        result = build_planner_wrapper_list([tool], "admin")
+        wrapper = self._make_wrapper()
+        wrapper["usage_guide"] = ""
+        result = build_planner_wrapper_list([wrapper], "admin")
         assert "guide:" not in result
 
     def test_optional_args_trimmed(self):
@@ -664,8 +664,8 @@ class TestBuildPlannerToolList:
             "opt_d": {"type": "string", "required": False, "description": "optional D"},
             "opt_e": {"type": "string", "required": False, "description": "optional E"},
         }
-        tools = [self._make_tool("browser", "Browser tool", schema)]
-        result = build_planner_wrapper_list(tools, "admin")
+        wrappers = [self._make_wrapper("browser", "Browser wrapper", schema)]
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "url (string, required)" in result
         assert "opt_a" in result
         assert "opt_b" in result
@@ -680,38 +680,38 @@ class TestBuildPlannerToolList:
             "url": {"type": "string", "required": True, "description": "target URL"},
             "opt_a": {"type": "string", "required": False, "description": "optional A"},
         }
-        tools = [self._make_tool("browser", "Browser tool", schema)]
-        result = build_planner_wrapper_list(tools, "admin")
+        wrappers = [self._make_wrapper("browser", "Browser wrapper", schema)]
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "opt_a" in result
         assert "more optional" not in result
 
     def test_unhealthy_tool_shows_broken_annotation(self):
-        tool = self._make_tool("browser", "Browser automation")
-        tool["healthy"] = False
-        tool["missing_deps"] = ["playwright"]
-        result = build_planner_wrapper_list([tool], "admin")
+        wrapper = self._make_wrapper("browser", "Browser automation")
+        wrapper["healthy"] = False
+        wrapper["missing_deps"] = ["playwright"]
+        result = build_planner_wrapper_list([wrapper], "admin")
         assert "[BROKEN" in result
         assert "missing: playwright" in result
         assert "kiso wrapper remove browser" in result
         assert "kiso wrapper install browser" in result
 
     def test_healthy_tool_no_broken_annotation(self):
-        tool = self._make_tool("browser", "Browser automation")
-        tool["healthy"] = True
-        tool["missing_deps"] = []
-        result = build_planner_wrapper_list([tool], "admin")
+        wrapper = self._make_wrapper("browser", "Browser automation")
+        wrapper["healthy"] = True
+        wrapper["missing_deps"] = []
+        result = build_planner_wrapper_list([wrapper], "admin")
         assert "- browser — Browser automation" in result
         assert "[BROKEN" not in result
 
     def test_mixed_healthy_and_unhealthy(self):
-        healthy = self._make_tool("echo", "Echo tool")
+        healthy = self._make_wrapper("echo", "Echo wrapper")
         healthy["healthy"] = True
         healthy["missing_deps"] = []
-        broken = self._make_tool("browser", "Browser automation")
+        broken = self._make_wrapper("browser", "Browser automation")
         broken["healthy"] = False
         broken["missing_deps"] = ["playwright", "chromium"]
         result = build_planner_wrapper_list([healthy, broken], "admin")
-        assert "- echo — Echo tool" in result
+        assert "- echo — Echo wrapper" in result
         assert "[BROKEN" in result
         assert "playwright, chromium" in result
 
@@ -721,27 +721,27 @@ class TestBuildPlannerToolList:
 
 class TestBuildPlannerToolListSelectedNames:
     def test_selected_gets_full_guide(self):
-        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
-        result = build_planner_wrapper_list(tools, selected_names={"browser"})
+        wrappers = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
+        result = build_planner_wrapper_list(wrappers, selected_names={"browser"})
         assert "Full guide here" in result
 
     def test_non_selected_omits_guide(self):
-        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
-        result = build_planner_wrapper_list(tools, selected_names={"other"})
+        wrappers = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide here", "healthy": True, "consumes": []}]
+        result = build_planner_wrapper_list(wrappers, selected_names={"other"})
         assert "Full guide here" not in result
         assert "browser" in result  # still listed
 
     def test_none_selected_includes_all_guides(self):
-        tools = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide", "healthy": True, "consumes": []}]
-        result = build_planner_wrapper_list(tools, selected_names=None)
+        wrappers = [{"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Full guide", "healthy": True, "consumes": []}]
+        result = build_planner_wrapper_list(wrappers, selected_names=None)
         assert "Full guide" in result
 
     def test_mixed_selection(self):
-        tools = [
+        wrappers = [
             {"name": "browser", "summary": "Browse", "args_schema": {}, "usage_guide": "Browser guide", "healthy": True, "consumes": []},
             {"name": "aider", "summary": "Code", "args_schema": {}, "usage_guide": "Aider guide", "healthy": True, "consumes": []},
         ]
-        result = build_planner_wrapper_list(tools, selected_names={"browser"})
+        result = build_planner_wrapper_list(wrappers, selected_names={"browser"})
         assert "Browser guide" in result
         assert "Aider guide" not in result
         assert "aider" in result  # name still listed
@@ -823,11 +823,11 @@ class TestValidateToolArgs:
 class TestToolSemanticValidationHooks:
     def test_no_validator_fallback(self, tmp_path):
         _create_tool(tmp_path, "echo", MINIMAL_TOML)
-        tool = discover_wrappers(tmp_path)[0]
+        wrapper = discover_wrappers(tmp_path)[0]
 
-        assert _load_wrapper_validator(tool) is None
-        assert validate_wrapper_args_semantic(tool, {"text": "hi"}) == []
-        assert repair_wrapper_args(tool, {"text": "hi"}) == {"text": "hi"}
+        assert _load_wrapper_validator(wrapper) is None
+        assert validate_wrapper_args_semantic(wrapper, {"text": "hi"}) == []
+        assert repair_wrapper_args(wrapper, {"text": "hi"}) == {"text": "hi"}
 
     def test_validator_errors_are_returned(self, tmp_path):
         tool_dir = _create_tool(tmp_path, "echo", MINIMAL_TOML)
@@ -839,9 +839,9 @@ class TestToolSemanticValidationHooks:
             "    return []\n",
         )
         invalidate_wrappers_cache()
-        tool = discover_wrappers(tmp_path)[0]
+        wrapper = discover_wrappers(tmp_path)[0]
 
-        errors = validate_wrapper_args_semantic(tool, {"text": "bad"}, {"phase": "planner"})
+        errors = validate_wrapper_args_semantic(wrapper, {"text": "bad"}, {"phase": "planner"})
 
         assert errors == ["text is semantically invalid"]
 
@@ -856,9 +856,9 @@ class TestToolSemanticValidationHooks:
             "    return repaired\n",
         )
         invalidate_wrappers_cache()
-        tool = discover_wrappers(tmp_path)[0]
+        wrapper = discover_wrappers(tmp_path)[0]
 
-        repaired = repair_wrapper_args(tool, {"text": "  hi  "}, {"phase": "worker"})
+        repaired = repair_wrapper_args(wrapper, {"text": "  hi  "}, {"phase": "worker"})
 
         assert repaired == {"text": "hi"}
 
@@ -870,14 +870,14 @@ class TestToolSemanticValidationHooks:
             "    return []\n",
         )
         invalidate_wrappers_cache()
-        tool = discover_wrappers(tmp_path)[0]
+        wrapper = discover_wrappers(tmp_path)[0]
 
         with patch(
             "kiso.wrappers.importlib.util.spec_from_file_location",
             wraps=importlib.util.spec_from_file_location,
         ) as mock_spec:
-            assert _load_wrapper_validator(tool) is not None
-            assert _load_wrapper_validator(tool) is not None
+            assert _load_wrapper_validator(wrapper) is not None
+            assert _load_wrapper_validator(wrapper) is not None
 
         assert mock_spec.call_count == 1
 
@@ -891,10 +891,10 @@ class TestToolSemanticValidationHooks:
             "    return 'not-a-dict'\n",
         )
         invalidate_wrappers_cache()
-        tool = discover_wrappers(tmp_path)[0]
+        wrapper = discover_wrappers(tmp_path)[0]
 
-        assert validate_wrapper_args_semantic(tool, {"text": "hi"}) == []
-        assert repair_wrapper_args(tool, {"text": "hi"}) == {"text": "hi"}
+        assert validate_wrapper_args_semantic(wrapper, {"text": "hi"}) == []
+        assert repair_wrapper_args(wrapper, {"text": "hi"}) == {"text": "hi"}
 
     def test_different_tools_keep_distinct_validator_behavior(self, tmp_path):
         first_dir = _create_tool(tmp_path, "first", MINIMAL_TOML.replace('name = "echo"', 'name = "first"'))
@@ -910,18 +910,18 @@ class TestToolSemanticValidationHooks:
             "    return ['second validator']\n",
         )
         invalidate_wrappers_cache()
-        tools = {tool["name"]: tool for tool in discover_wrappers(tmp_path)}
+        wrappers = {w["name"]: w for w in discover_wrappers(tmp_path)}
 
-        assert validate_wrapper_args_semantic(tools["first"], {"text": "hi"}) == ["first validator"]
-        assert validate_wrapper_args_semantic(tools["second"], {"text": "hi"}) == ["second validator"]
+        assert validate_wrapper_args_semantic(wrappers["first"], {"text": "hi"}) == ["first validator"]
+        assert validate_wrapper_args_semantic(wrappers["second"], {"text": "hi"}) == ["second validator"]
 
     def test_aider_validator_rejects_mixed_instruction_like_file_entries(self):
         tool_dir = (
             Path(__file__).resolve().parents[2]
             / "plugins"
-            / "tool-aider"
+            / "wrapper-aider"
         )
-        tool = {
+        wrapper = {
             "name": "aider",
             "path": str(tool_dir),
             "args_schema": {
@@ -934,7 +934,7 @@ class TestToolSemanticValidationHooks:
         }
 
         errors = validate_wrapper_args_semantic(
-            tool,
+            wrapper,
             {
                 "message": "Create the script",
                 "files": "text_stats.py, Write a Python script that reads stdin and prints counts.",
@@ -948,9 +948,9 @@ class TestToolSemanticValidationHooks:
         tool_dir = (
             Path(__file__).resolve().parents[2]
             / "plugins"
-            / "tool-aider"
+            / "wrapper-aider"
         )
-        tool = {
+        wrapper = {
             "name": "aider",
             "path": str(tool_dir),
             "args_schema": {
@@ -963,7 +963,7 @@ class TestToolSemanticValidationHooks:
         }
 
         errors = validate_wrapper_args_semantic(
-            tool,
+            wrapper,
             {
                 "message": "Update the implementation",
                 "files": "text_stats.py, tests/test_text_stats.py",
@@ -1092,7 +1092,7 @@ class TestCoerceValue:
 # --- build_wrapper_input ---
 
 class TestBuildToolInput:
-    def _make_tool(self, session_secrets=None):
+    def _make_wrapper(self, session_secrets=None):
         return {
             "name": "echo",
             "summary": "Echo",
@@ -1105,8 +1105,8 @@ class TestBuildToolInput:
         }
 
     def test_basic_input(self):
-        tool = self._make_tool()
-        result = build_wrapper_input(tool, {"text": "hi"}, "sess1", "/workspace")
+        wrapper = self._make_wrapper()
+        result = build_wrapper_input(wrapper, {"text": "hi"}, "sess1", "/workspace")
         assert result["args"] == {"text": "hi"}
         assert result["session"] == "sess1"
         assert result["workspace"] == "/workspace"
@@ -1114,27 +1114,27 @@ class TestBuildToolInput:
         assert result["plan_outputs"] == []
 
     def test_with_plan_outputs(self):
-        tool = self._make_tool()
+        wrapper = self._make_wrapper()
         outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "a\nb", "status": "done"}]
-        result = build_wrapper_input(tool, {}, "sess1", "/ws", plan_outputs=outputs)
+        result = build_wrapper_input(wrapper, {}, "sess1", "/ws", plan_outputs=outputs)
         assert result["plan_outputs"] == outputs
 
     def test_scoped_session_secrets(self):
-        tool = self._make_tool(session_secrets=["api_token"])
+        wrapper = self._make_wrapper(session_secrets=["api_token"])
         secrets = {"api_token": "tok_123", "other_secret": "should_not_appear"}
-        result = build_wrapper_input(tool, {}, "sess1", "/ws", session_secrets=secrets)
+        result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=secrets)
         assert result["session_secrets"] == {"api_token": "tok_123"}
         assert "other_secret" not in result["session_secrets"]
 
     def test_no_declared_secrets_scoped_empty(self):
-        tool = self._make_tool(session_secrets=[])
+        wrapper = self._make_wrapper(session_secrets=[])
         secrets = {"api_token": "tok_123"}
-        result = build_wrapper_input(tool, {}, "sess1", "/ws", session_secrets=secrets)
+        result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=secrets)
         assert result["session_secrets"] == {}
 
     def test_none_session_secrets(self):
-        tool = self._make_tool(session_secrets=["api_token"])
-        result = build_wrapper_input(tool, {}, "sess1", "/ws", session_secrets=None)
+        wrapper = self._make_wrapper(session_secrets=["api_token"])
+        result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=None)
         assert result["session_secrets"] == {}
 
 
@@ -1142,43 +1142,43 @@ class TestBuildToolInput:
 
 class TestBuildToolEnv:
     def test_basic_env(self):
-        tool = {"name": "echo", "env": {}}
+        wrapper = {"name": "echo", "env": {}}
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert "PATH" in env
         assert len(env) == 1
 
     def test_env_var_present(self):
-        tool = {"name": "search", "env": {"api_key": {"required": True}}}
+        wrapper = {"name": "search", "env": {"api_key": {"required": True}}}
         with patch.dict(os.environ, {"KISO_WRAPPER_SEARCH_API_KEY": "sk-123"}):
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert env["KISO_WRAPPER_SEARCH_API_KEY"] == "sk-123"
 
     def test_env_var_missing_required(self):
-        tool = {"name": "search", "env": {"api_key": {"required": True}}}
+        wrapper = {"name": "search", "env": {"api_key": {"required": True}}}
         # Remove the var if set
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         # Should not include missing var, just PATH
         assert "KISO_WRAPPER_SEARCH_API_KEY" not in env
 
     def test_env_var_missing_optional(self):
-        tool = {"name": "search", "env": {"api_key": {"required": False}}}
+        wrapper = {"name": "search", "env": {"api_key": {"required": False}}}
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert "KISO_WRAPPER_SEARCH_API_KEY" not in env
 
     def test_venv_bin_in_path(self, tmp_path):
-        """Tool's .venv/bin/ is prepended to PATH so pip-installed CLIs are found."""
-        tool = {"name": "browser", "env": {}, "path": str(tmp_path / "wrappers" / "browser")}
-        env = build_wrapper_env(tool)
+        """Wrapper's .venv/bin/ is prepended to PATH so pip-installed CLIs are found."""
+        wrapper = {"name": "browser", "env": {}, "path": str(tmp_path / "wrappers" / "browser")}
+        env = build_wrapper_env(wrapper)
         assert env["PATH"].startswith(str(tmp_path / "wrappers" / "browser" / ".venv" / "bin"))
 
     def test_multiple_env_vars(self):
-        tool = {
+        wrapper = {
             "name": "search",
             "env": {
                 "api_key": {"required": True},
@@ -1189,32 +1189,32 @@ class TestBuildToolEnv:
             "KISO_WRAPPER_SEARCH_API_KEY": "key1",
             "KISO_WRAPPER_SEARCH_TOKEN": "tok1",
         }):
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert env["KISO_WRAPPER_SEARCH_API_KEY"] == "key1"
         assert env["KISO_WRAPPER_SEARCH_TOKEN"] == "tok1"
 
 
     def test_no_fallback_when_neither_set(self):
         """Var missing when not set — warning logged."""
-        tool = {"name": "aider", "env": {"api_key": {"required": True}}}
+        wrapper = {"name": "aider", "env": {"api_key": {"required": True}}}
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert "KISO_WRAPPER_AIDER_API_KEY" not in env
 
     def test_llm_api_key_propagated(self):
-        """Base LLM key is included in tool env when set."""
-        tool = {"name": "echo", "env": {}}
+        """Base LLM key is included in wrapper env when set."""
+        wrapper = {"name": "echo", "env": {}}
         with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-base-key"}):
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert env["KISO_LLM_API_KEY"] == "sk-base-key"
 
     def test_llm_api_key_not_included_when_unset(self):
         """Base LLM key is omitted when not set — no empty string leak."""
-        tool = {"name": "echo", "env": {}}
+        wrapper = {"name": "echo", "env": {}}
         with patch.dict(os.environ, {}, clear=True):
             os.environ["PATH"] = "/usr/bin"
-            env = build_wrapper_env(tool)
+            env = build_wrapper_env(wrapper)
         assert "KISO_LLM_API_KEY" not in env
 
 
@@ -1233,14 +1233,14 @@ class TestDiscoverToolsCache:
             result1 = discover_wrappers()
             assert len(result1) == 1
 
-            # Install a second tool — without invalidation, still see cached result
+            # Install a second wrapper — without invalidation, still see cached result
             _create_tool(tools_dir, "newtool", MINIMAL_TOML.replace(
                 'name = "echo"', 'name = "newtool"'
             ))
             result2 = discover_wrappers()
             assert len(result2) == 1  # still cached
 
-            # After invalidation, new tool is visible
+            # After invalidation, new wrapper is visible
             invalidate_wrappers_cache()
             result3 = discover_wrappers()
             assert len(result3) == 2
@@ -1271,9 +1271,9 @@ class TestDiscoverToolsCache:
 
 
 class TestM826ConsumesField:
-    """consumes field in kiso.toml → file routing in planner tool list."""
+    """consumes field in kiso.toml → file routing in planner wrapper list."""
 
-    def _make_tool(self, name, summary, consumes=None):
+    def _make_wrapper(self, name, summary, consumes=None):
         return {
             "name": name,
             "summary": summary,
@@ -1287,51 +1287,51 @@ class TestM826ConsumesField:
         }
 
     def test_tools_with_consumes_generate_routing(self):
-        """Tools with consumes → 'File processing' section in tool list."""
-        tools = [
-            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
-            self._make_tool("docreader", "Read documents", consumes=["document"]),
-            self._make_tool("transcriber", "Transcribe audio", consumes=["audio"]),
+        """Wrappers with consumes → 'File processing' section in wrapper list."""
+        wrappers = [
+            self._make_wrapper("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_wrapper("docreader", "Read documents", consumes=["document"]),
+            self._make_wrapper("transcriber", "Transcribe audio", consumes=["audio"]),
         ]
-        result = build_planner_wrapper_list(tools, "admin")
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" in result
         assert "image files → ocr (Image OCR)" in result
         assert "document files → docreader (Read documents)" in result
         assert "audio files → transcriber (Transcribe audio)" in result
 
     def test_no_consumes_no_section(self):
-        """Tools without consumes → no 'File processing' section."""
-        tools = [
-            self._make_tool("browser", "Navigate pages"),
-            self._make_tool("websearch", "Search the web"),
+        """Wrappers without consumes → no 'File processing' section."""
+        wrappers = [
+            self._make_wrapper("browser", "Navigate pages"),
+            self._make_wrapper("websearch", "Search the web"),
         ]
-        result = build_planner_wrapper_list(tools, "admin")
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" not in result
 
     def test_mixed_tools(self):
-        """Mix of tools with/without consumes → only declared types shown."""
-        tools = [
-            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
-            self._make_tool("browser", "Navigate pages"),
+        """Mix of wrappers with/without consumes → only declared types shown."""
+        wrappers = [
+            self._make_wrapper("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_wrapper("browser", "Navigate pages"),
         ]
-        result = build_planner_wrapper_list(tools, "admin")
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" in result
         assert "image files → ocr" in result
         assert "web_page" not in result  # browser has no consumes
 
     def test_multiple_tools_same_type(self):
-        """Two tools consuming image → both listed on same line."""
-        tools = [
-            self._make_tool("ocr", "Extract text from images", consumes=["image"]),
-            self._make_tool("describe", "Describe image contents", consumes=["image"]),
+        """Two wrappers consuming image → both listed on same line."""
+        wrappers = [
+            self._make_wrapper("ocr", "Extract text from images", consumes=["image"]),
+            self._make_wrapper("describe", "Describe image contents", consumes=["image"]),
         ]
-        result = build_planner_wrapper_list(tools, "admin")
+        result = build_planner_wrapper_list(wrappers, "admin")
         assert "image files →" in result
         assert "ocr" in result
         assert "describe" in result
 
     def test_discover_wrappers_parses_consumes(self, tmp_path):
-        """discover_wrappers() includes consumes in tool info dict."""
+        """discover_wrappers() includes consumes in wrapper info dict."""
         tool_dir = tmp_path / "wrappers" / "ocr"
         tool_dir.mkdir(parents=True)
         (tool_dir / "run.py").write_text("pass")
@@ -1341,7 +1341,7 @@ class TestM826ConsumesField:
 type = "wrapper"
 name = "ocr"
 version = "0.1.0"
-description = "OCR tool"
+description = "OCR wrapper"
 
 [kiso.wrapper]
 summary = "Extract text from images"
@@ -1367,7 +1367,7 @@ file_path = { type = "string", required = true, description = "path to image" }
 type = "wrapper"
 name = "exotic"
 version = "0.1.0"
-description = "Exotic tool"
+description = "Exotic wrapper"
 
 [kiso.wrapper]
 summary = "Process exotic formats"
