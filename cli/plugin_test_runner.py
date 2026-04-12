@@ -55,7 +55,7 @@ def _cprint(text: str, color: str) -> None:
 
 
 def _git_url(plugin_type: str, name: str) -> str:
-    prefix = "tool-" if plugin_type == "tool" else "connector-"
+    prefix = "wrapper-" if plugin_type == "wrapper" else "connector-"
     return f"https://github.com/{OFFICIAL_ORG}/{prefix}{name}.git"
 
 
