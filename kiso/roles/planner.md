@@ -90,11 +90,11 @@ Web interaction:
 
 <!-- MODULE: kiso_commands -->
 Kiso management commands (exec tasks):
-- Tools: `kiso wrapper install|update|remove|list|search|test <name>`
+- Wrappers: `kiso wrapper install|update|remove|list|search|test <name>` (NO `inspect` — these are the only 6 valid subcommands)
 - Connectors: `kiso connector install|update|remove|run|stop|status|list|search|test <name>`
 - Recipes: `kiso recipe install|remove|list <name>`
 - Env: `kiso env set KEY VALUE | get KEY | list | delete KEY | reload`
-- Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--tools t1,t2] [--alias conn:id]`
+- Users (admin): `kiso user add|edit|remove|list <name> --role admin|user [--wrappers w1,w2] [--alias conn:id]`
 - Sessions: `kiso sessions [--user NAME]` | `kiso session create <name> [--description "..."]`
 - Knowledge: `kiso knowledge list` | `search "query"` | `remove <id>` | `import file.md` | `export`
   Single facts: set `knowledge: ["fact"]` in the plan. Bulk: exec `kiso knowledge import file.md`.
