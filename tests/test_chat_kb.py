@@ -22,13 +22,9 @@ from kiso.store import (
 )
 from kiso.worker.loop import (
     _CHAT_KB_FALLBACK_MSGS,
-    _PLAN_TO_CHAT_KB_PROMOTE_MSGS,
     _chat_kb_preflight_fallback,
     _fast_path_chat,
-    _has_imperative_prefix,
-    _looks_like_question,
     _msg_task,
-    _plan_chat_kb_preflight_promotion,
 )
 from tests.conftest import full_settings, full_models
 
@@ -262,220 +258,45 @@ class TestChatKBPreflightFallback:
         assert _CHAT_KB_FALLBACK_MSGS["English"] in output
 
 
-class TestPlanChatKbPromotion:
-    """M1299: pre-flight promotion plan/investigate → chat_kb when KB has matches."""
+class TestClassifierIsAuthoritative:
+    """The classifier's plan/investigate/chat_kb decision is authoritative.
 
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        from kiso.store import create_plan
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        plan_id = await create_plan(conn, "sess1", 1, "Thinking...")
-        conn._test_plan_id = plan_id  # type: ignore[attr-defined]
-        yield conn
-        await conn.close()
+    No pre-flight keyword match against the facts store may override a
+    plan/investigate classification into chat_kb. Keyword matching is a
+    weaker signal than full-message LLM semantic reasoning and must not
+    reverse it. The symmetric fallback (chat_kb + empty KB → investigate)
+    is preserved: it refines, not contradicts, the classifier.
+    """
 
-    async def _list_msg_tasks(self, db, plan_id):
-        from kiso.store import get_tasks_for_plan
-        tasks = await get_tasks_for_plan(db, plan_id)
-        return [t for t in tasks if t.get("type") == "msg"]
+    def test_no_plan_to_chat_kb_promotion_symbols_in_loop(self):
+        """Guard against regression: the removed promotion function and its
+        supporting helpers/messages must not be re-introduced in the worker
+        loop. A future refactor that re-adds any of these names restores
+        the evidence-hierarchy inversion bug."""
+        from kiso.worker import loop as loop_mod
 
-    # ---- imperative / question gates (pure helpers) -----------------
-
-    def test_question_helper_detects_question_mark(self):
-        assert _looks_like_question("che framework usa il progetto?") is True
-        assert _looks_like_question("what is X?") is True
-
-    def test_question_helper_detects_question_word_no_qmark(self):
-        assert _looks_like_question("cosa sai di flask") is True
-        assert _looks_like_question("what is flask") is True
-        assert _looks_like_question("qué es flask") is True
-
-    def test_question_helper_rejects_declarative(self):
-        assert _looks_like_question("il progetto è in flask") is False
-        assert _looks_like_question("flask is great") is False
-        assert _looks_like_question("") is False
-
-    def test_imperative_helper_detects_en_it_es(self):
-        assert _has_imperative_prefix("delete the flask config") is True
-        assert _has_imperative_prefix("install flask") is True
-        assert _has_imperative_prefix("ricordati che usa flask") is True
-        assert _has_imperative_prefix("crea un file") is True
-        assert _has_imperative_prefix("ejecuta el script") is True
-
-    def test_imperative_helper_rejects_questions(self):
-        assert _has_imperative_prefix("che framework usa?") is False
-        assert _has_imperative_prefix("what framework?") is False
-        assert _has_imperative_prefix("") is False
-
-    # ---- promotion gate -----------------------------------------------
-
-    async def test_promotes_question_when_kb_has_match(self, db):
-        """Question + KB match + non-imperative → promotion fires."""
-        config = _config()
-        eid = await find_or_create_entity(db, "flask", "wrapper")
-        await save_fact(
-            db, "Flask is a lightweight Python web framework",
-            source="curator", session=None, category="general",
-            tags=["python", "web"], entity_id=eid,
-        )
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="che framework usa il progetto corrente?",
-                user_lang="Italian",
-            )
-
-        assert triggered is True
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert len(msg_tasks) == 1
-        assert _PLAN_TO_CHAT_KB_PROMOTE_MSGS["Italian"] in (msg_tasks[0].get("output") or "")
-
-    async def test_does_not_promote_imperative_even_if_kb_match(self, db):
-        """Imperative prefix → never promote even when KB matches."""
-        config = _config()
-        eid = await find_or_create_entity(db, "flask", "wrapper")
-        await save_fact(
-            db, "Flask is a Python web framework",
-            source="curator", session=None, category="general",
-            tags=["python"], entity_id=eid,
-        )
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="delete the flask config?",
-                user_lang="English",
-            )
-
-        assert triggered is False
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert msg_tasks == []
-
-    async def test_does_not_promote_when_kb_empty(self, db):
-        """No facts in KB → no promotion."""
-        config = _config()
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="what is the current framework?",
-                user_lang="English",
-            )
-
-        assert triggered is False
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert msg_tasks == []
-
-    async def test_does_not_promote_declarative(self, db):
-        """No question mark + no question word → no promotion."""
-        config = _config()
-        eid = await find_or_create_entity(db, "flask", "wrapper")
-        await save_fact(
-            db, "Flask is a Python web framework",
-            source="curator", session=None, category="general",
-            tags=["python"], entity_id=eid,
-        )
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="il progetto è fatto in flask",
-                user_lang="Italian",
-            )
-
-        assert triggered is False
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert msg_tasks == []
-
-    async def test_does_not_promote_when_content_empty(self, db):
-        """Empty content → no promotion."""
-        config = _config()
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="",
-                user_lang="English",
-            )
-
-        assert triggered is False
-
-    async def test_search_error_does_not_promote(self, db):
-        """search_facts_scored raises → return False, no transition task."""
-        config = _config()
-        plan_id = db._test_plan_id
-
-        async def _boom(*a, **kw):
-            raise RuntimeError("simulated DB failure")
-
-        with patch("kiso.worker.loop.search_facts_scored", side_effect=_boom), \
-             patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="what is flask?",
-                user_lang="English",
-            )
-
-        assert triggered is False
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert msg_tasks == []
-
-    async def test_promotion_persists_assistant_message(self, db):
-        """Promoted message is saved to conversation history exactly once."""
-        from kiso.store import get_recent_messages
-
-        config = _config()
-        eid = await find_or_create_entity(db, "flask", "wrapper")
-        await save_fact(
-            db, "Flask is a Python web framework",
-            source="curator", session=None, category="general",
-            tags=["python"], entity_id=eid,
-        )
-        plan_id = db._test_plan_id
-
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="what framework do we use?",
-                user_lang="English",
-            )
-
-        msgs = await get_recent_messages(db, "sess1", limit=10)
-        assistant_msgs = [
-            m for m in msgs
-            if m.get("role") == "assistant"
-            and _PLAN_TO_CHAT_KB_PROMOTE_MSGS["English"] in (m.get("content") or "")
+        removed_names = [
+            "_plan_chat_kb_preflight_promotion",
+            "_PLAN_TO_CHAT_KB_PROMOTE_MSGS",
+            "_looks_like_question",
+            "_has_imperative_prefix",
+            "_PLAN_PROMOTE_QUESTION_PREFIXES",
+            "_PLAN_PROMOTE_IMPERATIVE_PREFIXES",
         ]
-        assert len(assistant_msgs) == 1
-
-    async def test_unknown_lang_defaults_english(self, db):
-        """Unknown user_lang → English transition message."""
-        config = _config()
-        eid = await find_or_create_entity(db, "flask", "wrapper")
-        await save_fact(
-            db, "Flask is a Python web framework",
-            source="curator", session=None, category="general",
-            tags=["python"], entity_id=eid,
+        found = [name for name in removed_names if hasattr(loop_mod, name)]
+        assert not found, (
+            f"Promotion-related symbols must not exist in kiso.worker.loop "
+            f"(classifier is authoritative). Found: {found}"
         )
-        plan_id = db._test_plan_id
 
-        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
-            triggered = await _plan_chat_kb_preflight_promotion(
-                db, config, "sess1", plan_id,
-                content="what framework?",
-                user_lang="Klingon",
-            )
+    def test_chat_kb_fallback_symbols_still_present(self):
+        """The symmetric fallback (chat_kb + empty KB → investigate) is NOT
+        removed. It is directionally safe — it refines the classifier
+        decision, not overrides it."""
+        from kiso.worker import loop as loop_mod
 
-        assert triggered is True
-        msg_tasks = await self._list_msg_tasks(db, plan_id)
-        assert _PLAN_TO_CHAT_KB_PROMOTE_MSGS["English"] in (msg_tasks[0].get("output") or "")
+        assert hasattr(loop_mod, "_chat_kb_preflight_fallback")
+        assert hasattr(loop_mod, "_CHAT_KB_FALLBACK_MSGS")
 
 
 class TestMessengerSanitization:
