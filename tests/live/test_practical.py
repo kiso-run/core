@@ -425,7 +425,7 @@ class TestWrapperExecution:
             '[kiso.wrapper]\n'
             'type = "wrapper"\n'
             'summary = "Echoes the text argument back to stdout"\n'
-            [kiso.wrapper.args.text]\n'
+            '[kiso.wrapper.args.text]\n'
             'type = "string"\n'
             'required = true\n'
         )
