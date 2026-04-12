@@ -43,7 +43,7 @@
   "presets": [
     {
       "name": "default",
-      "description": "Default preset — all general-purpose tools for a complete assistant"
+      "description": "Default preset — all general-purpose wrappers for a complete assistant"
     }
   ]
 }
