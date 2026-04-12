@@ -1261,7 +1261,7 @@ class TestRunWorker:
         assert plans[0] == "failed"  # old plan finalized to "failed"
         assert plans[1] == "done"    # new plan succeeded
 
-    async def test_wrapper_review_error_fails_without_replan(self, db, tmp_path):
+    async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
         """Wrapper task review error → plan fails (after replan attempts)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
@@ -1278,7 +1278,7 @@ class TestRunWorker:
         plan = await get_plan_for_session(db, "sess1")
         assert plan["status"] == "failed"
 
-    async def test_wrapper_review_ok_still_fails_plan(self, db, tmp_path):
+    async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
         """Even if reviewer says ok for a wrapper task, plan still fails (wrapper not installed)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
@@ -1940,7 +1940,7 @@ class TestExecutePlan:
         assert len(completed) == 1
         assert completed[0]["output"] == "hello"
 
-    async def test_wrapper_not_installed_triggers_replan(self, db, tmp_path):
+    async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
         """Wrapper not installed → replan with error message (M164)."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -1968,7 +1968,7 @@ class TestExecutePlan:
         assert len(_po) == 1
         assert "not installed" in _po[0]["output"]
 
-    async def test_wrapper_invalid_args_json_triggers_replan(self, db, tmp_path):
+    async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
         """Invalid JSON in wrapper args → replan with error (M164)."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
@@ -1992,7 +1992,7 @@ class TestExecutePlan:
         assert "Invalid wrapper args JSON" in result.stop_replan
         assert result.plan_output is not None
 
-    async def test_wrapper_args_validation_failure_triggers_replan(self, db, tmp_path):
+    async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
         """Wrapper args missing required field → replan with error (M164)."""
         config = make_config()
         tool_info = {
@@ -2020,7 +2020,7 @@ class TestExecutePlan:
         assert result.plan_output is not None
         assert result.plan_output["status"] == "failed"
 
-    async def test_wrapper_execution_failure_reviewer_replan(self, db, tmp_path):
+    async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
         """wrapper executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
@@ -2050,7 +2050,7 @@ class TestExecutePlan:
         assert result.stop_replan == "Task failed"
         assert result.plan_output is not None
 
-    async def test_wrapper_review_error(self, db, tmp_path):
+    async def test_skill_review_error(self, db, tmp_path):
         """Wrapper not installed → replan (M164); reviewer never reached."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3193,7 +3193,7 @@ class TestExecutePlanOutputChaining:
         # msg task had 1 preceding exec output
         assert "## Preceding Task Outputs" in msg_calls[0][1]["content"]
 
-    async def test_wrapper_output_in_plan_outputs(self, db, tmp_path):
+    async def test_skill_output_in_plan_outputs(self, db, tmp_path):
         """Wrapper task output should be accumulated in plan_outputs."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3252,7 +3252,7 @@ class TestToolTask:
         result = json.loads(stdout)
         assert result["text"] == "hello"
 
-    async def test_wrapper_receives_plan_outputs(self, tmp_path):
+    async def test_skill_receives_plan_outputs(self, tmp_path):
         # Create wrapper that dumps full input
         skill_dir = tmp_path / "wrappers" / "dump"
         skill_dir.mkdir(parents=True)
@@ -3279,7 +3279,7 @@ class TestToolTask:
         assert len(data["plan_outputs"]) == 1
         assert data["plan_outputs"][0]["output"] == "files"
 
-    async def test_wrapper_scoped_secrets(self, tmp_path):
+    async def test_skill_scoped_secrets(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "sec"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text(
@@ -3305,7 +3305,7 @@ class TestToolTask:
         result = json.loads(stdout)
         assert result == {"api_token": "tok_123"}
 
-    async def test_wrapper_failing_script(self, tmp_path):
+    async def test_skill_failing_script(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "fail"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
@@ -3326,7 +3326,7 @@ class TestToolTask:
         assert success is False
         assert "err msg" in stderr
 
-    async def test_wrapper_executable_not_found(self, tmp_path):
+    async def test_skill_executable_not_found(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "broken"
         skill_dir.mkdir(parents=True)
         # Point run.py to a nonexistent path
@@ -3353,7 +3353,7 @@ class TestToolTask:
         # Might be PermissionError or similar — just check it failed
         assert stderr != ""
 
-    async def test_wrapper_runs_in_workspace(self, tmp_path):
+    async def test_skill_runs_in_workspace(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "pwd"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
@@ -3386,7 +3386,7 @@ class TestExecutePlanTool:
         yield conn
         await conn.close()
 
-    async def test_wrapper_not_installed(self, db, tmp_path):
+    async def test_skill_not_installed(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
@@ -3403,7 +3403,7 @@ class TestExecutePlanTool:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "not installed" in tasks[0]["output"]
 
-    async def test_wrapper_invalid_args_json(self, db, tmp_path):
+    async def test_skill_invalid_args_json(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3425,7 +3425,7 @@ class TestExecutePlanTool:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "Invalid wrapper args JSON" in tasks[0]["output"]
 
-    async def test_wrapper_args_validation_error(self, db, tmp_path):
+    async def test_skill_args_validation_error(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         # Missing required arg 'text'
@@ -3447,7 +3447,7 @@ class TestExecutePlanTool:
         assert "validation failed" in tasks[0]["output"]
         assert "missing required arg: text" in tasks[0]["output"]
 
-    async def test_wrapper_executes_successfully(self, db, tmp_path):
+    async def test_skill_executes_successfully(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3472,7 +3472,7 @@ class TestExecutePlanTool:
         result = json.loads(skill_task["output"])
         assert result["text"] == "hello"
 
-    async def test_wrapper_passes_session_secrets(self, db, tmp_path):
+    async def test_skill_passes_session_secrets(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="sec",
@@ -3512,7 +3512,7 @@ class TestExecutePlanTool:
         # Session secrets are now sanitized in output
         assert result == {"api_token": "[REDACTED]"}
 
-    async def test_wrapper_review_replan(self, db, tmp_path):
+    async def test_skill_review_replan(self, db, tmp_path):
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
@@ -3532,7 +3532,7 @@ class TestExecutePlanTool:
         assert reason == "Task failed"
         assert len(remaining) == 1  # msg task remaining
 
-    async def test_wrapper_review_replan_carries_retry_hint(self, db, tmp_path):
+    async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
         """wrapper handler propagates retry_hint to plan_output on replan."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3562,7 +3562,7 @@ class TestExecutePlanTool:
         assert len(skill_outputs) == 1
         assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
 
-    async def test_wrapper_retry_on_transient_failure(self, db, tmp_path):
+    async def test_skill_retry_on_transient_failure(self, db, tmp_path):
         """wrapper retries internally when reviewer provides retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3595,7 +3595,7 @@ class TestExecutePlanTool:
         # Wrapper was reviewed twice (retry + success)
         assert reviewer_side.call_count == 2
 
-    async def test_wrapper_retry_exhausted_escalates_to_replan(self, db, tmp_path):
+    async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
         """wrapper escalates to replan after max_worker_retries exhausted."""
         config = make_config(settings={"max_worker_retries": 1})
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -3629,7 +3629,7 @@ class TestExecutePlanTool:
         skill_outputs = [po for po in plan_outputs if po.get("type") == "wrapper"]
         assert skill_outputs[0].get("retry_hint") == "try something else"
 
-    async def test_wrapper_no_retry_without_hint(self, db, tmp_path):
+    async def test_skill_no_retry_without_hint(self, db, tmp_path):
         """wrapper does NOT retry when reviewer returns replan without retry_hint."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -4652,7 +4652,7 @@ class TestPerSessionSandbox:
 
         assert captured_kwargs.get("user") == 9999
 
-    async def test_wrapper_no_sandbox_uid_no_user_kwarg(self, tmp_path):
+    async def test_skill_no_sandbox_uid_no_user_kwarg(self, tmp_path):
         """When sandbox_uid is None, 'user' kwarg is NOT passed to wrapper subprocess."""
         captured_kwargs = {}
 
@@ -5096,7 +5096,7 @@ class TestOutputTruncation:
         assert len(stdout) <= 100
         assert stdout.endswith("[truncated]")
 
-    async def test_wrapper_output_truncated_when_large(self, tmp_path):
+    async def test_skill_output_truncated_when_large(self, tmp_path):
         skill_dir = tmp_path / "wrappers" / "big"
         skill_dir.mkdir(parents=True)
         (skill_dir / "run.py").write_text("print('B' * 2000)")
@@ -11800,7 +11800,7 @@ REVIEW_STUCK = {
 class TestM336StuckHandling:
     """Verify stuck review status stops execution without triggering replan."""
 
-    async def test_wrapper_handler_returns_stop_stuck(self, db, tmp_path):
+    async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
         """Wrapper handler sets stop_stuck (not stop_replan) for stuck reviews."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")

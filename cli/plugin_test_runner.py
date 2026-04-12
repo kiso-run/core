@@ -37,7 +37,7 @@ _GIT_ENV = {
 @dataclass
 class PluginTestResult:
     name: str
-    plugin_type: str       # "tool" or "connector"
+    plugin_type: str       # "wrapper" or "connector"
     stage: str             # "clone", "validate", "install", "test", "done"
     passed: bool = False
     skipped: bool = False

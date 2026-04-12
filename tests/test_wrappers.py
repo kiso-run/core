@@ -585,7 +585,7 @@ class TestCheckDeps:
 # --- build_planner_wrapper_list ---
 
 class TestBuildPlannerToolList:
-    def _make_wrapper(self, name="echo", summary="Echo wrapper", args_schema=None):
+    def _make_tool(self, name="echo", summary="Echo wrapper", args_schema=None):
         return {
             "name": name,
             "summary": summary,
@@ -601,29 +601,29 @@ class TestBuildPlannerToolList:
         assert build_planner_wrapper_list([]) == ""
 
     def test_admin_sees_all(self):
-        wrappers = [self._make_wrapper("a", "Wrapper A"), self._make_wrapper("b", "Wrapper B")]
+        wrappers = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "- a — Wrapper A" in result
         assert "- b — Wrapper B" in result
 
     def test_user_star_sees_all(self):
-        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        wrappers = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(wrappers, "user", "*")
         assert "- a — Wrapper A" in result
 
     def test_user_list_filters(self):
-        wrappers = [self._make_wrapper("a", "Wrapper A"), self._make_wrapper("b", "Wrapper B")]
+        wrappers = [self._make_tool("a", "Wrapper A"), self._make_tool("b", "Wrapper B")]
         result = build_planner_wrapper_list(wrappers, "user", ["a"])
         assert "- a — Wrapper A" in result
         assert "- b — Wrapper B" not in result
 
     def test_user_empty_list(self):
-        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        wrappers = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(wrappers, "user", [])
         assert result == ""
 
     def test_user_none_tools(self):
-        wrappers = [self._make_wrapper("a", "Wrapper A")]
+        wrappers = [self._make_tool("a", "Wrapper A")]
         result = build_planner_wrapper_list(wrappers, "user", None)
         assert result == ""
 
@@ -632,24 +632,24 @@ class TestBuildPlannerToolList:
             "query": {"type": "string", "required": True, "description": "search query"},
             "limit": {"type": "int", "required": False, "default": 5, "description": "max results"},
         }
-        wrappers = [self._make_wrapper("search", "Search", schema)]
+        wrappers = [self._make_tool("search", "Search", schema)]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "query (string, required): search query" in result
         assert "limit (int, optional, default=5): max results" in result
 
     def test_header_present(self):
-        wrappers = [self._make_wrapper()]
+        wrappers = [self._make_tool()]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert result.startswith("Available wrappers:")
 
     def test_planner_list_includes_guide(self):
-        wrapper = self._make_wrapper()
+        wrapper = self._make_tool()
         wrapper["usage_guide"] = "Use short queries"
         result = build_planner_wrapper_list([wrapper], "admin")
         assert "guide: Use short queries" in result
 
     def test_planner_list_no_guide(self):
-        wrapper = self._make_wrapper()
+        wrapper = self._make_tool()
         wrapper["usage_guide"] = ""
         result = build_planner_wrapper_list([wrapper], "admin")
         assert "guide:" not in result
@@ -664,7 +664,7 @@ class TestBuildPlannerToolList:
             "opt_d": {"type": "string", "required": False, "description": "optional D"},
             "opt_e": {"type": "string", "required": False, "description": "optional E"},
         }
-        wrappers = [self._make_wrapper("browser", "Browser wrapper", schema)]
+        wrappers = [self._make_tool("browser", "Browser wrapper", schema)]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "url (string, required)" in result
         assert "opt_a" in result
@@ -680,13 +680,13 @@ class TestBuildPlannerToolList:
             "url": {"type": "string", "required": True, "description": "target URL"},
             "opt_a": {"type": "string", "required": False, "description": "optional A"},
         }
-        wrappers = [self._make_wrapper("browser", "Browser wrapper", schema)]
+        wrappers = [self._make_tool("browser", "Browser wrapper", schema)]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "opt_a" in result
         assert "more optional" not in result
 
     def test_unhealthy_tool_shows_broken_annotation(self):
-        wrapper = self._make_wrapper("browser", "Browser automation")
+        wrapper = self._make_tool("browser", "Browser automation")
         wrapper["healthy"] = False
         wrapper["missing_deps"] = ["playwright"]
         result = build_planner_wrapper_list([wrapper], "admin")
@@ -696,7 +696,7 @@ class TestBuildPlannerToolList:
         assert "kiso wrapper install browser" in result
 
     def test_healthy_tool_no_broken_annotation(self):
-        wrapper = self._make_wrapper("browser", "Browser automation")
+        wrapper = self._make_tool("browser", "Browser automation")
         wrapper["healthy"] = True
         wrapper["missing_deps"] = []
         result = build_planner_wrapper_list([wrapper], "admin")
@@ -704,10 +704,10 @@ class TestBuildPlannerToolList:
         assert "[BROKEN" not in result
 
     def test_mixed_healthy_and_unhealthy(self):
-        healthy = self._make_wrapper("echo", "Echo wrapper")
+        healthy = self._make_tool("echo", "Echo wrapper")
         healthy["healthy"] = True
         healthy["missing_deps"] = []
-        broken = self._make_wrapper("browser", "Browser automation")
+        broken = self._make_tool("browser", "Browser automation")
         broken["healthy"] = False
         broken["missing_deps"] = ["playwright", "chromium"]
         result = build_planner_wrapper_list([healthy, broken], "admin")
@@ -910,7 +910,7 @@ class TestToolSemanticValidationHooks:
             "    return ['second validator']\n",
         )
         invalidate_wrappers_cache()
-        wrappers = {w["name"]: w for w in discover_wrappers(tmp_path)}
+        wrappers = {wrapper["name"]: wrapper for wrapper in discover_wrappers(tmp_path)}
 
         assert validate_wrapper_args_semantic(wrappers["first"], {"text": "hi"}) == ["first validator"]
         assert validate_wrapper_args_semantic(wrappers["second"], {"text": "hi"}) == ["second validator"]
@@ -1092,7 +1092,7 @@ class TestCoerceValue:
 # --- build_wrapper_input ---
 
 class TestBuildToolInput:
-    def _make_wrapper(self, session_secrets=None):
+    def _make_tool(self, session_secrets=None):
         return {
             "name": "echo",
             "summary": "Echo",
@@ -1105,7 +1105,7 @@ class TestBuildToolInput:
         }
 
     def test_basic_input(self):
-        wrapper = self._make_wrapper()
+        wrapper = self._make_tool()
         result = build_wrapper_input(wrapper, {"text": "hi"}, "sess1", "/workspace")
         assert result["args"] == {"text": "hi"}
         assert result["session"] == "sess1"
@@ -1114,26 +1114,26 @@ class TestBuildToolInput:
         assert result["plan_outputs"] == []
 
     def test_with_plan_outputs(self):
-        wrapper = self._make_wrapper()
+        wrapper = self._make_tool()
         outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "a\nb", "status": "done"}]
         result = build_wrapper_input(wrapper, {}, "sess1", "/ws", plan_outputs=outputs)
         assert result["plan_outputs"] == outputs
 
     def test_scoped_session_secrets(self):
-        wrapper = self._make_wrapper(session_secrets=["api_token"])
+        wrapper = self._make_tool(session_secrets=["api_token"])
         secrets = {"api_token": "tok_123", "other_secret": "should_not_appear"}
         result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=secrets)
         assert result["session_secrets"] == {"api_token": "tok_123"}
         assert "other_secret" not in result["session_secrets"]
 
     def test_no_declared_secrets_scoped_empty(self):
-        wrapper = self._make_wrapper(session_secrets=[])
+        wrapper = self._make_tool(session_secrets=[])
         secrets = {"api_token": "tok_123"}
         result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=secrets)
         assert result["session_secrets"] == {}
 
     def test_none_session_secrets(self):
-        wrapper = self._make_wrapper(session_secrets=["api_token"])
+        wrapper = self._make_tool(session_secrets=["api_token"])
         result = build_wrapper_input(wrapper, {}, "sess1", "/ws", session_secrets=None)
         assert result["session_secrets"] == {}
 
@@ -1273,7 +1273,7 @@ class TestDiscoverToolsCache:
 class TestM826ConsumesField:
     """consumes field in kiso.toml → file routing in planner wrapper list."""
 
-    def _make_wrapper(self, name, summary, consumes=None):
+    def _make_tool(self, name, summary, consumes=None):
         return {
             "name": name,
             "summary": summary,
@@ -1289,9 +1289,9 @@ class TestM826ConsumesField:
     def test_tools_with_consumes_generate_routing(self):
         """Wrappers with consumes → 'File processing' section in wrapper list."""
         wrappers = [
-            self._make_wrapper("ocr", "Image OCR — extract text", consumes=["image"]),
-            self._make_wrapper("docreader", "Read documents", consumes=["document"]),
-            self._make_wrapper("transcriber", "Transcribe audio", consumes=["audio"]),
+            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_tool("docreader", "Read documents", consumes=["document"]),
+            self._make_tool("transcriber", "Transcribe audio", consumes=["audio"]),
         ]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" in result
@@ -1302,8 +1302,8 @@ class TestM826ConsumesField:
     def test_no_consumes_no_section(self):
         """Wrappers without consumes → no 'File processing' section."""
         wrappers = [
-            self._make_wrapper("browser", "Navigate pages"),
-            self._make_wrapper("websearch", "Search the web"),
+            self._make_tool("browser", "Navigate pages"),
+            self._make_tool("websearch", "Search the web"),
         ]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" not in result
@@ -1311,8 +1311,8 @@ class TestM826ConsumesField:
     def test_mixed_tools(self):
         """Mix of wrappers with/without consumes → only declared types shown."""
         wrappers = [
-            self._make_wrapper("ocr", "Image OCR — extract text", consumes=["image"]),
-            self._make_wrapper("browser", "Navigate pages"),
+            self._make_tool("ocr", "Image OCR — extract text", consumes=["image"]),
+            self._make_tool("browser", "Navigate pages"),
         ]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "File processing" in result
@@ -1322,8 +1322,8 @@ class TestM826ConsumesField:
     def test_multiple_tools_same_type(self):
         """Two wrappers consuming image → both listed on same line."""
         wrappers = [
-            self._make_wrapper("ocr", "Extract text from images", consumes=["image"]),
-            self._make_wrapper("describe", "Describe image contents", consumes=["image"]),
+            self._make_tool("ocr", "Extract text from images", consumes=["image"]),
+            self._make_tool("describe", "Describe image contents", consumes=["image"]),
         ]
         result = build_planner_wrapper_list(wrappers, "admin")
         assert "image files →" in result

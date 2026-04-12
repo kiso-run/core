@@ -1,4 +1,4 @@
-"""Tool management CLI commands."""
+"""Wrapper management CLI commands."""
 
 from __future__ import annotations
 
@@ -32,14 +32,14 @@ from kiso.wrappers import _env_var_name, _validate_manifest, check_deps, discove
 WRAPPERS_DIR = KISO_DIR / "wrappers"
 OFFICIAL_PREFIX = "wrapper-"
 
-# Aliases used by tool.py functions and patched by tests.
+# Aliases used by wrapper.py functions and patched by tests.
 _require_admin = require_admin
 _fetch_registry = fetch_registry
 _search_entries = search_entries
 
 
 def _wrapper_post_install(manifest: dict, tool_dir: Path, name: str) -> None:
-    """Tool-specific post-install steps: env var warnings, usage guide, git exclude."""
+    """Wrapper-specific post-install steps: env var warnings, usage guide, git exclude."""
     kiso_section = manifest.get("kiso", {})
     tool_section = kiso_section.get("wrapper", {})
     env_decl = tool_section.get("env", {})
@@ -100,7 +100,7 @@ def _wrapper_install(args) -> None:
 
 
 def _wrapper_update(args) -> None:
-    """Update an installed tool or all tools."""
+    """Update an installed wrapper or all wrappers."""
     _require_admin()
     from kiso.sysenv import invalidate_cache
     _update_plugin(
@@ -110,7 +110,7 @@ def _wrapper_update(args) -> None:
 
 
 def _wrapper_remove(args) -> None:
-    """Remove an installed tool."""
+    """Remove an installed wrapper."""
     _require_admin()
     from kiso.sysenv import invalidate_cache
     from kiso.wrappers import invalidate_wrappers_cache
@@ -118,14 +118,14 @@ def _wrapper_remove(args) -> None:
 
 
 def _wrapper_test(args) -> None:
-    """Run a tool's test suite."""
+    """Run a wrapper's test suite."""
     from cli.plugin_ops import _check_plugin_installed
     name = args.name
     tool_dir = WRAPPERS_DIR / name
     _check_plugin_installed(tool_dir, "wrapper", name)
     test_dir = tool_dir / "tests"
     if not test_dir.exists():
-        die(f"tool '{name}' has no tests/ directory")
+        die(f"wrapper '{name}' has no tests/ directory")
     venv_python = tool_dir / ".venv" / "bin" / "python"
     cmd = [str(venv_python), "-m", "pytest", "tests/", "-v"]
     result = subprocess.run(cmd, cwd=str(tool_dir), check=False)

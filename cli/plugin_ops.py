@@ -1,4 +1,4 @@
-"""Shared utilities for tool and connector CLI operations."""
+"""Shared utilities for wrapper and connector CLI operations."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def _clean_env() -> dict[str, str]:
     """Build a subprocess environment without VIRTUAL_ENV.
 
     When running inside a kiso container, the parent process has
-    VIRTUAL_ENV=/opt/kiso/.venv. Tool deps.sh and uv sync need to
-    operate on the tool's own .venv, not kiso's. Removing VIRTUAL_ENV
+    VIRTUAL_ENV=/opt/kiso/.venv. Wrapper deps.sh and uv sync need to
+    operate on the wrapper's own .venv, not kiso's. Removing VIRTUAL_ENV
     prevents uv from getting confused.
     """
     env = dict(os.environ)
@@ -119,8 +119,8 @@ def _plugin_install(
     """Shared install logic for tools and connectors.
 
     Args:
-        plugin_type: "tool" or "connector" — used in user-facing messages.
-        official_prefix: Git repo name prefix ("tool-" or "connector-").
+        plugin_type: "wrapper" or "connector" — used in user-facing messages.
+        official_prefix: Git repo name prefix ("wrapper-" or "connector-").
         parent_dir: Directory where the plugin is installed (WRAPPERS_DIR/CONNECTORS_DIR).
         validate_fn: callable(manifest, plugin_dir) -> list[str] — manifest validator.
         check_deps_fn: callable(plugin_info) -> list[str] — binary deps checker.

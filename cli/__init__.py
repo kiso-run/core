@@ -154,22 +154,22 @@ def _save_readline_history() -> None:
 
 
 def _add_wrapper_subcommands(parent_parser: argparse.ArgumentParser) -> None:
-    """Add tool subcommands (shared by 'tool' and 'wrapper' alias)."""
+    """Add wrapper subcommands."""
     s = parent_parser.add_subparsers(dest="wrapper_command")
     s.add_parser("list", help="list installed tools")
     sp = s.add_parser("search", help="search official tools on GitHub")
     sp.add_argument("query", nargs="?", default="", help="search filter")
-    ip = s.add_parser("install", help="install a tool")
-    ip.add_argument("target", help="tool name or git URL")
+    ip = s.add_parser("install", help="install a wrapper")
+    ip.add_argument("target", help="wrapper name or git URL")
     ip.add_argument("--name", default=None, help="custom install name")
     ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
     ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
-    up = s.add_parser("update", help="update a tool")
-    up.add_argument("target", help="tool name or 'all'")
-    rp = s.add_parser("remove", help="remove a tool")
-    rp.add_argument("name", help="tool name")
-    tp = s.add_parser("test", help="run a tool's test suite")
-    tp.add_argument("name", help="tool name")
+    up = s.add_parser("update", help="update a wrapper")
+    up.add_argument("target", help="wrapper name or 'all'")
+    rp = s.add_parser("remove", help="remove a wrapper")
+    rp.add_argument("name", help="wrapper name")
+    tp = s.add_parser("test", help="run a wrapper's test suite")
+    tp.add_argument("name", help="wrapper name")
 
 
 def _add_connector_parser(sub) -> None:
@@ -940,7 +940,7 @@ def _render_other_task(
     idx: int,
     total: int,
 ) -> None:
-    """Render an exec/tool/search/replan task: header, output, review."""
+    """Render an exec/wrapper/search/replan task: header, output, review."""
 
     if quiet:
         return

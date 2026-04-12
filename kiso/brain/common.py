@@ -270,7 +270,7 @@ def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
         return True
     escaped = re.escape(target)
     # M1320-allow: regex matches user natural language ("tool" or "wrapper")
-    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))  # noqa
+    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))  # noqa: M1320-allow
 
 
 def _classify_install_mode(

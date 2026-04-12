@@ -225,7 +225,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("exec task must have expect describing WHAT RESULT" in e for e in errors)
 
-    def test_wrapper_without_expect(self):
+    def test_skill_without_expect(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": None, "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -349,7 +349,7 @@ class TestValidatePlan:
 
     # --- M7: wrapper validation in validate_plan ---
 
-    def test_wrapper_name_required(self):
+    def test_skill_name_required(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "do thing", "expect": "ok", "wrapper": None, "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -357,7 +357,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("wrapper task must have a non-null wrapper name" in e for e in errors)
 
-    def test_wrapper_not_installed(self):
+    def test_skill_not_installed(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -391,7 +391,7 @@ class TestValidatePlan:
         assert "not in the registry" in err
         assert "informing the user" in err
 
-    def test_wrapper_not_installed_feedback_informs_user(self):
+    def test_skill_not_installed_feedback_informs_user(self):
         """unknown wrapper → informs user, suggests alternatives."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search web", "expect": "results", "wrapper": "websearch", "args": "{}"},
@@ -401,7 +401,7 @@ class TestValidatePlan:
         err = " ".join(errors)
         assert "informing the user" in err
 
-    def test_wrapper_not_installed_empty_list(self):
+    def test_skill_not_installed_empty_list(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -409,7 +409,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=[])
         assert any("not available" in e for e in errors)
 
-    def test_wrapper_not_installed_approved_suggests_exec_install(self):
+    def test_skill_not_installed_approved_suggests_exec_install(self):
         """when install_approved=True, error guides to exec install."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
@@ -420,7 +420,7 @@ class TestValidatePlan:
         assert any("kiso CLI" in e for e in errors)
         assert not any("SINGLE msg task" in e for e in errors)
 
-    def test_wrapper_not_installed_not_approved_unknown_informs_user(self):
+    def test_skill_not_installed_not_approved_unknown_informs_user(self):
         """unknown wrapper (not in registry) → inform user."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
@@ -478,7 +478,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("prompt module" in e for e in errors)
 
-    def test_wrapper_installed_passes(self):
+    def test_skill_installed_passes(self):
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
@@ -486,7 +486,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=["search"])
         assert errors == []
 
-    def test_wrapper_no_installed_list_skips_check(self):
+    def test_skill_no_installed_list_skips_check(self):
         """When installed_skills is None, skip wrapper-not-installed check."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "search", "expect": "ok", "wrapper": "search", "args": "{}"},
@@ -4955,7 +4955,7 @@ class TestPlannerContextualRules:
         assert "PROTECTION" not in system
         assert "Plugin installation flow:" not in system
 
-    async def test_wrapper_keyword_injects_kiso_commands(self, db):
+    async def test_skill_keyword_injects_kiso_commands(self, db):
         """Message mentioning 'wrapper' should inject kiso-commands appendix."""
         msgs, *_ = await build_planner_messages(
             db, self._config(), "test-session", "admin", "install the search wrapper",
