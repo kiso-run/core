@@ -1186,7 +1186,10 @@ class TestRunWorker:
         )
         system_msgs = [r[0] for r in await cur.fetchall()]
         assert any("Replanning" in m for m in system_msgs)
-        assert any("Task failed" in m for m in system_msgs)
+        # M1328: reason is no longer interpolated into user-visible replan
+        # messages (internal metadata, can leak failure language/paths).
+        # The reason still reaches the planner and the logs.
+        assert not any("Task failed" in m for m in system_msgs)
 
         # Replan notification should also be a visible msg task on the first plan
         cur2 = await db.execute(
@@ -9677,11 +9680,15 @@ class TestCircularReplanDetection:
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
-        # After 2 similar failures, a "stuck" message should appear
+        # After 2 similar failures, a "stuck" message should appear.
+        # M1328: the stuck message no longer interpolates the reviewer
+        # reason (internal metadata, can leak failure language and
+        # paths). It only signals that the worker gave up after N
+        # attempts and asks for human input.
         stuck_msgs = [m for m in saved_messages if "I'm having trouble" in m]
         assert len(stuck_msgs) >= 1, f"Expected stuck message, got: {saved_messages}"
-        # Verify it mentions the failure reason
-        assert "not installed" in stuck_msgs[0].lower()
+        assert "replanning" in stuck_msgs[0].lower()
+        assert "more details" in stuck_msgs[0].lower()
 
     async def test_no_stuck_message_on_genuinely_different_strategies(self, db, tmp_path):
         """Genuinely different strategies (different task types/details) should NOT trigger stuck."""
@@ -11784,28 +11791,64 @@ class TestM310Phase13Integration:
         assert planner_kwargs_captured[0].get("is_replan") is True
 
 
-# (phase, attempt, max_attempts, kwargs, expected_substrings)
+# M1328: replan messages must NOT leak reviewer.reason or replan_history
+# text into user-visible output — reviewer reason is internal metadata
+# that can contain failure language, absolute paths, or other sensitive
+# diagnostic details. Tests encode: (phase, attempt, max, kwargs,
+# required_subs, forbidden_subs)
 _REPLAN_MSG_CASES = [
-    ("replanning", 1, 3, {"reason": "timeout"}, ["Replanning (attempt 1/3): timeout"]),
-    ("investigating", 1, 3, {}, ["Investigating", "1/3"]),
+    ("replanning", 1, 3, {"reason": "timeout"},
+     ["Replanning", "1/3"], ["timeout", "reason", "Reason"]),
+    ("investigating", 1, 3, {},
+     ["Investigating", "1/3"], []),
     ("stuck", 3, 3, {"reason": "timeout", "tried": "attempt1; attempt2"},
-     ["I'm having trouble", "timeout", "attempt1; attempt2"]),
+     ["trouble", "3"], ["timeout", "attempt1", "attempt2"]),
 ]
 
 
 class TestM332GetReplanMessage:
-    """English-only replan messages."""
+    """Replan messages: user-visible templates must not leak internal
+    reviewer reason or replan history text (M1328)."""
 
     @pytest.mark.parametrize(
-        "phase,attempt,max_attempts,kwargs,expected_subs",
+        "phase,attempt,max_attempts,kwargs,required_subs,forbidden_subs",
         _REPLAN_MSG_CASES,
         ids=[c[0] for c in _REPLAN_MSG_CASES],
     )
-    def test_get_replan_message(self, phase, attempt, max_attempts, kwargs, expected_subs):
+    def test_get_replan_message(
+        self, phase, attempt, max_attempts, kwargs, required_subs, forbidden_subs
+    ):
         from kiso.worker.utils import get_replan_message
         msg = get_replan_message(phase, attempt, max_attempts, **kwargs)
-        for sub in expected_subs:
+        for sub in required_subs:
             assert sub in msg, f"Missing {sub!r} in {msg!r}"
+        for sub in forbidden_subs:
+            assert sub not in msg, f"Leaked {sub!r} into user-visible {msg!r}"
+
+    def test_replanning_does_not_leak_failure_language(self):
+        """M1328: reviewer reason may contain 'failed to' / 'error' / path
+        references — none of it should surface to the user."""
+        from kiso.worker.utils import get_replan_message
+        evil_reason = (
+            "The command failed to execute properly, path /etc/ssh/ssh_config.d "
+            "was disclosed"
+        )
+        msg = get_replan_message("replanning", 1, 5, reason=evil_reason)
+        assert "failed to" not in msg
+        assert "/etc/" not in msg
+        assert "disclosed" not in msg
+
+    def test_stuck_does_not_leak_failure_language(self):
+        """M1328: same protection for the stuck template, which also
+        interpolates reviewer reason and replan history."""
+        from kiso.worker.utils import get_replan_message
+        evil_reason = "failed to find /home/user/secret.key"
+        evil_tried = "task1 failed: /etc/passwd; task2 failed: /root/.ssh"
+        msg = get_replan_message("stuck", 5, 5, reason=evil_reason, tried=evil_tried)
+        assert "failed to" not in msg
+        assert "/etc/" not in msg
+        assert "/home/" not in msg
+        assert "/root/" not in msg
 
 
 # --- M336: Handle "stuck" in execution loop ---

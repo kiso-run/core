@@ -355,14 +355,18 @@ def _build_failure_summary(
     return "\n\n".join(parts)
 
 
+# M1328: user-visible replan messages must NOT interpolate reviewer.reason
+# or replan_history text. Both are internal metadata produced by LLMs in
+# diagnostic mode and can contain failure language, absolute filesystem
+# paths, command names, and other sensitive details. The reason remains
+# available in logs and in the planner's context for the replan itself;
+# the user only sees a neutral phase indicator.
 _REPLAN_TEMPLATES: dict[str, str] = {
     "investigating": "Investigating... ({depth}/{max})",
-    "replanning": "Replanning (attempt {depth}/{max}): {reason}",
+    "replanning": "Replanning (attempt {depth}/{max})",
     "stuck": (
         "I'm having trouble with this request. "
-        "I've tried replanning {depth} times but keep hitting "
-        "the same issue: {reason}\n"
-        "Previous attempts: {tried}\n"
+        "I've tried replanning {depth} times without success.\n"
         "Can you help me with more details or a different approach?"
     ),
 }
@@ -375,6 +379,11 @@ def get_replan_message(
     reason: str = "",
     tried: str = "",
 ) -> str:
-    """Get a replan notification message."""
+    """Get a replan notification message.
+
+    Note: *reason* and *tried* are accepted for backward compatibility
+    with call sites but are intentionally NOT interpolated into the
+    user-visible output (M1328). They remain available in logs.
+    """
     template = _REPLAN_TEMPLATES[kind]
-    return template.format(depth=depth, max=max_depth, reason=reason, tried=tried)
+    return template.format(depth=depth, max=max_depth)
