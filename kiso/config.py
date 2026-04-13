@@ -260,6 +260,7 @@ class Config:
     models: dict[str, str]
     settings: dict[str, int | float | str | list[str]]
     raw: dict  # full parsed TOML for future use
+    mcp_servers: dict = field(default_factory=dict)  # name → MCPServer
 
 
 class ConfigError(Exception):
@@ -433,6 +434,16 @@ def _build_config(path: Path, on_error) -> Config:
             + "\n".join(f"  {e}" for e in type_errors)
         )
 
+    # --- MCP servers (optional) ---
+    # Imported lazily so importing config.py does not pull the MCP
+    # package when nothing depends on it.
+    from kiso.mcp.config import MCPConfigError, parse_mcp_section
+
+    try:
+        mcp_servers = parse_mcp_section(raw.get("mcp"))
+    except MCPConfigError as e:
+        on_error(str(e))
+
     return Config(
         tokens=tokens,
         providers=providers,
@@ -440,6 +451,7 @@ def _build_config(path: Path, on_error) -> Config:
         models=models,
         settings=settings,
         raw=raw,
+        mcp_servers=mcp_servers,
     )
 
 
