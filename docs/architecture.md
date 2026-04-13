@@ -354,9 +354,28 @@ Use real boundaries where possible:
 - secret scrubbing
 - audit trails
 
+## Extension surfaces
+
+Kiso has three ways to add capabilities: **wrappers** (local
+install + manage + workspace integration, e.g. aider, browser,
+ocr), **MCP servers** (remote APIs via the Model Context Protocol,
+consumer-only — Kiso does not publish or curate servers), and
+**recipes** (reusable planner instructions, pure markdown).
+
+The boundary rule: if a capability installs software on the host
+and needs lifecycle management, it is a wrapper. If it is a pure
+remote-API proxy, it belongs to MCP. If it is neither, a recipe
+is enough.
+
+See [extensibility.md](extensibility.md) for the full decision
+tree and [mcp.md](mcp.md) for the MCP consumer guide with
+concrete examples.
+
 ## Where To Go Next
 
 - [README.md](/home/ymx1zq/Documents/software/kiso-run/core/README.md) for the product overview
+- [extensibility.md](extensibility.md) for the wrapper/MCP/recipe decision tree
+- [mcp.md](mcp.md) for the MCP consumer client user guide
 - [flow.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/flow.md) for the full execution lifecycle
 - [database.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/database.md) for persistence and runtime-state mapping
 - [llm-roles.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/llm-roles.md) for role-specific prompt responsibilities

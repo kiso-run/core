@@ -190,9 +190,21 @@ kiso msg "find all Python files larger than 1MB and summarize what they do"
 # Install a wrapper
 kiso wrapper install browser
 
+# Connect to a community MCP server (Kiso is a consumer, bring your own URL)
+kiso mcp install --from-url npm:@modelcontextprotocol/server-github
+kiso mcp env github set GITHUB_PERSONAL_ACCESS_TOKEN <your-token>
+
 # Create a recurring task
 kiso cron add "0 9 * * *" "check competitor prices" --session marketing
 ```
+
+## Extending Kiso
+
+Three extension surfaces — wrappers (local install + manage),
+MCP servers (remote APIs, consumer-only), recipes (planner
+instructions). See [docs/extensibility.md](docs/extensibility.md)
+for the decision tree and [docs/mcp.md](docs/mcp.md) for the
+MCP consumer guide.
 
 ## Installation
 
