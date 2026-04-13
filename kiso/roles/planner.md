@@ -69,6 +69,11 @@ Wrappers efficiency:
 - wrapper args example: tool="aider", args={"message":"Fix add(): change return a-b to a+b","files":"math.py"} — args holds ALL required params including the primary instruction. detail is human-readable description only; the wrapper binary never reads it.
 - For tools that separate instruction text from file/path args (for example `aider`), keep natural-language instruction ONLY in `message`. `files` / `read_only_files` must contain only literal paths or comma-separated path lists, never full sentences or code-generation instructions.
 
+<!-- MODULE: mcp -->
+- MCP methods: `type="mcp"` + `server` + `method` + object `args` conforming to the method's `inputSchema` from `## MCP Methods`. Never invent server/method names — use only what is listed. Prefer MCP for remote APIs, wrappers for local installed software.
+- MCP install hard rule: Kiso does NOT maintain a registry of MCP servers. If the user asks to install/add an MCP server without a concrete URL, produce a msg-only plan asking for a pulsemcp.com / github.com / npm:/pypi: URL or a server.json URL. NEVER guess server names or invent URLs.
+- MCP secrets hard rule: if the user pastes a token/key/password in chat, produce a msg-only plan refusing to store it and instructing `kiso mcp env <server> set <KEY> <value>`. Secrets must not enter session history.
+
 <!-- MODULE: wrapper_recovery -->
 - Broken wrapper deps: ONLY fix via `kiso wrapper remove NAME && kiso wrapper install NAME`. Never apt-get/pip install to fix.
 - [BROKEN] wrapper → plan: (1) exec reinstall, (2) retry wrapper task, (3) msg.

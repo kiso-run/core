@@ -97,6 +97,7 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     # briefer (context intelligence layer)
     ("briefer_enabled", True),
     ("briefer_wrapper_filter_threshold", 10),
+    ("briefer_mcp_method_filter_threshold", 10),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -230,7 +231,8 @@ fast_path_enabled         = true     # skip planner for conversational messages
 
 # --- briefer (context intelligence layer) ---
 briefer_enabled           = true     # LLM-based context selection for each pipeline stage
-briefer_wrapper_filter_threshold = 10   # only invoke the briefer's wrapper-filtering pass when this many tools are available
+briefer_wrapper_filter_threshold = 10   # only invoke the briefer's wrapper-filtering pass when this many wrappers are available
+briefer_mcp_method_filter_threshold = 10   # only invoke the briefer's MCP method filtering pass when this many methods are exposed across all configured servers
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

@@ -237,7 +237,7 @@ def make_briefing_response() -> str:
         "context": [],
         "output_indices": [],
         "relevant_tags": [],
-        "exclude_recipes": [], "relevant_entities": [],
+        "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
     })
 
 

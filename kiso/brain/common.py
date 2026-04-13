@@ -57,8 +57,10 @@ TASK_TYPE_MSG = "msg"
 TASK_TYPE_WRAPPER = "wrapper"
 TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
+TASK_TYPE_MCP = "mcp"
 TASK_TYPES: frozenset[str] = frozenset({
-    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH, TASK_TYPE_REPLAN,
+    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_WRAPPER,
+    TASK_TYPE_SEARCH, TASK_TYPE_REPLAN, TASK_TYPE_MCP,
 })
 
 # Review status constants
@@ -950,12 +952,14 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
     "tasks": {"type": "array", "items": {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan"]},
+            "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan", "mcp"]},
             "detail": {"type": "string"},
             "wrapper": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "group": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+            "server": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "method": {"anyOf": [{"type": "string"}, {"type": "null"}]},
         },
         "required": ["type", "detail", "wrapper", "args", "expect"],
         "additionalProperties": False,
@@ -993,12 +997,13 @@ REVIEW_SCHEMA: dict = _build_strict_schema("review", {
 BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
     "wrappers": {"type": "array", "items": {"type": "string"}},
+    "mcp_methods": {"type": "array", "items": {"type": "string"}},
     "exclude_recipes": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "wrappers", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "wrappers", "mcp_methods", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1329,6 +1334,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
                 errors.append(f"unknown module: {m!r}")
     if not isinstance(briefing.get("wrappers"), list):
         errors.append("wrappers must be an array")
+    if not isinstance(briefing.get("mcp_methods"), list):
+        errors.append("mcp_methods must be an array")
     if not isinstance(briefing.get("exclude_recipes"), list):
         errors.append("exclude_recipes must be an array")
     if not isinstance(briefing.get("context"), str):
@@ -1411,12 +1418,22 @@ async def run_briefer(
         briefing.get("wrappers", []), context_pool.get("wrappers"), "wrapper")
     briefing["exclude_recipes"] = _filter_briefer_names(
         briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
+    # mcp_methods: filter against the list of configured MCP methods
+    # (if any) passed via context_pool. Empty pool keeps the list as-is.
+    if context_pool.get("mcp_methods_pool"):
+        briefing["mcp_methods"] = _filter_briefer_names(
+            briefing.get("mcp_methods", []),
+            context_pool.get("mcp_methods_pool"),
+            "mcp method",
+        )
 
     log.info(
-        "Briefer for %s: %d modules, %d tools, %d exclude_recipes, %d output_indices, %d tags",
+        "Briefer for %s: %d modules, %d wrappers, %d mcp_methods, "
+        "%d exclude_recipes, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
         len(briefing["wrappers"]),
+        len(briefing.get("mcp_methods", [])),
         len(briefing.get("exclude_recipes", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
@@ -1601,6 +1618,7 @@ __brain_exports__ = [
     "REVIEW_SCHEMA",
     "ReviewError",
     "TASK_TYPE_EXEC",
+    "TASK_TYPE_MCP",
     "TASK_TYPE_MSG",
     "TASK_TYPE_REPLAN",
     "TASK_TYPE_SEARCH",

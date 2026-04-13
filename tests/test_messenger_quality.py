@@ -122,7 +122,7 @@ class TestMessengerBrieferTagInjection:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -192,7 +192,7 @@ class TestBrieferToolFilterNoTools:
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
         })
         with patch("kiso.brain.call_llm", return_value=response):
             result = await run_briefer(config, "planner", "test", {})
@@ -207,7 +207,7 @@ class TestBrieferToolFilterNoTools:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
         })
         ctx = {"wrappers": "Available wrappers:\n- browser — navigate, click, fill, screenshot"}
         with patch("kiso.brain.call_llm", return_value=response):
@@ -224,7 +224,7 @@ class TestBrieferToolFilterNoTools:
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [],
+            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
         })
         ctx = {"wrappers": "Available wrappers:\n- git — version control operations"}
         with patch("kiso.brain.call_llm", return_value=response):

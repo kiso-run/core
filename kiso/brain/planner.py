@@ -55,6 +55,7 @@ from .common import (
     PlanError,
     PlannerPromptState,
     TASK_TYPE_EXEC,
+    TASK_TYPE_MCP,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
@@ -191,6 +192,7 @@ def _validate_plan_tasks(
     installed_skills_info: dict[str, dict] | None,
     install_approved: bool = False,
     registry_hint_names: frozenset[str] | None = None,
+    mcp_methods_pool: dict[str, list] | None = None,
 ) -> list[str]:
     """Check per-task rules: type, detail, expect, args, wrapper validation."""
     errors: list[str] = []
@@ -200,11 +202,18 @@ def _validate_plan_tasks(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH) and task.get("expect") is None:
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH, TASK_TYPE_MCP) and task.get("expect") is None:
             errors.append(
                 f"Task {i}: {t} task must have expect describing WHAT RESULT you need "
                 f"(e.g., 'list of search results', 'file created successfully')"
             )
+        # Cross-type hygiene: server/method fields may only appear on mcp tasks
+        if t != TASK_TYPE_MCP:
+            if task.get("server") is not None or task.get("method") is not None:
+                errors.append(
+                    f"Task {i}: {t} task must have server=null and method=null "
+                    f"(server/method are reserved for mcp tasks)"
+                )
         detail = task.get("detail") or ""
         if t == TASK_TYPE_EXEC and len(detail) > 500:
             errors.append(
@@ -383,6 +392,77 @@ def _validate_plan_tasks(
                                     f"read local files instead."
                                 )
                                 break
+        if t == TASK_TYPE_MCP:
+            server = task.get("server")
+            method = task.get("method")
+            if task.get("wrapper") is not None:
+                errors.append(
+                    f"Task {i}: mcp task must have wrapper=null"
+                )
+            if not isinstance(server, str) or not server:
+                errors.append(
+                    f"Task {i}: mcp task requires a non-empty 'server' field "
+                    f"(the name of a configured [mcp.<server>] entry)"
+                )
+            if not isinstance(method, str) or not method:
+                errors.append(
+                    f"Task {i}: mcp task requires a non-empty 'method' field "
+                    f"(the name of a method exposed by the server)"
+                )
+            if (
+                mcp_methods_pool is not None
+                and isinstance(server, str)
+                and isinstance(method, str)
+            ):
+                methods = mcp_methods_pool.get(server)
+                if methods is None:
+                    errors.append(
+                        f"Task {i}: mcp server {server!r} is not available "
+                        f"(not configured, disabled, or marked unhealthy)"
+                    )
+                else:
+                    known = {m.name for m in methods}
+                    if method not in known:
+                        errors.append(
+                            f"Task {i}: mcp method {server}:{method} does not "
+                            f"exist on this server "
+                            f"(known methods: {sorted(known)[:5]})"
+                        )
+                    else:
+                        # Validate args against the method's inputSchema
+                        # via jsonschema. Failure yields a precise error
+                        # naming the offending property.
+                        target = next(m for m in methods if m.name == method)
+                        args_raw = task.get("args")
+                        if args_raw is None:
+                            args_dict = {}
+                        elif isinstance(args_raw, dict):
+                            args_dict = args_raw
+                        else:
+                            errors.append(
+                                f"Task {i}: mcp args must be a JSON object"
+                            )
+                            args_dict = None  # type: ignore[assignment]
+                        if args_dict is not None and target.input_schema:
+                            try:
+                                import jsonschema  # runtime dep
+                                jsonschema.validate(
+                                    instance=args_dict,
+                                    schema=target.input_schema,
+                                )
+                            except jsonschema.ValidationError as e:
+                                # Drop newlines so the retry feedback stays
+                                # on a single line.
+                                msg = str(e).replace("\n", " ")
+                                errors.append(
+                                    f"Task {i}: mcp args invalid against "
+                                    f"{server}:{method} inputSchema: {msg}"
+                                )
+                            except Exception as e:  # noqa: BLE001
+                                errors.append(
+                                    f"Task {i}: mcp args schema validation "
+                                    f"failed: {e}"
+                                )
 
     if replan_count > 1:
         errors.append("A plan can have at most one replan task")
@@ -416,7 +496,7 @@ def _validate_plan_ordering(
     # needs_install (install proposal), knowledge (storage), kb_answer
     # (M1303: KB recall from briefer context), or allow_msg_only
     # (structural fallback).
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN}
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
         if (
@@ -640,6 +720,7 @@ def validate_plan(
     registry_hint_names: frozenset[str] | None = None,
     force_msg_only: bool = False,
     install_route: dict[str, str] | None = None,
+    mcp_methods_pool: dict[str, list] | None = None,
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
@@ -671,6 +752,7 @@ def validate_plan(
         tasks, installed_skills, installed_skills_info,
         install_approved=install_approved,
         registry_hint_names=registry_hint_names,
+        mcp_methods_pool=mcp_methods_pool,
     ))
     errors.extend(_validate_plan_ordering(
         tasks, is_replan, install_approved,

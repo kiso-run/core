@@ -562,7 +562,7 @@ class TestMsgTask:
             "context": "",
             "output_indices": [],
             "relevant_tags": ["website"],
-            "relevant_entities": ["Guidance.Studio"],  # mixed case
+            "relevant_entities": ["Guidance.Studio"], "mcp_methods": [],  # mixed case
         }
         with patch("kiso.worker.loop.run_briefer", new_callable=AsyncMock, return_value=briefing), \
              patch("kiso.brain.call_llm", side_effect=_capture):
@@ -8095,7 +8095,7 @@ class TestM44gAppendCallsRobustness:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             call_order.append("messenger")
             return "Hi"
@@ -11037,7 +11037,7 @@ class TestMsgTaskBrieferIntegration:
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             # messenger
             captured_outputs_text.append(messages[1]["content"])
@@ -11140,7 +11140,7 @@ class TestMsgTaskBrieferIntegration:
                     "modules": [], "wrappers": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             call_roles.append(role)
             return "response"
@@ -11185,7 +11185,7 @@ class TestM365MsgTaskEntityEnrichment:
                     "modules": [], "wrappers": [], "exclude_recipes": [],
                     "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
-                    "relevant_entities": ["self"],
+                    "relevant_entities": ["self"], "mcp_methods": [],
                 })
             # messenger
             messenger_msgs.append(messages)
@@ -11210,7 +11210,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "No relevant context.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             messenger_msgs.append(messages)
             return "I don't know"
@@ -11230,7 +11230,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Response"
 
@@ -11259,7 +11259,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11287,7 +11287,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11310,7 +11310,7 @@ class TestM365MsgTaskEntityEnrichment:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11360,7 +11360,7 @@ class TestExecTaskBrieferIntegration:
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 

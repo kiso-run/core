@@ -68,7 +68,7 @@ class TestChatKBEntityFlow:
                     "modules": [], "wrappers": [], "exclude_recipes": [],
                     "context": "User asks about SSH key.",
                     "output_indices": [], "relevant_tags": ["ssh"],
-                    "relevant_entities": ["self"],
+                    "relevant_entities": ["self"], "mcp_methods": [],
                 })
             messenger_msgs.append(messages)
             return "Your SSH key is ssh-ed25519 AAAA"
@@ -92,7 +92,7 @@ class TestChatKBEntityFlow:
                     "modules": [], "wrappers": [],
                     "context": "General chat.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Hello! How can I help?"
 
@@ -112,7 +112,7 @@ class TestChatKBEntityFlow:
                 return json.dumps({
                     "modules": [], "wrappers": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [],
+                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Hi there"
 

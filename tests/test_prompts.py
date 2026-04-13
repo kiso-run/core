@@ -83,12 +83,14 @@ class TestPromptBudgetSmoke:
     """Prompt files must stay within coarse size budgets."""
 
     @pytest.mark.parametrize("filename,max_chars", [
-        # planner.md budget includes the opt-in `investigate` module,
-        # which is only loaded into the assembled prompt when the
-        # worker passes investigate=True. The actual loaded prompt
-        # for default plan/chat/chat_kb paths is smaller because the
-        # modular loader excludes non-selected sections.
-        ("planner.md", 14700),
+        # planner.md budget includes the opt-in `investigate` module
+        # and the `mcp` module (added as part of MCP consumer client
+        # integration). Both are only loaded into the assembled prompt
+        # when the relevant flag is set or the briefer opts in. The
+        # actual loaded prompt for default plan/chat/chat_kb paths is
+        # smaller because the modular loader excludes non-selected
+        # sections.
+        ("planner.md", 15600),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])
