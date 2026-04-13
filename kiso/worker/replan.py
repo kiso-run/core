@@ -330,14 +330,71 @@ def _build_cancel_summary(completed: list[dict], remaining: list[dict], goal: st
     return "\n\n".join(parts)
 
 
+def _derive_stuck_category(reason: str | None) -> str:
+    """Classify a failure/stuck reason into a coarse category.
+
+    The category drives how ``_build_failure_summary`` formats the
+    detail string it hands to the messenger. Currently only the
+    ``safety_violation`` category triggers special-case redaction;
+    all other reasons fall through to ``"other"`` and get the
+    standard detailed failure summary.
+
+    Rationale: safety-rule stuck reasons contain exactly the paths,
+    secrets, or blocked content the rule is meant to hide. If we
+    interpolate the raw reason into the messenger's detail string,
+    the LLM composing the user-facing refusal paraphrases the
+    forbidden content back into the response — violating the very
+    rule that produced the stuck. Same architectural pattern as
+    the reviewer.reason leak into the replan user message fixed
+    earlier: internal enforcement metadata must not leak into the
+    presentation layer.
+    """
+    if not reason:
+        return "other"
+    if "safety" in reason.lower():
+        return "safety_violation"
+    return "other"
+
+
+_SAFETY_REFUSAL_DIRECTIVE = (
+    "A safety rule blocked the requested operation. Generate a brief "
+    "message acknowledging the constraint WITHOUT naming, listing, or "
+    "paraphrasing any specific paths, values, file names, or content "
+    "the task was attempting to reveal. The user already knows what "
+    "they asked for — do not echo it back. Describe the refusal "
+    "generically and suggest a rephrasing or a different approach."
+)
+
+
 def _build_failure_summary(
     completed: list[dict],
     remaining: list[dict],
     goal: str,
     reason: str | None = None,
 ) -> str:
-    """Build a detail string summarizing a plan failure."""
+    """Build a detail string summarizing a plan failure.
+
+    For safety-violation reasons, the function enters a redacted
+    branch that omits the raw reason text and omits individual task
+    details (which may themselves contain the forbidden content from
+    the planner's instructions) — only counts and a generic refusal
+    directive reach the messenger. For all other failure categories,
+    the existing detailed summary is preserved unchanged.
+    """
+    category = _derive_stuck_category(reason)
     parts: list[str] = [f"The plan failed: {goal}"]
+
+    if category == "safety_violation":
+        parts.append(_SAFETY_REFUSAL_DIRECTIVE)
+        if completed:
+            parts.append(
+                f"Completed tasks: {len(completed)} "
+                f"(do not list them, do not say they failed)"
+            )
+        if remaining:
+            parts.append(f"Remaining tasks: {len(remaining)} (do not list them)")
+        return "\n\n".join(parts)
+
     if reason:
         parts.append(f"Failure reason: {reason}")
     completed_text = _format_task_list(completed, "Completed successfully")

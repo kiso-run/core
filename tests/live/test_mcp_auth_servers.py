@@ -9,9 +9,16 @@ credentials.
 
 Supported servers:
 
-- ``TEST_BRAVE_API_KEY`` → ``@modelcontextprotocol/server-brave-search``
-- ``TEST_GOOGLE_MAPS_API_KEY`` → Google Maps Grounding Lite
+- ``BRAVE_API_KEY`` → ``@modelcontextprotocol/server-brave-search``
+- ``GOOGLE_MAPS_API_KEY`` → Google Maps Grounding Lite
   (Streamable HTTP, tests the HTTP transport end-to-end)
+- ``GITHUB_PERSONAL_ACCESS_TOKEN`` → ``@modelcontextprotocol/server-github``
+
+Env var names match exactly what each MCP server expects
+natively, so a contributor who already has one of these keys
+set for real usage of the same server gets automatic live
+test coverage with zero duplication — one key powers both
+production usage and this smoke test.
 
 Do **not** hard-code API keys here. Tests only read from env.
 """
@@ -30,12 +37,13 @@ from kiso.mcp.http import MCPStreamableHTTPClient
 pytestmark = pytest.mark.live_network
 
 
-_BRAVE_KEY = os.environ.get("TEST_BRAVE_API_KEY")
-_GMAPS_KEY = os.environ.get("TEST_GOOGLE_MAPS_API_KEY")
+_BRAVE_KEY = os.environ.get("BRAVE_API_KEY")
+_GMAPS_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+_GITHUB_PAT = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN")
 
 
 class TestBraveSearch:
-    @pytest.mark.skipif(not _BRAVE_KEY, reason="TEST_BRAVE_API_KEY not set")
+    @pytest.mark.skipif(not _BRAVE_KEY, reason="BRAVE_API_KEY not set")
     @pytest.mark.skipif(shutil.which("npx") is None, reason="npx not on PATH")
     async def test_brave_search_smoke(self):
         """Spawn @modelcontextprotocol/server-brave-search via npx and
@@ -60,7 +68,7 @@ class TestBraveSearch:
 
 class TestGoogleMapsGroundingLite:
     @pytest.mark.skipif(
-        not _GMAPS_KEY, reason="TEST_GOOGLE_MAPS_API_KEY not set"
+        not _GMAPS_KEY, reason="GOOGLE_MAPS_API_KEY not set"
     )
     async def test_google_maps_grounding_smoke(self):
         """HTTP transport smoke test against the real Google Maps
@@ -80,5 +88,43 @@ class TestGoogleMapsGroundingLite:
             assert info.name
             methods = await client.list_methods()
             assert any("search" in m.name.lower() for m in methods)
+        finally:
+            await client.shutdown()
+
+
+class TestGitHubServer:
+    @pytest.mark.skipif(
+        not _GITHUB_PAT, reason="GITHUB_PERSONAL_ACCESS_TOKEN not set"
+    )
+    @pytest.mark.skipif(shutil.which("npx") is None, reason="npx not on PATH")
+    async def test_github_server_smoke(self):
+        """Spawn @modelcontextprotocol/server-github via npx with a real
+        GitHub PAT and verify initialize + list_methods. Proves the
+        stdio transport works end-to-end against the most widely used
+        authenticated MCP server in the ecosystem.
+
+        Smoke-only: no real tools/call to avoid coupling the test to
+        specific repo content or GitHub API method renames upstream.
+        Method-count assertion catches upstream regressions where the
+        server exposes an empty (or near-empty) tool list — the real
+        server-github exposes ~26 methods.
+        """
+        server = MCPServer(
+            name="github",
+            transport="stdio",
+            command="npx",
+            args=["-y", "@modelcontextprotocol/server-github"],
+            env={"GITHUB_PERSONAL_ACCESS_TOKEN": _GITHUB_PAT},
+            timeout_s=90.0,
+        )
+        client = MCPStdioClient(server)
+        try:
+            info = await client.initialize()
+            assert info.name
+            methods = await client.list_methods()
+            assert len(methods) > 5, (
+                f"server-github exposed only {len(methods)} method(s); "
+                f"expected >5 (real server has ~26)"
+            )
         finally:
             await client.shutdown()

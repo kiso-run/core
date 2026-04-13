@@ -103,15 +103,35 @@ class TestMemoryServer:
 
 
 # ---------------------------------------------------------------------------
-# @modelcontextprotocol/server-sequentialthinking — tools/call smoke
+# @modelcontextprotocol/server-filesystem — filesystem MCP server
 # ---------------------------------------------------------------------------
+#
+# Picked over server-sequentialthinking (which does not exist on npm)
+# because (a) filesystem is officially maintained, (b) it takes a path
+# argument which exercises our arg-passing code path in the stdio
+# transport, and (c) it exposes concrete read/list methods suitable
+# for a real tools/call smoke test.
 
 
-class TestSequentialThinkingServer:
+class TestFilesystemServer:
     @requires_npx
-    async def test_initialize_and_shutdown(self, tmp_path):
-        server = _npx_server(
-            "thinking", "@modelcontextprotocol/server-sequentialthinking"
+    async def test_initialize_with_sandbox_path(self, tmp_path):
+        """Spawn server-filesystem with tmp_path as its sandbox root and
+        verify the full initialize + list_methods lifecycle. Exercises
+        argument passing (the path) through the stdio transport and
+        validates that we can run a real community reference server
+        that requires a CLI argument."""
+        (tmp_path / "hello.txt").write_text("test")
+        server = MCPServer(
+            name="filesystem",
+            transport="stdio",
+            command="npx",
+            args=[
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                str(tmp_path),
+            ],
+            timeout_s=90.0,
         )
         client = MCPStdioClient(server)
         try:
@@ -119,6 +139,13 @@ class TestSequentialThinkingServer:
             assert info.name
             methods = await client.list_methods()
             assert len(methods) > 0
+            # server-filesystem exposes read/list style methods. Assert
+            # at least one canonical name appears so the test fails
+            # loudly if upstream renames everything.
+            names = {m.name.lower() for m in methods}
+            assert any(
+                "list" in n or "read" in n or "directory" in n for n in names
+            ), f"filesystem server exposed no read/list methods: {names}"
         finally:
             await client.shutdown()
 

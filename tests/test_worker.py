@@ -5841,6 +5841,129 @@ class TestBuildFailureSummary:
         assert "re-planning" not in result
 
 
+class TestStuckCategoryDerivation:
+    """_derive_stuck_category detects safety violations in reason strings.
+
+    Non-safety reasons fall through to a generic 'other' category so the
+    existing failure-summary branch preserves its behavior (task list
+    formatting, explicit reason interpolation). Only the safety path
+    switches into the redacted branch.
+    """
+
+    def test_empty_reason_returns_other(self):
+        from kiso.worker.replan import _derive_stuck_category
+        assert _derive_stuck_category(None) == "other"
+        assert _derive_stuck_category("") == "other"
+
+    def test_safety_keyword_detected(self):
+        from kiso.worker.replan import _derive_stuck_category
+        assert _derive_stuck_category("Safety rule violation") == "safety_violation"
+
+    def test_safety_case_insensitive(self):
+        from kiso.worker.replan import _derive_stuck_category
+        assert _derive_stuck_category("SAFETY breach") == "safety_violation"
+
+    def test_unsolvable_prefix_with_safety(self):
+        """Worker wraps stuck reasons as 'Unsolvable: <reason>' — the
+        wrapper must still detect safety."""
+        from kiso.worker.replan import _derive_stuck_category
+        got = _derive_stuck_category(
+            "Unsolvable: Safety rule violation: paths leaked"
+        )
+        assert got == "safety_violation"
+
+    def test_non_safety_reason_falls_through(self):
+        from kiso.worker.replan import _derive_stuck_category
+        assert _derive_stuck_category("Replan failed: LLM error") == "other"
+        assert _derive_stuck_category("Max replan depth reached") == "other"
+        assert _derive_stuck_category("Circular replanning detected") == "other"
+
+
+class TestBuildFailureSummarySafetyRedaction:
+    """Safety-violation reasons trigger a redacted failure summary.
+
+    When the reason contains 'safety', _build_failure_summary MUST NOT
+    interpolate the reason text and MUST NOT include individual task
+    details (which may themselves contain the paths/values the safety
+    rule is trying to protect). The messenger composing the user-facing
+    refusal sees only counts and a generic directive, so it cannot echo
+    forbidden content from the planner's task list.
+
+    Same architectural pattern as M1328 (reviewer.reason leaking into
+    replan messages) applied to the stuck/failure path.
+    """
+
+    def test_safety_reason_not_interpolated(self):
+        from kiso.worker.replan import _build_failure_summary
+        completed = [
+            {"type": "exec", "detail": "find /etc/ -name '*.conf'"},
+        ]
+        result = _build_failure_summary(
+            completed, [], "list config files",
+            reason="Unsolvable: Safety rule violation: output reveals /home/ and /etc/ paths",
+        )
+        # Reason text with paths must not leak
+        assert "/home/" not in result
+        assert "/etc/" not in result
+        assert "Safety rule violation" not in result
+
+    def test_safety_task_details_not_leaked(self):
+        """Exec details (e.g. 'find /etc/ -name *.conf') that contain
+        the forbidden paths must not be echoed in the failure summary
+        when the category is safety — the messenger may paraphrase them
+        directly into its refusal."""
+        from kiso.worker.replan import _build_failure_summary
+        completed = [
+            {"type": "exec", "detail": "find /etc/ -name '*.conf'"},
+        ]
+        remaining = [
+            {"type": "exec", "detail": "cat /home/user/.config"},
+        ]
+        result = _build_failure_summary(
+            completed, remaining, "show config files",
+            reason="Safety rule violation: absolute paths leaked",
+        )
+        assert "/etc/" not in result
+        assert "/home/" not in result
+        # Generic counts are allowed
+        assert "1" in result  # at least the count appears
+
+    def test_safety_instructs_messenger_not_to_echo(self):
+        """The generated detail must explicitly instruct the messenger
+        not to name/list/paraphrase forbidden content. This is a prompt
+        belt alongside the context-drop structural fix."""
+        from kiso.worker.replan import _build_failure_summary
+        result = _build_failure_summary(
+            [], [], "anything",
+            reason="Safety rule violation",
+        )
+        lower = result.lower()
+        # Some form of "don't echo / don't name / generic refusal" must appear
+        assert (
+            "without naming" in lower
+            or "generically" in lower
+            or "do not name" in lower
+            or "don't name" in lower
+        )
+
+    def test_non_safety_path_unchanged(self):
+        """Backward compatibility: non-safety reasons continue to get
+        the existing detailed failure summary with task list + reason.
+        Ensures no regression on existing tests."""
+        from kiso.worker.replan import _build_failure_summary
+        completed = [
+            {"type": "exec", "detail": "echo hello"},
+        ]
+        remaining = [{"type": "msg", "detail": "Report results"}]
+        result = _build_failure_summary(
+            completed, remaining, "Run tests", reason="LLM error"
+        )
+        # Existing behavior preserved
+        assert "Failure reason: LLM error" in result
+        assert "[exec] echo hello" in result
+        assert "[msg] Report results" in result
+
+
 class TestRecoveryMsgTask:
     """Tests for recovery msg tasks created on plan failure paths."""
 

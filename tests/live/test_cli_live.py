@@ -110,7 +110,7 @@ class TestConnectorSearch:
 
 class TestWrapperInstallRemove:
     def test_install_and_remove_official_wrapper(self, tmp_path: Path, capsys):
-        """What: Installs the 'websearch' wrapper from kiso-run org, verifies the directory, then removes it.
+        """What: Installs the 'browser' wrapper from kiso-run org, verifies the directory, then removes it.
 
         Why: Validates the full wrapper install/remove lifecycle with a real git clone.
         Expects: After install: dir exists, kiso.toml present, no .installing marker. After remove: dir gone.
@@ -121,9 +121,9 @@ class TestWrapperInstallRemove:
         skills_dir = tmp_path / "wrappers"
         skills_dir.mkdir()
 
-        # Pick a wrapper that is likely to exist in the org.
-        # "websearch" is the canonical example wrapper.
-        skill_name = "websearch"
+        # Pick a canonical wrapper still present in the registry after
+        # the v0.9 retirements of gworkspace/websearch/moltbook.
+        skill_name = "browser"
 
         args = Namespace(
             target=skill_name,

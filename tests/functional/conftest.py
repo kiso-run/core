@@ -100,12 +100,16 @@ _NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s+.*$", re.MULTILINE)
 _BLOCKQUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
 
 # Multilingual regex for text stats assertions (chars/lines count).
-# Matches: "chars: 1432", "**Character Count:** 1432", "caratteri: 92", etc.
+# Matches: "chars: 1432", "**Character Count:** 1432", "caratteri: 92",
+# "caratteri è: 1978", "righe sono 69", etc. The [^0-9\n]{0,15} window
+# tolerates short connectors (copulas like "è"/"is"/"sono", colons,
+# asterisks) on the same line between the noun and the number without
+# slurping across unrelated content.
 CHARS_COUNT_RE = re.compile(
-    r"(?:char(?:acter)?s?|caratteri)\s*(?:count)?\s*[:*]*\s*\d+", re.IGNORECASE,
+    r"(?:char(?:acter)?s?|caratteri)[^0-9\n]{0,15}\d+", re.IGNORECASE,
 )
 LINES_COUNT_RE = re.compile(
-    r"(?:lines?|righe?)\s*(?:count)?\s*[:*]*\s*\d+", re.IGNORECASE,
+    r"(?:lines?|righe?)[^0-9\n]{0,15}\d+", re.IGNORECASE,
 )
 
 
