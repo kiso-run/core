@@ -825,7 +825,7 @@ def validate_plan(
             )
             return errors
 
-    # coherence — tools listed in needs_install must not appear in wrapper tasks
+    # coherence — wrappers listed in needs_install must not appear in wrapper tasks
     needs = plan.get("needs_install") or []
     if needs:
         for i, t in enumerate(tasks, 1):
@@ -1035,10 +1035,10 @@ async def build_planner_messages(
     """Build the message list for the planner LLM call.
 
     Assembles context from session summary, facts, pending questions,
-    system environment, tools, and recent messages.
+    system environment, wrappers, and recent messages.
 
     When ``briefer_enabled`` is True in config, calls the briefer LLM to
-    select prompt modules, filter tools, and synthesize context. Falls
+    select prompt modules, filter wrappers, and synthesize context. Falls
     back to full context on briefer failure.
 
     Returns (messages, installed_wrapper_names, installed_wrappers_info) — the
@@ -1095,9 +1095,9 @@ async def build_planner_messages(
     )
 
     # --- Registry: show available-but-not-installed wrappers ---
-    # Show uninstalled registry tools so the planner knows what's available
+    # Show uninstalled registry wrappers so the planner knows what's available
     # for install.  Filtered by installed_names, so returns empty when all
-    # tools are installed.  Skip on replans — tools won't change mid-replan.
+    # wrappers are installed.  Skip on replans — wrappers won't change mid-replan.
     registry_text = ""
     if not is_replan:
         registry_text = await asyncio.to_thread(
@@ -1145,10 +1145,10 @@ async def build_planner_messages(
         # expect rules that must always be present (matches fallback path).
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        # wrappers_rules needed when any tools are installed — contains
+        # wrappers_rules needed when any wrappers are installed — contains
         # "use directly" rule and args/guide validation.  Broader than M1049
         # (which checked briefing["wrappers"]) because the briefer sometimes
-        # skips wrapper selection even when tools are relevant.
+        # skips wrapper selection even when wrappers are relevant.
         if installed and "wrappers_rules" not in modules:
             modules.append("wrappers_rules")
         # investigate mode injects the read-only diagnose-first
@@ -1311,15 +1311,15 @@ async def build_planner_messages(
             context_parts.append(f"## Available Recipes\n{build_planner_recipe_list(kept)}")
 
     # Tools section — briefer selects by name, code injects full descriptions.
-    # skip briefer wrapper filtering when few tools installed — marginal
+    # skip briefer wrapper filtering when few wrappers installed — marginal
     # token saving vs catastrophic risk of excluding the right wrapper.
     tool_filter_threshold = setting_int(
         config.settings, "briefer_wrapper_filter_threshold", lo=0,
     )
     if briefing and briefing["wrappers"]:
         if len(installed) <= tool_filter_threshold:
-            # Few tools — inject all but with guides only for selected tools
-            log.debug("Skipping briefer wrapper filter: %d tools <= threshold %d",
+            # Few wrappers — inject all but with guides only for selected wrappers
+            log.debug("Skipping briefer wrapper filter: %d wrappers <= threshold %d",
                       len(installed), tool_filter_threshold)
             _selected = set(briefing["wrappers"])
             tiered_list = build_planner_wrapper_list(installed, user_role, user_wrappers, selected_names=_selected)
@@ -1349,8 +1349,8 @@ async def build_planner_messages(
             "required — search alone cannot create files."
         )
 
-    # always-inject available registry tools (not gated by briefer) so the
-    # planner knows what tools can be installed via `kiso wrapper install`.
+    # always-inject available registry wrappers (not gated by briefer) so the
+    # planner knows what wrappers can be installed via `kiso wrapper install`.
     if registry_text:
         context_parts.append(f"## Available wrappers (not installed)\n{registry_text}")
 
@@ -1374,7 +1374,7 @@ async def build_planner_messages(
             "(e.g., exec 'kiso wrapper install browser'), then replan as last task. "
             "Do NOT add wrapper tasks for uninstalled wrappers — they become "
             "available after the replan. "
-            "For tools already installed: use them directly."
+            "For wrappers already installed: use them directly."
         )
 
     context_parts.append(f"## Caller Role\n{user_role}")
@@ -1488,7 +1488,7 @@ async def run_planner(
     ):
         plan["msg_only_fallback"] = "unavailable_named_tool"
 
-    # Filter needs_install: remove tools that are already installed.
+    # Filter needs_install: remove wrappers that are already installed.
     # The LLM sometimes lists installed wrappers in needs_install by mistake.
     needs = plan.get("needs_install") or []
     if needs and installed_names:

@@ -66,8 +66,8 @@ Wrappers efficiency:
 - Built-in search handles all web queries. Only use a search wrapper if it is listed as installed.
 - Follow `guide:` lines in wrapper descriptions strictly — mandatory workflow rules from the author.
 - wrapper args: always a JSON object with all required args. Never null or `{}`. Omitting required args wastes a retry.
-- wrapper args example: tool="aider", args={"message":"Fix add(): change return a-b to a+b","files":"math.py"} — args holds ALL required params including the primary instruction. detail is human-readable description only; the wrapper binary never reads it.
-- For tools that separate instruction text from file/path args (for example `aider`), keep natural-language instruction ONLY in `message`. `files` / `read_only_files` must contain only literal paths or comma-separated path lists, never full sentences or code-generation instructions.
+- wrapper args example: wrapper="aider", args={"message":"Fix add(): change return a-b to a+b","files":"math.py"} — args holds ALL required params including the primary instruction. detail is human-readable description only; the wrapper binary never reads it.
+- For wrappers that separate instruction text from file/path args (for example `aider`), keep natural-language instruction ONLY in `message`. `files` / `read_only_files` must contain only literal paths or comma-separated path lists, never full sentences or code-generation instructions.
 
 <!-- MODULE: mcp -->
 - MCP methods: `type="mcp"` + `server` + `method` + object `args` conforming to the method's `inputSchema` from `## MCP Methods`. Never invent server/method names — use only what is listed. Prefer MCP for remote APIs, wrappers for local installed software.
@@ -107,14 +107,14 @@ Kiso management commands (exec tasks):
 - Settings: `kiso config set KEY VALUE | get KEY | list` — change runtime settings (hot-reload). Key: bot_persona, bot_name, context_messages.
 - Cron: `kiso cron add "expr" "prompt" --session S` | `list` | `remove <id>` | `enable|disable <id>` — recurring scheduled tasks
 - Projects: `kiso project create <name>` | `list` | `show <name>` | `bind <session> <project>` | `add-member <user> --project P [--role member|viewer]` | `members --project P`
-- Presets: `kiso preset install <name>` | `list` | `search <query>` | `show <name>` | `installed` | `remove <name>` — persona bundles (tools + recipes + knowledge + behaviors)
+- Presets: `kiso preset install <name>` | `list` | `search <query>` | `show <name>` | `installed` | `remove <name>` — persona bundles (wrappers + recipes + knowledge + behaviors)
 - Rules: `kiso rules add "constraint" | list | remove <id>` — safety rules (hard constraints, violations → stuck)
 - Reset: `kiso reset session <id> | knowledge | all | factory`
 - Stats: `kiso stats [--user NAME]` (admin only)
 
 <!-- MODULE: user_mgmt -->
 - Caller Role "user" → never generate `kiso user` tasks. Msg explaining admin access required.
-- `kiso user add --role user`: `--tools` REQUIRED. `--role admin`: omit `--tools`.
+- `kiso user add --role user`: `--wrappers` REQUIRED. `--role admin`: omit `--wrappers`.
 - Collect all info before `kiso user add`. If missing, ask first.
 
 <!-- MODULE: plugin_install -->

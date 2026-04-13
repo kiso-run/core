@@ -48,7 +48,7 @@ _ROLES: tuple[RoleMeta, ...] = (
     RoleMeta(
         name="briefer",
         description=(
-            "Selects relevant context (modules, tools, facts) for "
+            "Selects relevant context (modules, wrappers, facts) for "
             "downstream LLM roles."
         ),
         model_key="briefer",

@@ -5,11 +5,11 @@ _kiso() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="instance skill connector sessions env msg reset stats completion help version"
+    local commands="instance wrapper connector sessions env msg reset stats completion help version"
     local global_flags="--instance -i --session --api --quiet -q --user --help -h --version -V"
 
     local instance_cmds="create start stop restart list status logs shell explore remove"
-    local skill_cmds="list search install update remove"
+    local wrapper_cmds="list search install update remove"
     local connector_cmds="list search install update remove run stop status"
     local env_cmds="set get list delete reload"
     local reset_cmds="session knowledge all factory"
@@ -48,17 +48,17 @@ _kiso() {
             esac
             return
             ;;
-        skill)
-            local skill_pos=$(( cword - i - 1 ))
-            if (( skill_pos == 1 )); then
-                COMPREPLY=($(compgen -W "$skill_cmds" -- "$cur"))
-            elif (( skill_pos >= 2 )); then
-                local skill_sub="${words[i+1]}"
-                case "$skill_sub" in
+        wrapper)
+            local wrapper_pos=$(( cword - i - 1 ))
+            if (( wrapper_pos == 1 )); then
+                COMPREPLY=($(compgen -W "$wrapper_cmds" -- "$cur"))
+            elif (( wrapper_pos >= 2 )); then
+                local wrapper_sub="${words[i+1]}"
+                case "$wrapper_sub" in
                     install) COMPREPLY=($(compgen -W "--name --show-deps --no-deps" -- "$cur")) ;;
-                    update)  COMPREPLY=($(compgen -W "all $(_kiso_skill_names)" -- "$cur")) ;;
-                    remove)  COMPREPLY=($(compgen -W "$(_kiso_skill_names)" -- "$cur")) ;;
-                    search)  COMPREPLY=($(compgen -W "$(_kiso_skill_names)" -- "$cur")) ;;
+                    update)  COMPREPLY=($(compgen -W "all $(_kiso_wrapper_names)" -- "$cur")) ;;
+                    remove)  COMPREPLY=($(compgen -W "$(_kiso_wrapper_names)" -- "$cur")) ;;
+                    search)  COMPREPLY=($(compgen -W "$(_kiso_wrapper_names)" -- "$cur")) ;;
                 esac
             fi
             return
@@ -179,11 +179,11 @@ _kiso_sessions() {
         "SELECT session FROM sessions" 2>/dev/null || true
 }
 
-# List installed skill names from the active instance.
-_kiso_skill_names() {
+# List installed wrapper names from the active instance.
+_kiso_wrapper_names() {
     local inst
     inst=$(_kiso_active_instance)
-    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/skills/ 2>/dev/null | tr '\n' ' ' || true
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/wrappers/ 2>/dev/null | tr '\n' ' ' || true
 }
 
 # List installed connector names from the active instance.

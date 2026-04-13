@@ -1357,7 +1357,7 @@ def _filter_briefer_names(
 ) -> list[str]:
     """Filter hallucinated briefer names against available names in *pool_text*.
 
-    *pool_text* is the formatted context_pool section (e.g. tools or recipes).
+    *pool_text* is the formatted context_pool section (e.g. wrappers or recipes).
     Names are extracted from lines matching ``- name ...``.
     Returns the filtered list (normalized to lowercase).
     """
@@ -1389,7 +1389,7 @@ async def run_briefer(
 ) -> dict:
     """Run the briefer: select relevant context for a consumer role.
 
-    Returns a dict with keys: modules, tools, context, output_indices, relevant_tags.
+    Returns a dict with keys: modules, wrappers, context, output_indices, relevant_tags.
     Raises BrieferError on failure.
     """
     messages = build_briefer_messages(

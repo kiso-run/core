@@ -22,7 +22,7 @@ _ARG_TYPES = {"string", "int", "float", "bool"}
 # Valid vocabulary for kiso.wrapper.consumes
 _CONSUMES_VOCAB = frozenset({"image", "document", "audio", "video", "code", "web_page"})
 
-# TTL cache for discover_wrappers() — keyed by resolved tools dir path.
+# TTL cache for discover_wrappers() — keyed by resolved wrappers dir path.
 # Avoids repeated filesystem scans on every planner/executor call.
 # Cleared by invalidate_wrappers_cache() after install/remove.
 _WRAPPERS_TTL: float = 30.0

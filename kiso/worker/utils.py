@@ -413,7 +413,7 @@ def _snapshot_workspace(session: str) -> set[Path]:
 
 
 # Top-level directories in the workspace that should never be auto-published.
-# Wrappers/tools create caches, profiles, and temp files here — they are internal,
+# Wrappers create caches, profiles, and temp files here — they are internal,
 # not user-facing output.  Wrappers can still write directly to pub/ if they want
 # to publish specific files.
 _PUB_IGNORE_DIRS = frozenset({

@@ -2,11 +2,11 @@
 # zsh completion for kiso
 
 _kiso() {
-    local -a commands instance_cmds skill_cmds connector_cmds env_cmds reset_cmds
+    local -a commands instance_cmds wrapper_cmds connector_cmds env_cmds reset_cmds
 
     commands=(
         'instance:manage bot instances (create, start, stop, logs, ...)'
-        'skill:manage skills'
+        'wrapper:manage wrappers'
         'connector:manage connectors'
         'sessions:list sessions'
         'env:manage deploy secrets'
@@ -31,12 +31,12 @@ _kiso() {
         'remove:remove instance and all its data'
     )
 
-    skill_cmds=(
-        'list:list installed skills'
-        'search:search available skills'
-        'install:install a skill'
-        'update:update a skill'
-        'remove:remove a skill'
+    wrapper_cmds=(
+        'list:list installed wrappers'
+        'search:search available wrappers'
+        'install:install a wrapper'
+        'update:update a wrapper'
+        'remove:remove a wrapper'
     )
 
     connector_cmds=(
@@ -103,27 +103,27 @@ _kiso() {
             fi
             return
             ;;
-        skill)
+        wrapper)
             if (( CURRENT == i+2 )); then
-                _describe -t skill-commands 'skill command' skill_cmds
+                _describe -t wrapper-commands 'wrapper command' wrapper_cmds
             elif (( CURRENT >= i+3 )); then
                 case "$words[i+2]" in
                     install)
-                        _arguments '--name[skill name]:name' '--show-deps[show dependencies]' '--no-deps[skip dependencies]'
+                        _arguments '--name[wrapper name]:name' '--show-deps[show dependencies]' '--no-deps[skip dependencies]'
                         ;;
                     update)
                         local -a skill_names
-                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        skill_names=(${(f)"$(_kiso_wrapper_names)"})
                         compadd -- all "${skill_names[@]}"
                         ;;
                     remove)
                         local -a skill_names
-                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        skill_names=(${(f)"$(_kiso_wrapper_names)"})
                         (( ${#skill_names} )) && compadd -- "${skill_names[@]}"
                         ;;
                     search)
                         local -a skill_names
-                        skill_names=(${(f)"$(_kiso_skill_names)"})
+                        skill_names=(${(f)"$(_kiso_wrapper_names)"})
                         (( ${#skill_names} )) && compadd -- "${skill_names[@]}"
                         ;;
                 esac
@@ -275,11 +275,11 @@ _kiso_sessions() {
         "SELECT session FROM sessions" 2>/dev/null
 }
 
-# List installed skill names from the active instance.
-_kiso_skill_names() {
+# List installed wrapper names from the active instance.
+_kiso_wrapper_names() {
     local inst
     inst=$(_kiso_active_instance)
-    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/skills/ 2>/dev/null
+    [[ -n "$inst" ]] && docker exec "kiso-$inst" ls /root/.kiso/wrappers/ 2>/dev/null
 }
 
 # List installed connector names from the active instance.

@@ -1,4 +1,4 @@
-"""Official plugin registry — fetch and search available tools/connectors."""
+"""Official plugin registry — fetch and search available wrappers/connectors."""
 
 from __future__ import annotations
 
