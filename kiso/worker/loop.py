@@ -32,6 +32,7 @@ from kiso.brain import (
     REVIEW_STATUS_REPLAN,
     REVIEW_STATUS_STUCK,
     TASK_TYPE_EXEC,
+    TASK_TYPE_MCP,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
     TASK_TYPE_SEARCH,
@@ -610,6 +611,7 @@ class _PlanCtx:
     cancel_event: "asyncio.Event | None" = None  # threaded to subprocess
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     task_contracts: dict[int, dict] = field(default_factory=dict)
+    mcp_manager: "Any | None" = None  # kiso.mcp.MCPManager when MCP is enabled
     # Derived from installed_wrappers for O(1) lookup by name (populated in __post_init__)
     installed_wrappers_by_name: dict[str, dict] = field(init=False)
 
@@ -1531,12 +1533,16 @@ async def _handle_search_task(
     return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
 
+from kiso.worker.mcp import _handle_mcp_task
+
+
 _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
     TASK_TYPE_WRAPPER: _handle_wrapper_task,
     TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
+    TASK_TYPE_MCP: _handle_mcp_task,
 }
 
 

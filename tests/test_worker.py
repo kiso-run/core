@@ -8349,7 +8349,9 @@ class TestTaskHandlers:
 
     async def test_task_handlers_dict_has_all_types(self):
         """_TASK_HANDLERS covers all task types."""
-        assert set(_TASK_HANDLERS.keys()) == {"exec", "msg", "wrapper", "search", "replan"}
+        assert set(_TASK_HANDLERS.keys()) == {
+            "exec", "msg", "wrapper", "search", "replan", "mcp",
+        }
 
     # --- _handle_replan_task ---
 

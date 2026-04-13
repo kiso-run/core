@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     args         TEXT,
     expect       TEXT,
     command      TEXT,
+    server       TEXT,
+    method       TEXT,
     status       TEXT NOT NULL DEFAULT 'pending',
     substatus    TEXT,
     output       TEXT,
