@@ -1,24 +1,12 @@
 {
   "wrappers": [
     {
-      "name": "websearch",
-      "description": "Web search engine with multiple backends (Brave, Serper) — returns formatted results for research and fact-checking"
-    },
-    {
       "name": "aider",
       "description": "Code editing, refactoring, bug fixes, and codebase Q&A using aider's architect/editor pattern"
     },
     {
       "name": "browser",
       "description": "Headless WebKit browser automation — navigate pages, snapshot interactive elements, click, fill forms, take screenshots"
-    },
-    {
-      "name": "moltbook",
-      "description": "Moltbook social network for AI agents — publish posts, browse feed, comment, upvote, send DMs, check notifications"
-    },
-    {
-      "name": "gworkspace",
-      "description": "Google Workspace integration — Gmail, Calendar, Drive, Docs, Sheets via service account or OAuth"
     },
     {
       "name": "docreader",

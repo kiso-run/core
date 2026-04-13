@@ -83,7 +83,7 @@ Wrappers efficiency:
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** use `search` task type (built-in). Only use `websearch` tool if it appears in the installed Wrappers list above. NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
+- **Research / information gathering:** use `search` task type (built-in). NEVER use browser for web searches — browser is for interacting with a specific known URL, not for finding information.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
 

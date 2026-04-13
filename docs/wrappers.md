@@ -203,9 +203,9 @@ Only admins can install wrappers.
 
 ```bash
 # official (resolves from kiso-run org)
-kiso wrapper install websearch
-# → clones git@github.com:kiso-run/wrapper-websearch.git
-# → ~/.kiso/instances/{instance}/wrappers/websearch/
+kiso wrapper install browser
+# → clones git@github.com:kiso-run/wrapper-browser.git
+# → ~/.kiso/instances/{instance}/wrappers/browser/
 
 # unofficial (full git URL)
 kiso wrapper install git@github.com:someone/my-wrapper.git

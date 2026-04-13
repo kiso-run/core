@@ -39,7 +39,7 @@ Recipes shape the **plan** — the sequence of tasks the planner creates:
 
 - **Task ordering**: "search first, then verify, then report"
 - **Strategy**: "use 2+ sources", "backup before modifying"
-- **Wrapper selection**: "prefer websearch over browser for research"
+- **Wrapper selection**: "prefer the built-in `search` task type over the `browser` wrapper for general research"
 - **Task detail specificity**: more detailed exec descriptions → better worker output
 
 ### Example: Good Recipe
@@ -63,7 +63,7 @@ This works because it changes the **plan structure** (3 exec tasks in a specific
 Recipes do NOT reach the execution layer:
 
 - **Worker output**: the worker (shell command translator) has its own prompt and doesn't see recipes
-- **Wrapper behavior**: wrappers (aider, browser, websearch) run as separate processes — recipe instructions don't reach them
+- **Wrapper behavior**: wrappers (aider, browser, ocr, …) run as separate processes — recipe instructions don't reach them
 - **Messenger style**: the messenger has its own prompt for formatting responses
 - **Generated code quality**: scripts written by exec tasks are produced by the worker LLM, not the planner
 

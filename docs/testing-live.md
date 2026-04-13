@@ -129,7 +129,7 @@ Tests planned for M21 that verify security properties with real LLMs:
 See [security-risks.md](security-risks.md) for full risk analysis.
 
 ### L5 install tests skipped
-- `wrapper-websearch` / `connector-discord` repos not yet published in the `kiso-run` org. Tests will auto-pass once repos are created.
+- `connector-discord` repo not yet published in the `kiso-run` org. Tests will auto-pass once the repo is created.
 - Requires `git` on PATH.
 - **When repos are published**: remove the `pytest.skip` fallback and verify the full install → validate → remove lifecycle passes.
 - **Done (M1279)**: deterministic CLI tests for installing a

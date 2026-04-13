@@ -1354,17 +1354,6 @@ async def build_planner_messages(
     if registry_text:
         context_parts.append(f"## Available wrappers (not installed)\n{registry_text}")
 
-    # clarify that built-in search works without websearch installation.
-    # This is injected unconditionally (not gated by briefer web module) so the
-    # planner never fixates on installing websearch for simple research queries.
-    # registry_text only contains websearch when it's NOT installed.
-    if registry_text and "websearch" in registry_text:
-        context_parts.append(
-            "**Note:** The built-in `search` task type handles all web research "
-            "queries without any wrapper installation. Use `type: search` directly. "
-            "For file creation requests, combine search with exec tasks."
-        )
-
     # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
     _add_section(context_parts, "Safety Rules (MUST OBEY)",

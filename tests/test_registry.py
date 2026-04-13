@@ -73,14 +73,27 @@ class TestRegistryJsonShape:
 
     def test_official_tools_present(self, registry):
         """Pin the canonical official wrapper list. New official wrappers
-        must be added here so coverage stays explicit."""
+        must be added here so coverage stays explicit.
+
+        Note: gworkspace, websearch, and moltbook were retired in v0.9
+        because they violated the wrapper boundary rule (pure remote
+        API proxies with no local install lifecycle). Users who still
+        need that functionality configure community MCP servers —
+        see docs/extensibility.md and docs/mcp.md.
+        """
         names = {e["name"] for e in registry["wrappers"]}
         official = {
-            "websearch", "aider", "browser", "moltbook", "gworkspace",
+            "aider", "browser",
             "docreader", "transcriber", "ocr",
         }
         missing = official - names
         assert not missing, f"missing official wrappers in registry.json: {missing}"
+        # Retired wrappers must not reappear
+        retired = {"gworkspace", "websearch", "moltbook"}
+        reappeared = retired & names
+        assert not reappeared, (
+            f"retired wrappers must not reappear in registry.json: {reappeared}"
+        )
 
     def test_official_connectors_present(self, registry):
         names = {e["name"] for e in registry["connectors"]}
