@@ -20,6 +20,7 @@ from __future__ import annotations
 from kiso.mcp.client import MCPClient
 from kiso.mcp.config import MCPConfigError, MCPServer, parse_mcp_section
 from kiso.mcp.http import MCPStreamableHTTPClient
+from kiso.mcp.manager import MCPManager, UnhealthyServerError
 from kiso.mcp.schemas import (
     MCPCallResult,
     MCPCapError,
@@ -39,6 +40,7 @@ __all__ = [
     "MCPConfigError",
     "MCPError",
     "MCPInvocationError",
+    "MCPManager",
     "MCPMethod",
     "MCPProtocolError",
     "MCPServer",
@@ -46,5 +48,6 @@ __all__ = [
     "MCPStdioClient",
     "MCPStreamableHTTPClient",
     "MCPTransportError",
+    "UnhealthyServerError",
     "parse_mcp_section",
 ]
