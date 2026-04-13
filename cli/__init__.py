@@ -435,6 +435,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = ps.add_parser("remove", help="remove an installed preset")
     p.add_argument("name", help="preset name")
 
+    # MCP — Model Context Protocol client (consumer-only)
+    from cli.mcp import add_subcommands as _add_mcp_subcommands
+
+    mcp = sub.add_parser("mcp", help="manage MCP servers (consumer-only)")
+    _add_mcp_subcommands(mcp)
+
     return parser
 
 
@@ -446,6 +452,10 @@ def main() -> None:
         _chat(args)
     elif args.command == "msg":
         _msg_cmd(args)
+    elif args.command == "mcp":
+        from cli.mcp import handle as run_mcp_command
+
+        sys.exit(run_mcp_command(args))
     elif args.command == "wrapper":
         from cli.wrapper import run_wrapper_command
 
