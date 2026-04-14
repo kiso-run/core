@@ -12,12 +12,17 @@ cp .env.example .env
 
 # 2. Get an API key from https://openrouter.ai/keys and paste it
 #    KISO_LLM_API_KEY=sk-or-v1-...
-
-# 3. Load into your shell (once per terminal session)
-set -a; source .env; set +a
+#    Optionally add BRAVE_API_KEY / GITHUB_PERSONAL_ACCESS_TOKEN /
+#    GOOGLE_MAPS_API_KEY to unlock the live MCP auth tests.
 ```
 
-`set -a` tells bash to auto-export variables, so `KEY=VALUE` lines work without `export`.
+`./utils/run_tests.sh` automatically sources `<repo>/.env` before running any
+suite — no manual `source` needed. Precedence (highest to lowest):
+**parent shell > repo `.env` > instance `.env`** (`~/.kiso/instances/kiso/.env`,
+used as a fallback for environments that only have the runtime file).
+
+If you invoke `pytest` directly instead of going through `run_tests.sh`,
+load the file yourself with `set -a; source .env; set +a`.
 
 The `.env` file is gitignored and must never be committed.
 

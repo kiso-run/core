@@ -38,17 +38,19 @@ NC='\033[0m'
 # ---------------------------------------------------------------------------
 # Load API keys
 # ---------------------------------------------------------------------------
+# Precedence (highest to lowest): parent shell > repo `.env` > instance `.env`.
+# The repo `.env` is the canonical place for developer/test credentials and
+# lives alongside the code; the instance `.env` belongs to an installed Kiso
+# runtime and is used as a fallback for environments that only have the
+# runtime file configured.
+_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=_load_env.sh
+source "$_REPO_ROOT/utils/_load_env.sh"
+_load_env_file "$_REPO_ROOT/.env"
 _ENV_FILE="${KISO_ENV_FILE:-$HOME/.kiso/instances/kiso/.env}"
-if [[ -f "$_ENV_FILE" ]]; then
-    while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" == \#* ]] && continue
-        if [[ -z "${!key:-}" ]]; then
-            export "$key"="$value"
-        fi
-    done < "$_ENV_FILE"
-    if [[ -z "${OPENROUTER_API_KEY:-}" && -n "${KISO_LLM_API_KEY:-}" ]]; then
-        export OPENROUTER_API_KEY="$KISO_LLM_API_KEY"
-    fi
+_load_env_file "$_ENV_FILE"
+if [[ -z "${OPENROUTER_API_KEY:-}" && -n "${KISO_LLM_API_KEY:-}" ]]; then
+    export OPENROUTER_API_KEY="$KISO_LLM_API_KEY"
 fi
 
 # ---------------------------------------------------------------------------
