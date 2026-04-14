@@ -651,9 +651,14 @@ def preset_tools_installed():
     for name in _PRESET_TOOLS:
         if name in installed:
             continue
+        # Cold install of the `browser` wrapper pulls chromium via apt
+        # and can exceed 5 minutes on a loaded host. The fixture is
+        # session-scoped so we pay this cost at most once per suite
+        # invocation — a generous 30-minute budget accommodates a
+        # slow cold provision without racing the per-test timeouts.
         result = subprocess.run(
             ["uv", "run", "kiso", "wrapper", "install", name],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, timeout=1800,
         )
         if result.returncode != 0:
             pytest.skip(

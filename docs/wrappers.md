@@ -195,6 +195,41 @@ apt-get install -y --no-install-recommends ffmpeg curl
 
 Runs inside the Docker container. If it fails, kiso warns the user and suggests asking the bot to fix it.
 
+### `health_check` — skipping `deps.sh` on an already-installed wrapper
+
+`kiso wrapper install X` is also the "ensure X is ready" command — users invoke it whenever a plan needs a wrapper, not just on first install. Without a health probe, every invocation re-runs `deps.sh` (which typically calls `apt-get`), paying a redundant cost and opening a window for `dpkg` lock contention with system package managers.
+
+A wrapper can declare an optional `health_check` command in its `kiso.toml`:
+
+```toml
+[kiso]
+name = "browser"
+version = "0.3.0"
+health_check = "chromium --version"
+```
+
+On `kiso wrapper install browser` when the wrapper is already installed, the CLI:
+
+1. Runs `git pull --ff-only` to update source.
+2. Reads `health_check` from the (possibly updated) `kiso.toml`.
+3. Applies the gate:
+
+| Condition                             | `deps.sh` runs? | Reason                     |
+|---------------------------------------|-----------------|----------------------------|
+| `--no-deps`                           | no              | explicit opt-out           |
+| no `deps.sh` in repo                  | no              | nothing to run             |
+| `--force`                             | yes             | explicit opt-in            |
+| `git pull` advanced HEAD              | yes             | source updated             |
+| no `health_check` declared            | yes             | legacy default (safe)      |
+| `health_check` exits 0                | **no**          | system is healthy          |
+| `health_check` exits non-zero         | yes             | probe failed, self-heal    |
+
+**Zero regression for wrappers without `health_check`** — the legacy "always run `deps.sh`" path is the default. Opt-in per wrapper.
+
+A good `health_check` is cheap (<1s), stable across the wrapper's supported platforms, and checks the *real* binary or library that `deps.sh` installs (e.g. `chromium --version`, `aider --version`, `python -c "import playwright"`). A probe that always passes even when the install is broken defeats the purpose; when in doubt, omit the field and the wrapper behaves as before.
+
+**Manual recovery**: `kiso wrapper install X --force` bypasses the gate and runs `deps.sh` unconditionally.
+
 ## Installation
 
 Only admins can install wrappers.

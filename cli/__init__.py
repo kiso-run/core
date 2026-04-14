@@ -164,6 +164,8 @@ def _add_wrapper_subcommands(parent_parser: argparse.ArgumentParser) -> None:
     ip.add_argument("--name", default=None, help="custom install name")
     ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
     ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
+    ip.add_argument("--force", action="store_true",
+                    help="force re-run deps.sh even if health_check passes")
     up = s.add_parser("update", help="update a wrapper")
     up.add_argument("target", help="wrapper name or 'all'")
     rp = s.add_parser("remove", help="remove a wrapper")
@@ -182,6 +184,8 @@ def _add_connector_parser(sub) -> None:
     p.add_argument("--name", default=None, help="custom install name")
     p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
     p.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
+    p.add_argument("--force", action="store_true",
+                   help="force re-run deps.sh even if health_check passes")
     p = s.add_parser("update", help="update a connector")
     p.add_argument("target", help="connector name or 'all'")
     p = s.add_parser("remove", help="remove a connector")

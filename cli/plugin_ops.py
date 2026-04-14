@@ -39,6 +39,93 @@ OFFICIAL_ORG = "kiso-run"
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 
 
+# ---------------------------------------------------------------------------
+# Probe-gated deps.sh re-run
+# ---------------------------------------------------------------------------
+#
+# When a plugin is already installed, `kiso wrapper install X` (and the
+# connector equivalent) historically re-ran `deps.sh` unconditionally.
+# That conflates two operations — provisioning (rare, expensive) and
+# readiness check (frequent, cheap) — and causes apt/dpkg lock
+# contention with system updaters on long-running test matrices. The
+# gate below lets a plugin declare an optional `health_check` shell
+# command in its kiso.toml; when that command exits 0 and the git pull
+# did not advance HEAD, `deps.sh` is skipped. Wrappers without a
+# declared probe keep the exact previous behaviour (opt-in per plugin,
+# zero regression).
+#
+# Precedence (highest to lowest):
+#   --no-deps           → skip (explicit user opt-out)
+#   missing deps.sh     → nothing to run
+#   --force             → run (explicit user opt-in)
+#   git pull advanced   → run (source changed)
+#   no health_check     → run (legacy default)
+#   health_check red    → run (probe failed, self-heal)
+#   health_check green  → skip (system is healthy)
+
+
+def _gate_deps_decision(
+    *,
+    deps_path_exists: bool,
+    no_deps: bool,
+    force: bool,
+    pull_changed: bool,
+    health_check_cmd: str | None,
+    health_check_result: bool | None,
+) -> tuple[bool, str]:
+    """Pure decision: should we run deps.sh? Returns (run, reason)."""
+    if no_deps:
+        return False, "skipped (--no-deps)"
+    if not deps_path_exists:
+        return False, "no deps.sh"
+    if force:
+        return True, "forced"
+    if pull_changed:
+        return True, "source updated"
+    if not health_check_cmd:
+        return True, "no health_check declared"
+    if health_check_result:
+        return False, f"healthy ({health_check_cmd})"
+    return True, "probe failed (unhealthy)"
+
+
+def _git_head(plugin_dir: Path) -> str | None:
+    """Return the current git HEAD SHA or None on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "-c", f"safe.directory={plugin_dir}", "rev-parse", "HEAD"],
+            cwd=str(plugin_dir), capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def _run_health_check(cmd: str, *, cwd: Path, env: dict[str, str] | None = None) -> bool:
+    """Run a plugin-declared health_check shell command.
+
+    Returns True iff the command exits 0. Any failure mode — missing
+    binary, non-zero exit, timeout, exception — returns False so the
+    caller falls through to the default "run deps.sh" branch.
+    """
+    if not cmd:
+        return False
+    try:
+        result = subprocess.run(
+            ["bash", "-c", cmd],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            env=env if env is not None else _clean_env(),
+            timeout=30,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def url_to_name(url: str) -> str:
     """Convert a git URL to a plugin install name.
 
@@ -166,36 +253,76 @@ def _plugin_install(
     plugin_dir = parent_dir / name
 
     if plugin_dir.exists():
-        # Already installed — update source code and refresh deps
-        print(f"{plugin_type.capitalize()} '{name}' is already installed — refreshing deps...")
+        # Already installed — update source and let the probe gate
+        # decide whether deps.sh needs to re-run.
+        print(f"{plugin_type.capitalize()} '{name}' is already installed — checking health...")
         try:
-            # M980: git pull to update source code (not just deps)
-            # M982: pass safe.directory to avoid "dubious ownership" errors
-            #       when kiso runs as a different user than the plugin owner.
+            # git pull to update source (pass safe.directory to avoid
+            # "dubious ownership" errors when kiso runs as a different
+            # user than the plugin owner).
+            before = _git_head(plugin_dir)
             result = subprocess.run(
                 ["git", "-c", f"safe.directory={plugin_dir}", "pull", "--ff-only"],
                 cwd=str(plugin_dir), capture_output=True, text=True,
             )
             if result.returncode != 0:
                 print(f"warning: git pull failed for '{name}': {result.stderr.strip()}")
-            subprocess.run(["uv", "sync"], cwd=str(plugin_dir), capture_output=True, text=True, env=_clean_env())
+            after = _git_head(plugin_dir)
+            pull_changed = bool(before and after and before != after)
+
+            subprocess.run(
+                ["uv", "sync"], cwd=str(plugin_dir),
+                capture_output=True, text=True, env=_clean_env(),
+            )
+
             deps_path = plugin_dir / "deps.sh"
-            if deps_path.exists() and not args.no_deps:
-                result = subprocess.run(["bash", str(deps_path)], capture_output=True, text=True, env=_clean_env())
-                if result.returncode != 0:
-                    print(f"warning: deps.sh failed: {result.stderr.strip()}")
-            # Check binary deps
+
+            # Read the optional health_check from kiso.toml.
             toml_path = plugin_dir / "kiso.toml"
+            manifest: dict = {}
             if toml_path.exists():
                 with open(toml_path, "rb") as f:
                     manifest = tomllib.load(f)
-                kiso_section = manifest.get("kiso", {})
-                plugin_info = {"path": str(plugin_dir), "deps": kiso_section.get("deps", {})}
-                missing = check_deps_fn(plugin_info)
-                if missing:
-                    print(f"warning: still missing binaries: {', '.join(missing)}")
-                else:
-                    print(f"  {plugin_type} '{name}' is healthy")
+            health_check_cmd = (
+                manifest.get("kiso", {}).get("health_check") or None
+            )
+            health_check_result: bool | None = None
+            if health_check_cmd:
+                health_check_result = _run_health_check(
+                    health_check_cmd, cwd=plugin_dir,
+                )
+
+            run_deps, reason = _gate_deps_decision(
+                deps_path_exists=deps_path.exists(),
+                no_deps=args.no_deps,
+                force=getattr(args, "force", False),
+                pull_changed=pull_changed,
+                health_check_cmd=health_check_cmd,
+                health_check_result=health_check_result,
+            )
+
+            if run_deps:
+                print(f"  refreshing deps ({reason})")
+                result = subprocess.run(
+                    ["bash", str(deps_path)],
+                    capture_output=True, text=True, env=_clean_env(),
+                )
+                if result.returncode != 0:
+                    print(f"warning: deps.sh failed: {result.stderr.strip()}")
+            else:
+                print(f"  {reason} — skipping deps.sh")
+
+            # Binary deps sanity check (cheap, always run).
+            kiso_section = manifest.get("kiso", {})
+            plugin_info = {
+                "path": str(plugin_dir),
+                "deps": kiso_section.get("deps", {}),
+            }
+            missing = check_deps_fn(plugin_info)
+            if missing:
+                print(f"warning: still missing binaries: {', '.join(missing)}")
+            else:
+                print(f"  {plugin_type} '{name}' is healthy")
         except Exception as e:
             print(f"warning: deps refresh failed: {e}")
         return
