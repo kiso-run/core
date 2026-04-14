@@ -566,3 +566,53 @@ An attacker cannot enumerate sessions without knowing the `cli` token (256-bit s
 - Symlinks inside `pub/` that point outside `pub/`
 
 **Token required**: if the `cli` token is not set in `config.toml`, no pub URLs are generated (the worker returns an empty list with a warning rather than using a predictable fallback key).
+
+## 11. Safety Rules
+
+Safety rules are facts in the knowledge store tagged with
+`category="safety"`. The briefer surfaces them to the planner and
+reviewer on every plan so that both roles can honour the constraint
+when producing and validating task output.
+
+### Adding a rule
+
+Any admin-authenticated path that writes into the facts table with
+`category="safety"` installs a rule — for example, via the admin API
+or a direct DB write during test setup. New rules take effect on the
+**next** plan in any session: the briefer re-reads facts at plan
+time.
+
+### Removing a rule: eventually-consistent within a running session
+
+Deleting a rule row from the facts table stops the briefer from
+surfacing it on subsequent plans — that part is immediate. However,
+Kiso's multi-turn memory legitimately includes prior assistant
+messages in the current session's context window, so a refusal
+produced **under** a now-removed rule can still influence follow-up
+turns in the same session. The model continues in-character from
+its own earlier refusal even though the rule is no longer loaded
+into the briefing.
+
+This is correct multi-turn behaviour, not a bug. It means:
+
+- **Rule removal takes effect immediately on new sessions.** Any
+  session started after the delete sees a clean slate.
+- **Rule removal is eventually consistent within a running session.**
+  Depending on how the model continues its own prior turn, the
+  effect can persist for one or more follow-up messages.
+- **For an immediate clean slate inside an active session**, use
+  `kiso reset session <id>` (see `cli/reset.py:_reset_session`).
+  This clears the session's messages and plans so the next turn
+  starts with no in-character history to carry forward.
+
+### Threat model note
+
+Injecting a malicious safety rule via a compromised admin token is
+treated as a **credentials compromise event**, not a safety-rule
+bug. At that severity, rotating credentials and wiping active
+sessions with `kiso reset session` is the appropriate response;
+building automatic session invalidation on rule delete would be
+overfitted to a single category, break benign rule-churn flows
+(experimenting with rules, single-turn rules), and only partially
+mitigate the compromise anyway. The session-reset lever gives
+operators explicit, auditable control.
