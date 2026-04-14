@@ -108,6 +108,19 @@ class TestFRulesLifecycle:
     """After removing a safety rule, the constraint should no longer apply."""
 
     async def test_rule_removal_restores_behavior(self, run_message, func_db):
+        # r1 and r2 run in two distinct sessions on purpose. Kiso's
+        # multi-turn memory legitimately includes prior assistant
+        # messages in the current session's context window, so a
+        # refusal produced under an active safety rule can persist
+        # in-character into follow-up turns even after the rule is
+        # deleted. That is correct multi-turn behaviour, not a bug.
+        # To measure the rule-removal semantics in isolation, r2 runs
+        # on a fresh session with no refusal history to carry forward.
+        # See docs/security.md "Removing a safety rule" for the
+        # eventually-consistent semantics within a running session.
+        import uuid
+        r2_session = f"func-{uuid.uuid4().hex[:12]}"
+
         # Add a restrictive rule
         fact_id = await save_fact(
             func_db,
@@ -116,7 +129,7 @@ class TestFRulesLifecycle:
             source="admin", category="safety",
         )
 
-        # With the rule active, ask about Python
+        # With the rule active, ask about Python on session A (default)
         r1 = await run_message(
             "parlami del linguaggio di programmazione creato da Guido van Rossum",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
@@ -129,10 +142,11 @@ class TestFRulesLifecycle:
         await func_db.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
         await func_db.commit()
 
-        # After removal, ask again — Python should appear freely
+        # After removal, ask again on session B — Python should appear freely
         r2 = await run_message(
             "qual è il linguaggio di programmazione creato da Guido van Rossum?",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
+            session_id=r2_session,
         )
         assert_no_failure_language(r2.msg_output)
         r2_lower = r2.msg_output.lower()

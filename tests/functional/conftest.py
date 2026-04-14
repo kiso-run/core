@@ -528,15 +528,22 @@ async def run_message(func_config, func_db, func_session):
         *,
         timeout: float = 300,
         base_url: str = "http://test",
+        session_id: str | None = None,
     ) -> FunctionalResult:
+        # Tests that need multi-turn continuity rely on the default
+        # `func_session`. Tests that explicitly need an isolated fresh
+        # session (e.g. safety-rule lifecycle where chat history would
+        # leak prior-turn refusals) can pass `session_id=...`.
+        active_session = session_id or func_session
+
         # Ensure session exists (may already exist in multi-message tests)
         try:
-            await create_session(func_db, func_session)
+            await create_session(func_db, active_session)
         except Exception:  # noqa: BLE001 — IntegrityError on duplicate
             pass
 
         msg_id = await save_message(
-            func_db, func_session, "testadmin", "user", content,
+            func_db, active_session, "testadmin", "user", content,
         )
         msg = {
             "id": msg_id,
@@ -554,7 +561,7 @@ async def run_message(func_config, func_db, func_session):
             _process_message(
                 func_db,
                 func_config,
-                func_session,
+                active_session,
                 msg,
                 cancel_event,
                 llm_timeout=func_config.settings["llm_timeout"],
@@ -579,7 +586,7 @@ async def run_message(func_config, func_db, func_session):
         # Collect results from DB
         cur = await func_db.execute(
             "SELECT * FROM plans WHERE session = ? ORDER BY id",
-            (func_session,),
+            (active_session,),
         )
         plans = [dict(r) for r in await cur.fetchall()]
 
