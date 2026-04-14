@@ -88,6 +88,41 @@ class TestInitialize:
         with pytest.raises(MCPProtocolError):
             await client.initialize()
 
+    async def test_stateless_server_no_session_id(self):
+        """Server omits the Mcp-Session-Id header on initialize.
+
+        Per MCP spec 2025-06-18, session IDs are optional. Stateless
+        hosted servers (e.g. Google Maps Grounding Lite) do not issue
+        them. The client must:
+          - accept the initialize response without raising
+          - expose `session_id == None`
+          - run list_methods + call_method successfully without
+            sending any Mcp-Session-Id header
+          - shut down cleanly (no DELETE attempted)
+        """
+        client = _client_for_app(make_app("stateless"))
+        info = await client.initialize()
+        assert info.name == "mock-http-mcp"
+        assert client.session_id is None
+        methods = await client.list_methods()
+        assert [m.name for m in methods] == ["ping"]
+        result = await client.call_method("ping", {"echo": "hi"})
+        assert result.is_error is False
+        assert "pong:hi" in result.stdout_text
+        await client.shutdown()
+
+    async def test_stateful_server_still_echoes_session_id(self):
+        """Regression guard: stateful servers must still receive the
+        Mcp-Session-Id header on every request after initialize."""
+        client = _client_for_app(make_app("happy_json"))
+        await client.initialize()
+        assert client.session_id is not None
+        # list_methods and call_method only succeed if the mock sees
+        # the session id header (otherwise it returns 404).
+        methods = await client.list_methods()
+        assert methods
+        await client.shutdown()
+
 
 # ---------------------------------------------------------------------------
 # list_methods

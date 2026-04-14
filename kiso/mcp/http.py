@@ -9,10 +9,13 @@ response handling:
   the JSON-RPC response, possibly preceded by server-initiated
   notifications
 
-Session management follows the spec: the server assigns an
-``Mcp-Session-Id`` on the initialize response, the client includes it
-in every subsequent request header, and the client transparently
+Session management follows the spec: the server MAY assign an
+``Mcp-Session-Id`` on the initialize response; when present the client
+includes it in every subsequent request header, and transparently
 re-initializes when the server returns HTTP 404 for a stale session.
+Stateless servers that omit the session-id header are supported: the
+client runs without a session id and sends no session header on
+subsequent requests.
 
 The ``MCP-Protocol-Version`` header is sent on every request so the
 server knows which spec version the client targets.
@@ -117,12 +120,13 @@ class MCPStreamableHTTPClient(MCPClient):
             raise MCPProtocolError(
                 f"initialize: response has no result: {response_body!r}"
             )
-        session_id = headers.get("mcp-session-id") or headers.get("Mcp-Session-Id")
-        if not session_id:
-            raise MCPProtocolError(
-                "initialize: server did not return an Mcp-Session-Id header"
-            )
-        self._session_id = session_id
+        # Session id is optional per MCP spec 2025-06-18. Stateless
+        # servers may omit the header entirely; in that case we run
+        # without a session id and never emit the header on follow-up
+        # requests.
+        self._session_id = headers.get("mcp-session-id") or headers.get(
+            "Mcp-Session-Id"
+        ) or None
 
         result = response_body["result"]
         server_info = result.get("serverInfo") or {}

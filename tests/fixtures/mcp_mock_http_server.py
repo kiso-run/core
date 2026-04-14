@@ -18,6 +18,9 @@ Scenarios are parameterised at app-construction time via
   that only speaks the deprecated HTTP+SSE transport.
 - ``protocol_version_mismatch``: returns an error on initialize
   with an unsupported protocol version.
+- ``stateless``: initialize response omits the ``Mcp-Session-Id``
+  header (server is stateless per MCP spec); subsequent requests
+  must succeed without a session id header.
 
 The app is minimal and deliberately not a full MCP spec
 implementation; it only covers the shapes the tests need.
@@ -127,7 +130,16 @@ def make_app(scenario: str = "happy_json") -> FastAPI:
             state["session_id"] = session_id
             state["call_count"] = 0  # reset per-session counters on re-init
             response_body = _initialize_result(req_id)
-            headers = {"Mcp-Session-Id": session_id}
+            if scenario == "stateless":
+                # Stateless server: no session id issued. Mirror the
+                # real-world behaviour of hosted MCP endpoints that do
+                # not need per-client state (e.g. Google Maps Grounding
+                # Lite). Subsequent requests must not be rejected for
+                # missing a session header.
+                state["session_id"] = None
+                headers: dict[str, str] = {}
+            else:
+                headers = {"Mcp-Session-Id": session_id}
 
             if scenario == "happy_sse":
                 async def _stream() -> AsyncIterator[bytes]:
@@ -142,9 +154,15 @@ def make_app(scenario: str = "happy_json") -> FastAPI:
         if method == "notifications/initialized":
             return Response(status_code=202)
 
-        # All other RPCs require a session id matching.
-        if mcp_session_id is None or mcp_session_id != state["session_id"]:
-            return Response(status_code=404, content=b"session not found")
+        # All other RPCs require a session id matching, unless the
+        # server is running in stateless mode.
+        if scenario != "stateless":
+            if mcp_session_id is None or mcp_session_id != state["session_id"]:
+                return Response(status_code=404, content=b"session not found")
+        else:
+            # Stateless mode: a client that (incorrectly) sends a
+            # session header is ignored but not rejected.
+            pass
 
         if method == "tools/list":
             if scenario == "happy_sse":
