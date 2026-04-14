@@ -312,7 +312,11 @@ class TestF41AiderEditFile:
         """What: Pre-create buggy file → aider fixes → exec verifies.
 
         Why: All existing aider tests create files from scratch. This tests
-        aider's primary use case: editing existing code.
+        aider's primary use case: editing existing code. The fixture uses
+        an operation-agnostic function name (`compute`) so the planner's
+        natural-language instructions to aider cannot be misinterpreted
+        as a rename request — the only plausible fix is flipping the
+        operator, which is what we want to measure.
         Expects: aider wrapper task present, exec output contains '7' (3+4).
         """
         # create file in session workspace so both aider (git) and
@@ -321,16 +325,17 @@ class TestF41AiderEditFile:
         workspace.mkdir(parents=True, exist_ok=True)
         target = workspace / "kiso_test_f41.py"
         target.write_text(
-            "def add(a, b):\n"
-            "    return a - b\n"
+            "def compute(a, b):\n"
+            "    return a * b\n"
             "\n"
-            "print(add(3, 4))\n"
+            "print(compute(3, 4))\n"
         )
 
         result = await run_message(
-            f"il file {target} ha un bug: la funzione add "
-            "sottrae invece di sommare. usa aider per fixarlo, poi "
-            f"esegui python3 {target} e dimmi il risultato",
+            f"il file {target} contiene la funzione `compute` che "
+            "moltiplica i due argomenti, ma dovrebbe sommarli. "
+            "usa aider per correggere l'operatore da `*` a `+`, poi "
+            f"esegui `python3 {target}` e dimmi il risultato.",
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert result.success, f"Plan failed: {result.task_types()}"
