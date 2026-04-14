@@ -622,6 +622,40 @@ run_auto() {
 }
 
 # ---------------------------------------------------------------------------
+# Menu helpers: read count + avg from utils/test_times.json and format
+# "N tests, ~Xs/~Xm" for each tier. Refresh the JSON after a full run via
+# `uv run python utils/update_test_times.py <run-log>`.
+# ---------------------------------------------------------------------------
+_tier_line() {
+    local tier="$1"
+    local json="$_REPO_ROOT/utils/test_times.json"
+    if [[ ! -f "$json" ]]; then
+        echo "— no data —"
+        return
+    fi
+    uv run python -c "
+import json, sys
+tier = sys.argv[1]
+data = json.load(open(sys.argv[2]))
+entry = data.get(tier)
+if not entry:
+    print('— no data —')
+    sys.exit(0)
+count = entry['count']
+avg = entry['avg_seconds']
+total = count * avg
+if total < 60:
+    t = f'~{total:.0f}s'
+elif total < 3600:
+    mins = total / 60
+    t = f'~{mins:.0f}m' if mins >= 2 else f'~{total:.0f}s'
+else:
+    t = f'~{total/3600:.1f}h'
+print(f'{count} tests, {t}')
+" "$tier" "$json" 2>/dev/null || echo "— no data —"
+}
+
+# ---------------------------------------------------------------------------
 # Interactive mode (default)
 # ---------------------------------------------------------------------------
 run_interactive_menu() {
@@ -637,27 +671,39 @@ run_interactive_menu() {
         miss_bats=" ${RED}✗ no bats${NC}"
     fi
 
+    # Numbers computed from utils/test_times.json. Refresh after a
+    # full matrix run via `uv run python utils/update_test_times.py <log>`.
+    local t_unit t_bash t_int t_live t_docker t_plugin t_func t_ext
+    t_unit="$(_tier_line 'Unit tests')"
+    t_bash="$(_tier_line 'Bash tests')"
+    t_int="$(_tier_line 'Integration tests')"
+    t_live="$(_tier_line 'Live tests')"
+    t_docker="$(_tier_line 'Docker tests')"
+    t_plugin="$(_tier_line 'Plugin tests')"
+    t_func="$(_tier_line 'Functional tests')"
+    t_ext="$(_tier_line 'Extended tests')"
+
     echo ""
     echo -e "  ${BOLD}Kiso Test Runner${NC}"
     echo ""
     echo -e "  ${DIM}── Fast (host only) ──────────────────────────${NC}"
-    echo -e "  ${CYAN}1${NC}  Unit tests              ${DIM}~4045 tests, ~45s (xdist)${NC}"
-    echo -e "  ${CYAN}2${NC}  Bash tests              ${DIM}89 tests, <5s${NC}${miss_bats}"
-    echo -e "  ${CYAN}3${NC}  Integration tests       ${DIM}25 tests, ~6s, mock LLM (xdist)${NC}"
+    echo -e "  ${CYAN}1${NC}  Unit tests              ${DIM}${t_unit} (xdist)${NC}"
+    echo -e "  ${CYAN}2${NC}  Bash tests              ${DIM}${t_bash}${NC}${miss_bats}"
+    echo -e "  ${CYAN}3${NC}  Integration tests       ${DIM}${t_int}, mock LLM (xdist)${NC}"
     echo ""
     echo -e "  ${DIM}── Real LLM (needs API key) ──────────────────${NC}"
-    echo -e "  ${CYAN}4${NC}  Live tests              ${DIM}72 tests, ~15min${NC}${miss_api}"
+    echo -e "  ${CYAN}4${NC}  Live tests              ${DIM}${t_live}${NC}${miss_api}"
     echo -e "     ${DIM}LLM compliance — prompts, schemas, roles${NC}"
     echo ""
     echo -e "  ${DIM}── Docker container ──────────────────────────${NC}"
-    echo -e "  ${CYAN}5${NC}  Docker tests            ${DIM}10 tests, <1s${NC}${miss_docker}"
-    echo -e "  ${CYAN}6${NC}  Plugin tests            ${DIM}~700 tests, ~35s${NC}"
+    echo -e "  ${CYAN}5${NC}  Docker tests            ${DIM}${t_docker}${NC}${miss_docker}"
+    echo -e "  ${CYAN}6${NC}  Plugin tests            ${DIM}${t_plugin}${NC}"
     echo -e "     ${DIM}Clone + build + test each official plugin${NC}"
     echo ""
     echo -e "  ${DIM}── Full pipeline (Docker + API key) ─────────${NC}"
-    echo -e "  ${CYAN}7${NC}  Functional tests        ${DIM}~55 tests, ~10min${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}7${NC}  Functional tests        ${DIM}${t_func}${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Single-plan end-to-end: classify → plan → exec → msg${NC}"
-    echo -e "  ${CYAN}8${NC}  Extended tests          ${DIM}~15min, nightly${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}8${NC}  Extended tests          ${DIM}${t_ext}, nightly${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Multi-plan orchestration (tool install → use → report)${NC}"
     echo ""
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"

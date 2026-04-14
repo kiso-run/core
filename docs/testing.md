@@ -46,7 +46,22 @@ bats tests/bash/                   # bash tests only
 ./utils/run_tests.sh --auto --unit --live   # flags are combinable
 ```
 
-The script reads `~/.kiso/instances/kiso/.env` and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Override the path with `KISO_ENV_FILE=/path/to/.env` if needed. Environment variables already set in the shell take precedence over the file.
+The script reads `<repo>/.env` first, then `~/.kiso/instances/kiso/.env`, and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Precedence: **parent shell > repo `.env` > instance `.env`**. Override the instance path with `KISO_ENV_FILE=/path/to/.env` if needed.
+
+### Refreshing the menu's test counts and time estimates
+
+The interactive menu shows per-tier test counts and estimated runtime computed from `utils/test_times.json`. After a full matrix run, feed the run log back to the updater to refresh the numbers:
+
+```bash
+# from a saved log
+uv run python utils/update_test_times.py /tmp/run.log
+
+# or stream directly
+./utils/run_tests.sh a 2>&1 | tee /tmp/run.log
+uv run python utils/update_test_times.py /tmp/run.log
+```
+
+The updater parses the `━━━ RECAP ━━━` block and writes back `{count, avg_seconds}` per tier. Unrelated tiers already in the JSON are preserved.
 
 ## Stack
 
