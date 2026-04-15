@@ -124,3 +124,63 @@ class TestUpdateJsonFile:
         U.update_json_file(target, updates)
         data = json.loads(target.read_text())
         assert data["Unit tests"]["count"] == 4379
+
+
+class TestMainEndToEnd:
+    """End-to-end: a captured run log containing a real RECAP block
+    (with trailing failure summary, blank lines, and suite details
+    exactly as produced by `utils/run_tests.sh`) must be parsed and
+    written to the target JSON without errors.
+
+    Regression guard for the M1359 bug where the runner's recap was
+    printed to stdout only and never landed in the captured log,
+    causing `update_test_times.py` to report 'no recap block found
+    in input'.
+    """
+
+    def _recap_log(self) -> str:
+        return """
+Some prior suite output that should be ignored
+━━━ Unit tests ━━━
+4379 passed in 88.90s
+
+━━━ RECAP ━━━
+
+  ✓ Unit tests               4379 passed in 88.90s
+  ✓ Bash tests               95 passed (8s)
+  ✓ Integration tests        58 passed in 5.51s
+  ✗ Live tests               1 failed, 69 passed in 689.24s
+
+  Suites: 3 passed, 1 failed
+
+
+━━━ FAILURE SUMMARY (paste into LLM) ━━━
+
+## Some failure
+"""
+
+    def test_main_writes_json_from_captured_log(self, tmp_path, monkeypatch, capsys):
+        log_file = tmp_path / "run.log"
+        log_file.write_text(self._recap_log())
+        target_json = tmp_path / "test_times.json"
+        # Redirect the updater's target path to tmp_path so the test
+        # is hermetic — the default path points at the real
+        # utils/test_times.json in the repo.
+        monkeypatch.setattr(
+            U, "__file__", str(tmp_path / "update_test_times.py"),
+        )
+        rc = U.main(["update_test_times.py", str(log_file)])
+        assert rc == 0
+        assert target_json.exists()
+        data = json.loads(target_json.read_text())
+        assert data["Unit tests"]["count"] == 4379
+        assert data["Bash tests"]["count"] == 95
+        assert data["Live tests"]["count"] == 70  # 1 failed + 69 passed
+
+    def test_main_reports_error_when_recap_missing(self, tmp_path, capsys):
+        log_file = tmp_path / "run.log"
+        log_file.write_text("just some pytest output, no recap here\n")
+        rc = U.main(["update_test_times.py", str(log_file)])
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "no recap block found" in err

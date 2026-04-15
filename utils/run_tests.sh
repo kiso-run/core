@@ -880,7 +880,11 @@ _print_recap() {
     echo ""
 }
 
-_print_recap
+# Tee the recap through _CAPTURE_LOG so the block lands in the file
+# that update_test_times.py reads when the user accepts the refresh
+# prompt below. Without this, _print_recap would write to stdout only
+# and the updater would report "no recap block found in input".
+_print_recap | tee -a "$_CAPTURE_LOG"
 
 # Offer to refresh utils/test_times.json from the captured recap so
 # the interactive menu's per-tier estimates stay accurate. Only
