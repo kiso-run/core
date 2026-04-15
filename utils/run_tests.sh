@@ -882,6 +882,39 @@ _print_recap() {
 
 _print_recap
 
+# Offer to refresh utils/test_times.json from the captured recap so
+# the interactive menu's per-tier estimates stay accurate. Only
+# prompts when:
+#   - stdin is attached to a TTY (non-interactive CI runs skip)
+#   - at least 3 suites ran (single-test reruns don't trigger the prompt)
+#   - the updater script exists in the repo
+# Declining leaves the JSON untouched and prints a manual-run reminder.
+_offer_test_times_refresh() {
+    local log_file="$1"
+    local suite_count="$2"
+    local updater="$_REPO_ROOT/utils/update_test_times.py"
+    [[ -t 0 ]] || return 0
+    [[ "$suite_count" -ge 3 ]] || return 0
+    [[ -f "$updater" ]] || return 0
+    [[ -f "$log_file" ]] || return 0
+    echo ""
+    local answer=""
+    read -rp "Update utils/test_times.json from this run? [y/N] " answer || return 0
+    case "$answer" in
+        y|Y|yes|YES)
+            uv run python "$updater" "$log_file" || {
+                echo -e "${YELLOW}test_times.json refresh failed — check the run log${NC}"
+                return 0
+            }
+            ;;
+        *)
+            echo -e "${DIM}skipped — run manually with: uv run python utils/update_test_times.py $log_file${NC}"
+            ;;
+    esac
+}
+
+_offer_test_times_refresh "$_CAPTURE_LOG" "${#_SUITE_NAMES[@]}"
+
 if [[ "$FAILED" -eq 0 ]]; then
     echo -e "${GREEN}All executed suites passed.${NC}"
 else
