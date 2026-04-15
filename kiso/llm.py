@@ -8,6 +8,7 @@ import contextvars
 import json
 import logging
 import os
+import ssl
 import time
 
 import httpx
@@ -522,6 +523,33 @@ async def call_llm(
                 if backoff > 0:
                     await asyncio.sleep(backoff)
                 continue  # retry transport
+            raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
+        except ssl.SSLError as e:
+            # Mid-stream TLS corruption (BAD_RECORD_MAC, unexpected EOF,
+            # etc.) can escape httpx's RequestError wrapping and surface
+            # as a bare ssl.SSLError. Treat these as transient transport
+            # errors sharing the same bounded retry budget. Certificate
+            # verification errors are a permanent config issue and fail
+            # fast without retry.
+            duration_ms = _ms_since(t0)
+            audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
+            _detail = str(e) or "no detail"
+            if isinstance(e, ssl.SSLCertVerificationError):
+                raise LLMError(
+                    f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]"
+                )
+            _cb_record_failure()
+            _transport_retries += 1
+            if _transport_retries <= _MAX_TRANSPORT_RETRIES:
+                backoff = _TRANSPORT_RETRY_BACKOFF * (2 ** (_transport_retries - 1))
+                log.warning(
+                    "LLM transport retry %d/%d (%s): %s [model=%s] — retrying in %gs",
+                    _transport_retries, _MAX_TRANSPORT_RETRIES,
+                    type(e).__name__, _detail, model_name, backoff,
+                )
+                if backoff > 0:
+                    await asyncio.sleep(backoff)
+                continue
             raise LLMError(f"LLM request failed ({type(e).__name__}): {_detail} [model={model_name}]")
         finally:
             _inflight_calls.pop(session, None)

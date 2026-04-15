@@ -274,6 +274,65 @@ class TestCallLlm:
                 assert mock_client.stream.call_count == 3  # 1 initial + 2 retries
 
     @pytest.mark.asyncio
+    async def test_ssl_error_retried_and_recovers(self):
+        """A mid-stream ssl.SSLError (e.g. BAD_RECORD_MAC) is a transient
+        transport error: the retry path recovers on the second attempt."""
+        import ssl
+        config = make_config()
+        ok = _ok_stream()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, ok)
+                mock_client.stream.side_effect = [
+                    ssl.SSLError(
+                        "[SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac"
+                    ),
+                    ok,
+                ]
+                result = await call_llm(
+                    config, "worker", [{"role": "user", "content": "hi"}],
+                )
+                assert "hello" in result
+                assert mock_client.stream.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_ssl_error_exhausted_raises_llm_error(self):
+        """Persistent ssl.SSLError drains the retry budget and surfaces
+        as an LLMError citing the SSL class name."""
+        import ssl
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = ssl.SSLError(
+                    "persistent bad record mac"
+                )
+                with pytest.raises(LLMError, match=r"SSLError.*bad record mac"):
+                    await call_llm(
+                        config, "worker", [{"role": "user", "content": "hi"}],
+                    )
+                # 1 initial + 2 retries = 3 calls, same budget as RequestError.
+                assert mock_client.stream.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_ssl_cert_verification_error_not_retried(self):
+        """Cert verification is a permanent config issue, not a transient.
+        Must fail fast, no retry budget consumed."""
+        import ssl
+        config = make_config()
+        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = ssl.SSLCertVerificationError(
+                    "hostname mismatch"
+                )
+                with pytest.raises(LLMError, match=r"SSLCertVerificationError"):
+                    await call_llm(
+                        config, "worker", [{"role": "user", "content": "hi"}],
+                    )
+                assert mock_client.stream.call_count == 1  # no retries
+
+    @pytest.mark.asyncio
     async def test_non_200_non_retryable_raises(self):
         """Non-retryable status (e.g. 400) raises immediately."""
         config = make_config()
