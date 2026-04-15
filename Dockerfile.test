@@ -6,7 +6,7 @@ RUN apt-get update -qq && \
         nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /opt/kiso
 
@@ -22,5 +22,12 @@ COPY kiso/ kiso/
 COPY cli/ cli/
 COPY tests/ tests/
 RUN uv sync --frozen
+
+# Marker env var so test code can detect "I'm running INSIDE the
+# kiso test image" and enforce invariants that only make sense in
+# that context (e.g. `npx` presence, `uvx` presence). See
+# tests/test_dockerfile_runtime_baseline.py::TestRuntimeImageInvariants
+# and tests/live/test_mcp_reference_servers.py.
+ENV KISO_TEST_IMAGE=1
 
 CMD ["uv", "run", "pytest", "tests/", "-q"]

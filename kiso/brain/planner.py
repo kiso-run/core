@@ -1369,6 +1369,17 @@ async def build_planner_messages(
     elif full_wrapper_list:
         context_parts.append(f"## Wrappers\n{full_wrapper_list}")
 
+    # MCP method catalog (M1370/M1371) — the briefer received this as
+    # selectable input; the planner LLM also needs to see the catalog
+    # to actually emit `type=mcp` tasks. Set by build_planner_messages
+    # via the `mcp_catalog_text` parameter when a caller has an
+    # MCPManager in scope. When empty, the section is omitted entirely
+    # and the planner falls back to wrappers/exec routing.
+    if context_pool.get("mcp_methods"):
+        context_parts.append(
+            f"## MCP Methods\n{context_pool['mcp_methods']}"
+        )
+
     # warn planner when web module is active but browser isn't installed.
     # Emphasise that built-in search works without any wrapper for research queries.
     if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:

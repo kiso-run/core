@@ -7,13 +7,17 @@ against the canonical reference implementations published at
 without credentials, so any contributor with network access and
 ``npx`` on PATH can reproduce the green matrix.
 
-Gated behind the ``live_network`` pytest marker and a runtime check
-for ``npx`` on PATH. When ``npx`` is missing, every test in this
-file is skipped cleanly.
+Gated behind the ``live_network`` pytest marker. **In the kiso test
+image** (`KISO_TEST_IMAGE=1`) `npx` is guaranteed by `Dockerfile.test`
+since M1367 — a missing binary is a regression and `requires_npx`
+fails the test instead of skipping. **On developer hosts** without
+`KISO_TEST_IMAGE=1`, the gate stays a soft skip so contributors
+without Node.js are not penalised.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 
@@ -26,9 +30,24 @@ from kiso.mcp.stdio import MCPStdioClient
 pytestmark = pytest.mark.live_network
 
 _NPX = shutil.which("npx")
+_IN_TEST_IMAGE = os.environ.get("KISO_TEST_IMAGE") == "1"
+
+# When running INSIDE the kiso test image (Dockerfile.test sets
+# KISO_TEST_IMAGE=1), `npx` is a hard prerequisite installed by
+# M1367. A missing binary is a regression, not an environmental
+# quirk — fail the entire test module collection at import time
+# so the build is loud about it. Outside the image (dev host),
+# fall back to the previous soft-skip behaviour so contributors
+# without Node.js are not penalised.
+if _NPX is None and _IN_TEST_IMAGE:
+    raise RuntimeError(
+        "M1367 regression: KISO_TEST_IMAGE=1 but `npx` is not on PATH. "
+        "Dockerfile.test must apt-install `nodejs npm`."
+    )
 
 requires_npx = pytest.mark.skipif(
-    _NPX is None, reason="npx not on PATH — install Node.js + npm"
+    _NPX is None,
+    reason="npx not on PATH (dev host, KISO_TEST_IMAGE!=1) — install Node.js + npm",
 )
 
 
