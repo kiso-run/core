@@ -88,6 +88,32 @@ collected 4379 items
         # Only the tier from inside the RECAP block is captured.
         assert list(result.keys()) == ["Unit tests"]
 
+    def test_parses_ansi_colored_lines(self):
+        """Regression guard for the real-runner ANSI-colour path.
+
+        `utils/run_tests.sh` emits the recap via `echo -e` with
+        colour escape codes such as `\\x1b[32m ✓ Unit tests \\x1b[0m`.
+        These codes are written verbatim to `_CAPTURE_LOG` by the tee
+        pipe, so the parser receives ANSI-rich input. The regex anchor
+        `^\\s*[✓✗]` does not tolerate a `\\x1b[32m` prefix, so without
+        ANSI stripping every tier line silently fails to match and
+        the parser reports no recap block found.
+        """
+        log = (
+            "\n"
+            "\x1b[1m━━━ RECAP ━━━\x1b[0m\n"
+            "\n"
+            "\x1b[32m  ✓ Unit tests              \x1b[0m \x1b[2m4379 passed in 88.90s\x1b[0m\n"
+            "\x1b[32m  ✓ Bash tests              \x1b[0m \x1b[2m95 passed (8s)\x1b[0m\n"
+            "\x1b[31m  ✗ Live tests              \x1b[0m \x1b[2m1 failed, 69 passed in 689.24s\x1b[0m\n"
+            "\n"
+            "  \x1b[1mSuites:\x1b[0m 2 passed, 1 failed\n"
+        )
+        result = U.parse_recap(log)
+        assert result["Unit tests"] == (4379, 88.90)
+        assert result["Bash tests"] == (95, 8.0)
+        assert result["Live tests"] == (70, 689.24)
+
 
 # ---------------------------------------------------------------------------
 # update_json_file — read existing JSON, merge, write back

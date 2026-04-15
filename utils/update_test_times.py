@@ -33,6 +33,17 @@ from typing import Dict, Tuple
 _RECAP_HEADER = "━━━ RECAP ━━━"
 _RECAP_END = "━━━"  # recap ends at the next ━━━ line (failure summary etc.)
 
+# Strip ANSI escape sequences before regex matching. `utils/run_tests.sh`
+# writes its recap to `_CAPTURE_LOG` with colour codes embedded, so real
+# input looks like "\x1b[32m  ✓ Unit tests\x1b[0m \x1b[2m...\x1b[0m" and
+# a regex anchored on `^\s*[✓✗]` would silently fail to match.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def _strip_ansi(line: str) -> str:
+    return _ANSI_RE.sub("", line)
+
+
 # Matches either pytest-style "N passed in Xs" or bats-style "N passed (Xs)".
 # Captures the *numeric summary* between the suite name and the elapsed
 # value — e.g. "1 failed, 37 passed, 1 skipped, 68 deselected".
@@ -58,7 +69,11 @@ def parse_recap(log: str) -> Dict[str, Tuple[int, float]]:
     """
     in_block = False
     out: Dict[str, Tuple[int, float]] = {}
-    for line in log.splitlines():
+    for raw_line in log.splitlines():
+        # Strip ANSI codes so the regex anchors line up regardless of
+        # whether the caller piped through a colour-emitting runner or
+        # fed a pre-stripped log directly.
+        line = _strip_ansi(raw_line)
         stripped = line.strip()
         if not in_block:
             if _RECAP_HEADER in line:
