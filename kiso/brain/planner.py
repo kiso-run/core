@@ -67,6 +67,8 @@ from .common import (
     _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
     _INSTALL_NAME_RE,
     _MIN_PROMOTED_FACT_LEN,
+    _NPM_GLOBAL_RE,
+    _NPX_RE,
     _PIP_INSTALL_RE,
     _SYSTEM_INSTALL_HINT_RE,
     _TYPE_EXAMPLES,
@@ -238,6 +240,12 @@ def _validate_plan_tasks(
             errors.append(
                 f"Task {i}: use 'uv pip install' instead of bare 'pip install'. "
                 f"Direct pip can corrupt the system environment."
+            )
+        if t == TASK_TYPE_EXEC and _NPM_GLOBAL_RE.search(detail) and not _NPX_RE.search(detail):
+            errors.append(
+                f"Task {i}: use 'npx -y <pkg>' instead of 'npm install -g <pkg>'. "
+                f"Global npm installs pollute the runtime; npx -y runs ephemerally "
+                f"and is the right default for one-shot tools and MCP servers."
             )
         if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH) and _mentions_user_delivery(detail):
             errors.append(

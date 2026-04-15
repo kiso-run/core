@@ -146,6 +146,7 @@ _INSTALL_MODE_KISO_WRAPPER = "kiso_wrapper"
 _INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_wrapper"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
+_INSTALL_MODE_NODE_CLI = "node_cli"
 # M1320-allow: regex alternatives keep matching "tool" — users still say "tool" in natural language
 _INSTALL_TARGET_RE = re.compile(
     r"\b(?:install|installa|installare|installer)\b"
@@ -167,6 +168,10 @@ _SYSTEM_INSTALL_HINT_RE = re.compile(
 )
 _PYTHON_INSTALL_HINT_RE = re.compile(
     r"\b(?:uv\s+pip|pip|pypi|python\s+package|python\s+library|python\s+module|pacchetto python|libreria python|modulo python)\b",
+    re.IGNORECASE,
+)
+_NODE_INSTALL_HINT_RE = re.compile(
+    r"\b(?:npm|npx|nodejs|node\s+package|node\s+library|node\s+module|pacchetto\s+node|libreria\s+node|modulo\s+node)\b",
     re.IGNORECASE,
 )
 # M1320-allow: regex alternatives keep matching "tool"
@@ -323,6 +328,13 @@ def _classify_install_mode(
             "reason": "user explicitly referenced Python package installation",
         }
 
+    if _NODE_INSTALL_HINT_RE.search(msg_lower):
+        return {
+            "mode": _INSTALL_MODE_NODE_CLI,
+            "target": target,
+            "reason": "user explicitly referenced Node CLI tooling",
+        }
+
     if target in _COMMON_PYTHON_PACKAGES:
         return {
             "mode": _INSTALL_MODE_PYTHON_LIB,
@@ -367,6 +379,10 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
         lines.append("Do not set needs_install and do not use the system package manager.")
     elif mode == _INSTALL_MODE_SYSTEM_PKG:
         lines.append(f"Route: system package — exec the {pkg_manager} install flow.")
+        lines.append("Do not set needs_install and do not use uv pip install.")
+    elif mode == _INSTALL_MODE_NODE_CLI:
+        lines.append(f"Route: Node CLI tool — exec `npx -y {target}`.")
+        lines.append("Do not use `npm install -g` (pollutes global state); npx -y runs ephemerally.")
         lines.append("Do not set needs_install and do not use uv pip install.")
     reason = route.get("reason")
     if reason:
@@ -515,6 +531,16 @@ _PIP_INSTALL_RE = re.compile(
     re.IGNORECASE,
 )
 _UV_PIP_RE = re.compile(r"\buv\s+pip\b", re.IGNORECASE)
+# Detect global npm installs ("npm install -g X", "npm i -g X",
+# "npm install --global X"). Symmetric to _PIP_INSTALL_RE.
+_NPM_GLOBAL_RE = re.compile(
+    r"\bnpm\s+(?:install|i)\s+(?:-g|--global)\b",
+    re.IGNORECASE,
+)
+# "Already correct" detector for the npm rewrite rule. Symmetric
+# to _UV_PIP_RE: when the same exec detail also references npx,
+# the global-install warning is suppressed.
+_NPX_RE = re.compile(r"\bnpx\b", re.IGNORECASE)
 # marker substring in validation errors for uninstalled-wrapper detection.
 # Used both when generating the error (validate_plan) and detecting it
 # (_retry_llm_with_validation).  Keep in sync.
