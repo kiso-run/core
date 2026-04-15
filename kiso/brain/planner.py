@@ -784,9 +784,12 @@ def validate_plan(
     has_needs_install = bool(plan.get("needs_install"))
     if has_verb and has_noun and not has_action_task and not is_replan and not has_needs_install:
         errors.append(
-            "Goal mentions creating a file/document but plan has no exec or wrapper task. "
-            "Add an exec task to write the file to the workspace — "
-            "auto-publish will generate a download URL automatically."
+            "Goal mentions creating a file/document but plan has no "
+            "exec or wrapper task. Add an action task that writes the "
+            "file to the workspace — either an exec task (e.g. shell "
+            "redirect, cat, echo) or a wrapper task whose wrapper "
+            "produces files (e.g. aider, datagen). Auto-publish will "
+            "generate a download URL automatically."
         )
 
     # validate knowledge items (if present)

@@ -10446,6 +10446,27 @@ class TestArtifactGoalMismatch:
         errors = validate_plan(plan, is_replan=False)
         assert any("file/document" in e for e in errors)
 
+    def test_artifact_message_does_not_prescribe_only_exec(self):
+        """The artifact-goal-mismatch check accepts both exec and
+        wrapper tasks as valid resolutions (see check at planner.py
+        ~782: `t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER)`).
+        The feedback's imperative clause must not prescribe `exec`
+        alone — a wrapper-based resolution (e.g. aider writing a
+        file, datagen generating a CSV) is equally valid and the
+        planner should not be biased away from it."""
+        plan = {"goal": "Create a markdown file with comparison table", "tasks": [
+            {"type": "msg", "detail": "Answer in English. Here is the table"},
+        ]}
+        errors = validate_plan(plan)
+        artifact_errs = [e for e in errors if "file/document" in e]
+        assert artifact_errs
+        msg = artifact_errs[0].lower()
+        # Must NOT prescribe "add an exec task" without also
+        # mentioning wrapper as an alternative resolution.
+        assert "add an exec task" not in msg, (
+            f"imperative biases toward exec only: {msg!r}"
+        )
+
 
 # --- M558: _build_strict_schema + _join_or_empty helpers ---
 
