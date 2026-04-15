@@ -68,10 +68,17 @@ class TestMultiTurnLearning:
         Why: Validates end-to-end learning retention. If Kiso cannot store and recall
         taught facts, the entire knowledge system is broken.
         Expects: Both turns succeed, second response is Italian and mentions "flask".
+
+        The teach message contains the word "framework" literally so the
+        FTS5 retrieval used by the briefer for r2 hits deterministically
+        against the query vocabulary ("che framework..."). Without this
+        overlap, the planner falls back to filesystem investigation,
+        defeating the purpose of the recall check.
         """
-        # Message 1: teach a fact
+        # Message 1: teach a fact (vocabulary overlaps with the query)
         r1 = await run_message(
-            "ricordati che il progetto corrente usa Flask 3.0 con SQLAlchemy",
+            "ricordati che questo progetto usa Flask come framework, "
+            "con SQLAlchemy per il database",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         assert r1.success
