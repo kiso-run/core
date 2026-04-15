@@ -806,14 +806,11 @@ def validate_plan(
     if plan.get("needs_install"):
         non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
         if non_msg:
-            # Dedicated guidance when the only drafted non-msg tasks are
-            # `search`: Kiso's `search` is a built-in capability that
-            # never requires a wrapper install. In that case the right
-            # correction is dropping `needs_install`, not reducing to
-            # msg-only. Biasing the retry toward the semantically
-            # correct direction avoids the failure mode observed in
-            # `TestSearchTaskFlow.test_planner_emits_search_for_web_query`
-            # (2026-04-15 live run).
+            # When the only drafted non-msg tasks are `search`, bias
+            # the retry toward dropping `needs_install` instead of
+            # reducing to msg-only: `search` is a built-in Kiso
+            # capability that never requires a wrapper install, so
+            # proposing an install alongside it is semantically wrong.
             if non_msg and all(t == TASK_TYPE_SEARCH for t in non_msg):
                 errors.append(
                     f"needs_install is set but the plan uses `search` "

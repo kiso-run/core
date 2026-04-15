@@ -274,12 +274,9 @@ LLM_ROLE_ONLY_TIMEOUT = 180   # direct role calls: planner/reviewer/worker/etc.
 # briefers are included.
 LLM_SINGLE_PLAN_TIMEOUT = 240
 LLM_REPLAN_TIMEOUT = 300      # single request expected to hit reviewer/planner recovery
-# Multi-wrapper or multi-plan request chains. Raised from 600→900 on
-# 2026-04-15 after TestF41AiderEditFile timed out during a genuine
-# end-to-end aider flow (3 tasks including internal aider LLM
-# round-trips). If a test still exceeds this on a subsequent run,
-# investigate aider cold-start or provider latency — do not raise
-# the budget blindly again.
+# Multi-wrapper or multi-plan request chains. Wrapper-heavy end-to-end
+# flows (aider edit + exec + msg) need headroom for internal LLM
+# round-trips on loaded hosts or slow provider days.
 LLM_MULTI_PLAN_TIMEOUT = 900
 LLM_INSTALL_TIMEOUT = 900     # wrapper install/download + LLM
 

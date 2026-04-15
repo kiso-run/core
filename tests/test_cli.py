@@ -2056,8 +2056,8 @@ def test_poll_status_corrupted_llm_calls_does_not_crash(capsys, plain_caps):
 # ── M41: CLI polling UX gaps ───────────────────────────────────────────────────
 
 
-def test_m41_poll_every_is_160ms():
-    """M41: poll interval must be 2 iterations × 80 ms = 160 ms (was 480 ms)."""
+def test_poll_every_is_160ms():
+    """Poll interval must be 2 iterations × 80 ms = 160 ms."""
     assert _POLL_EVERY == 2
 
 

@@ -7808,8 +7808,10 @@ class TestM1083InstallRoutingHelper:
         assert route["target"] == "browser"
 
 
-class TestM261BrieferModuleCoverage:
-    """verify briefer path covers what keyword matching used to handle."""
+class TestBrieferModuleCoverage:
+    """Verify the briefer-driven module selection covers the semantic
+    cases that the planner relies on (wrappers, install routing,
+    knowledge retrieval)."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -10285,8 +10287,9 @@ class TestNeedsInstallCoherence:
         assert any("needs_install is set" in e for e in errors)
 
     def test_install_approved_gives_specific_guidance(self):
-        """needs_install set with wrapper task → M984 fires (only msg tasks allowed).
-        Previously M868 coherence check fired here, but M984 supersedes it."""
+        """needs_install set with wrapper task → validator rejects the
+        plan with the 'only msg tasks allowed' feedback, regardless
+        of install_approved."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
             {"type": "wrapper", "detail": "write script", "wrapper": "aider",
              "args": '{"message": "x"}', "expect": "done"},
