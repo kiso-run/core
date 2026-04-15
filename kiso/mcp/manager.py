@@ -113,6 +113,25 @@ class MCPManager:
         self._method_cache[name] = (now, methods)
         return methods
 
+    def list_methods_cached_only(self, name: str) -> list[MCPMethod]:
+        """Return cached methods for *name* without spawning the server.
+
+        Used by `kiso.brain.common.format_mcp_catalog` to render the
+        MCP catalog into the briefer's prompt without paying transport
+        setup costs at briefer time. Returns an empty list when the
+        server is unknown, has never been queried, or its cache entry
+        has expired (TTL exceeded).
+        """
+        if name not in self._servers:
+            return []
+        cached = self._method_cache.get(name)
+        if cached is None:
+            return []
+        ts, methods = cached
+        if time.monotonic() - ts >= self._cache_ttl_s:
+            return []
+        return methods
+
     async def call_method(
         self, name: str, method: str, args: dict
     ) -> MCPCallResult:

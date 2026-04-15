@@ -184,6 +184,39 @@ class TestListMethodsCache:
         await mgr.shutdown_all()
 
 
+class TestListMethodsCachedOnly:
+    """`list_methods_cached_only` never spawns a server.
+
+    Used by `kiso.brain.common.format_mcp_catalog` to feed the
+    briefer's MCP catalog without paying transport setup costs.
+    """
+
+    async def test_unknown_server_returns_empty(self, fake_factory):
+        mgr = MCPManager({}, client_factory=fake_factory)
+        assert mgr.list_methods_cached_only("ghost") == []
+
+    async def test_never_queried_returns_empty(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        # No call to list_methods → cache is empty
+        assert mgr.list_methods_cached_only("s1") == []
+        # And the client was never created
+        assert len(fake_factory.created) == 0
+
+    async def test_returns_cached_methods_after_warm(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_methods("s1")  # warm cache
+        cached = mgr.list_methods_cached_only("s1")
+        assert len(cached) == 1
+        assert cached[0].name == "echo"
+        # Calling cached_only does NOT increment the spawn count
+        assert fake_factory.created[0]._list_call_count == 1
+        await mgr.shutdown_all()
+
+
 # ---------------------------------------------------------------------------
 # call_method: timeout + cancellation
 # ---------------------------------------------------------------------------

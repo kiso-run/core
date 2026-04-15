@@ -1057,6 +1057,7 @@ async def build_planner_messages(
     is_replan: bool = False,
     install_approved: bool = False,
     investigate: bool = False,
+    mcp_catalog_text: str | None = None,
 ) -> tuple[list[dict], list[str], list[dict]]:
     """Build the message list for the planner LLM call.
 
@@ -1098,6 +1099,14 @@ async def build_planner_messages(
     full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_wrappers)
     if full_wrapper_list:
         context_pool["wrappers"] = full_wrapper_list
+
+    # MCP method catalog — fed to the briefer as a first-class category
+    # so the briefer can SELECT MCP methods, not just validate them
+    # post-hoc. Caller is responsible for formatting via
+    # `format_mcp_catalog(manager)` and passing the result through.
+    # When None (no manager in scope), the section is omitted entirely.
+    if mcp_catalog_text:
+        context_pool["mcp_methods"] = mcp_catalog_text
 
     # Connector discovery — show installed connectors to planner
     connectors = discover_connectors()

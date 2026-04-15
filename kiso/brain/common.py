@@ -1263,6 +1263,7 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("wrappers", "Available Wrappers"),
     ("recipes", "Available Recipes"),
+    ("mcp_methods", "Available MCP Methods"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
@@ -1277,6 +1278,43 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("replan_context", "Replan Context"),
     ("plan_outputs", "Plan Outputs"),
 )
+
+
+def format_mcp_catalog(manager: "Any") -> str:
+    """Render an MCPManager-like object's *cached* catalog as briefer text.
+
+    Produces a flat string with one ``- server:method — description`` line
+    per known method, suitable for direct inclusion under the briefer's
+    ``## Available MCP Methods`` section. The bullet-then-qualified-name
+    format is intentional: it matches the regex used by
+    ``_filter_briefer_names`` so the same text is both the prompt input
+    and the post-validation pool.
+
+    *Cached only*: this function never spawns a server. It calls
+    ``available_servers()`` then ``list_methods_cached_only(name)`` per
+    server. A server with no cached methods (never queried, or empty
+    response) contributes no lines. This makes the call cheap enough to
+    invoke on every plan without paying connection setup costs.
+    """
+    if manager is None:
+        return ""
+    try:
+        servers = manager.available_servers()
+    except Exception:  # pragma: no cover — defensive
+        return ""
+    lines: list[str] = []
+    for server in sorted(servers):
+        try:
+            methods = manager.list_methods_cached_only(server)
+        except Exception:  # pragma: no cover — defensive
+            continue
+        for m in methods:
+            qualified = f"{server}:{m.name}"
+            if m.description:
+                lines.append(f"- {qualified} — {m.description}")
+            else:
+                lines.append(f"- {qualified}")
+    return "\n".join(lines)
 
 
 def _prefilter_context_pool(
@@ -1444,12 +1482,15 @@ async def run_briefer(
         briefing.get("wrappers", []), context_pool.get("wrappers"), "wrapper")
     briefing["exclude_recipes"] = _filter_briefer_names(
         briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
-    # mcp_methods: filter against the list of configured MCP methods
-    # (if any) passed via context_pool. Empty pool keeps the list as-is.
-    if context_pool.get("mcp_methods_pool"):
+    # mcp_methods: filter against the same `mcp_methods` text the briefer
+    # saw in the prompt (set into context_pool by build_planner_messages
+    # via format_mcp_catalog). Empty pool keeps the list as-is — the
+    # post-filter only kicks in when there is an authoritative catalog
+    # to compare against.
+    if context_pool.get("mcp_methods"):
         briefing["mcp_methods"] = _filter_briefer_names(
             briefing.get("mcp_methods", []),
-            context_pool.get("mcp_methods_pool"),
+            context_pool.get("mcp_methods"),
             "mcp method",
         )
 
