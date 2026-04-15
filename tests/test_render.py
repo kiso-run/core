@@ -630,7 +630,7 @@ def test_render_review_ok_with_learning():
     assert "Uses Flask" in lines[1]
 
 
-def test_m333_render_review_with_learning_tags():
+def test_render_review_with_learning_tags():
     """learning tags shown in dim style."""
     task = {
         "review_verdict": "ok",
@@ -642,7 +642,7 @@ def test_m333_render_review_with_learning_tags():
     assert "[entity:guidance.studio, homepage]" in result
 
 
-def test_m333_render_review_without_learning_tags():
+def test_render_review_without_learning_tags():
     """no brackets when tags absent."""
     task = {"review_verdict": "ok", "review_learning": "Uses Flask framework extensively"}
     result = render_review(task, _PLAIN)
@@ -650,7 +650,7 @@ def test_m333_render_review_without_learning_tags():
     assert "[" not in result
 
 
-def test_m333_render_review_empty_learning_tags():
+def test_render_review_empty_learning_tags():
     """empty tags string produces no brackets."""
     task = {
         "review_verdict": "ok",
@@ -1835,7 +1835,7 @@ def test_extract_thinking_unicode_content():
 # --- render_partial_content ---
 
 
-class TestM303RenderPartialContent:
+class TestRenderPartialContent:
     """render_partial_content shows live streaming output."""
 
     def test_empty_returns_empty(self):

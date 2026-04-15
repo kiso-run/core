@@ -368,7 +368,7 @@ class TestCallLlm:
                 assert "hello" in result
                 assert mock_client.stream.call_count == 2
 
-    def test_m1041_rate_backoff_zeroed_by_fixture(self):
+    def test_rate_backoff_zeroed_by_fixture(self):
         """_no_retry_backoff fixture zeroes rate limit backoff."""
         import kiso.llm
         assert kiso.llm._RATE_INITIAL_BACKOFF == 0.0
@@ -1333,7 +1333,7 @@ class TestJsonSchemaFallback:
 # --- Reasoning budget control per role ---
 
 
-class TestM271ReasoningDefaults:
+class TestReasoningDefaults:
     """per-role reasoning config is included in API payload."""
 
     @pytest.mark.asyncio
@@ -1380,7 +1380,7 @@ class TestM271ReasoningDefaults:
         assert "reasoning" not in captured_payload[0]
 
 
-def test_m271_reasoning_defaults_import():
+def test_reasoning_defaults_import():
     """REASONING_DEFAULTS is importable from config and has expected structure."""
     from kiso.config import REASONING_DEFAULTS
     assert isinstance(REASONING_DEFAULTS, dict)
@@ -1391,7 +1391,7 @@ def test_m271_reasoning_defaults_import():
 # --- SSE stream parsing ---
 
 
-class TestM299SSEStreamParsing:
+class TestSSEStreamParsing:
     """_read_sse_stream correctly parses OpenAI-compatible SSE."""
 
     @pytest.mark.asyncio
@@ -1477,7 +1477,7 @@ class TestM299SSEStreamParsing:
 # --- Stall detection & raised timeouts ---
 
 
-class TestM300StallDetection:
+class TestStallDetection:
     """stall_timeout aborts stream if no chunk arrives."""
 
     @pytest.mark.asyncio
@@ -1573,7 +1573,7 @@ class TestM300StallDetection:
                 assert args[7] == "error"
 
 
-class TestM300RaisedTimeouts:
+class TestRaisedTimeouts:
     """verify unified timeout defaults."""
 
     def test_llm_timeout_raised(self):
@@ -1591,7 +1591,7 @@ class TestM300RaisedTimeouts:
 # --- Partial content accumulation during streaming ---
 
 
-class TestM303PartialContent:
+class TestPartialContent:
     """_read_sse_stream updates inflight_dict with partial_content."""
 
     @pytest.mark.asyncio
@@ -1731,7 +1731,7 @@ def _empty_stream(usage: dict | None = None) -> _StreamCM:
     return _StreamCM(_MockStreamResp(200, lines))
 
 
-class TestM305ReasoningFallback:
+class TestReasoningFallback:
     """empty content with reasoning JSON → fallback for structured roles."""
 
     @pytest.mark.asyncio

@@ -160,7 +160,7 @@ class TestMsgDetailValidation:
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
 
-    def test_m902_no_prefix_substantive_detail_accepted(self):
+    def test_no_prefix_substantive_detail_accepted(self):
         """msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results",

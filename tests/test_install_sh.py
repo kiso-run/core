@@ -17,7 +17,7 @@ def _run_bash(script: str, *, timeout: float = 10) -> subprocess.CompletedProces
     )
 
 
-class TestM174DoResetSetsResetRequested:
+class TestDoResetSetsResetRequested:
     """interactive 'Reset data?' must set RESET_REQUESTED=true."""
 
     def test_do_reset_sets_reset_requested(self):
@@ -102,7 +102,7 @@ class TestM174DoResetSetsResetRequested:
         assert "OK" in result.stdout
 
 
-class TestM175SkillWipeOnRebuildReset:
+class TestSkillWipeOnRebuildReset:
     """wrappers/ and connectors/ dirs are wiped when NEED_BUILD+RESET_REQUESTED."""
 
     def test_wipe_block_present_in_install_sh(self):
@@ -263,7 +263,7 @@ class TestAskUsernameCompletion:
         assert result.stdout.strip().endswith(os.environ.get("USER", ""))
 
 
-class TestM200VersionTracking:
+class TestVersionTracking:
     """instance version tracking — Dockerfile, install.sh, /health."""
 
     def test_dockerfile_has_build_hash_arg(self):
@@ -343,7 +343,7 @@ print('OK')
         assert "OK" in result.stdout
 
 
-class TestM745NetworkAndExternalUrl:
+class TestNetworkAndExternalUrl:
     """ask_network_and_external_url function and config template."""
 
     def test_function_defined_in_lib_mode(self):
@@ -413,7 +413,7 @@ class TestM745NetworkAndExternalUrl:
         assert "http://[${pub_ip}]" in content
 
 
-class TestM769ExternalUrlPortFix:
+class TestExternalUrlPortFix:
     """external_url port is corrected after actual port assignment."""
 
     def test_external_url_port_updated_when_different(self):
@@ -471,7 +471,7 @@ class TestM769ExternalUrlPortFix:
         assert "EXTERNAL_URL=" in content
 
 
-class TestM820ConfigTomlPatch:
+class TestConfigTomlPatch:
     """config.toml external_url is patched when port changes."""
 
     def test_config_toml_patched_when_port_differs(self, tmp_path):
@@ -512,7 +512,7 @@ class TestM820ConfigTomlPatch:
         assert result.returncode == 0, result.stderr
         assert '"http://1.2.3.4:8333"' in result.stdout
 
-    def test_m820_sed_present_in_install_sh(self):
+    def test_sed_present_in_install_sh(self):
         """sed patch block exists in install.sh."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
@@ -521,7 +521,7 @@ class TestM820ConfigTomlPatch:
         assert 'sed -i' in content
 
 
-class TestM759PresetStep:
+class TestPresetStep:
     """installer post-install preset selection."""
 
     def test_preset_flag_parsed(self):

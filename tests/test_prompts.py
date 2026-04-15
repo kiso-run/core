@@ -56,7 +56,7 @@ def test_role_prompt_has_core_terms(filename, terms):
         assert term in content, f"{filename}: missing core term '{term}'"
 
 
-class TestM734WorkerSudoRule:
+class TestWorkerSudoRule:
     """worker prompt has sudo-stripping rule for root."""
 
     def test_worker_prompt_has_root_sudo_rule(self):
@@ -69,7 +69,7 @@ class TestM734WorkerSudoRule:
         content = (_ROLES_DIR / "worker.md").read_text()
         assert "CANNOT_TRANSLATE" in content
 
-class TestM948PlannerSearchPreference:
+class TestPlannerSearchPreference:
     """planner web guidance keeps built-in search as the default."""
 
     def test_web_module_describes_search_routing(self):
@@ -114,7 +114,7 @@ class TestPlannerModules:
         assert len(result) > 100, f"Module {module} too short"
 
 
-class TestM362CLICommandAudit:
+class TestCLICommandAudit:
     """Planner kiso_commands module must match actual CLI subcommands."""
 
     def _get_actual_subcommands(self):
@@ -144,7 +144,7 @@ class TestM362CLICommandAudit:
                 assert sub in prompt, f"Missing {cmd_group} subcommand: {sub}"
 
 
-class TestM323LearningPipeline:
+class TestLearningPipeline:
     """Schema + clean_learn_items survive prompt edits."""
 
     def test_reviewer_schema_max_3_learns(self):

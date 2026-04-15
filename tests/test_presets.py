@@ -555,7 +555,7 @@ class TestDefaultPresetInRegistry:
 # --- preset install auto-installs wrappers ---
 
 
-class TestM758AutoInstallTools:
+class TestAutoInstallTools:
     """install_preset auto-installs wrappers from manifest."""
 
     def test_auto_install_calls_wrapper_install(self, tmp_path):
@@ -653,7 +653,7 @@ behaviors = ["Always search the web before answering a question."]
 # ---------------------------------------------------------------------------
 
 
-class TestM819CleanProgressOutput:
+class TestCleanProgressOutput:
     """Preset install shows clean progress instead of verbose output."""
 
     def test_clone_prints_fetching(self, capsys):

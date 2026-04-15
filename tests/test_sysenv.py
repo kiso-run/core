@@ -69,7 +69,7 @@ class TestCollectOsInfo:
         assert info["machine"]
         assert info["release"]
 
-    def test_m731_distro_key_on_linux(self):
+    def test_distro_key_on_linux(self):
         """_collect_os_info returns distro key when freedesktop_os_release works."""
         fake_release = {"PRETTY_NAME": "Debian GNU/Linux 12 (bookworm)", "ID": "debian", "ID_LIKE": ""}
         with patch("platform.freedesktop_os_release", return_value=fake_release):
@@ -78,14 +78,14 @@ class TestCollectOsInfo:
         assert info["distro_id"] == "debian"
         assert info["pkg_manager"] == "apt"
 
-    def test_m731_distro_missing_on_oserror(self):
+    def test_distro_missing_on_oserror(self):
         """distro key absent when freedesktop_os_release raises OSError."""
         with patch("platform.freedesktop_os_release", side_effect=OSError):
             info = _collect_os_info()
         assert "distro" not in info
         assert "pkg_manager" not in info
 
-    def test_m731_id_like_fallback(self):
+    def test_id_like_fallback(self):
         """pkg_manager detected via ID_LIKE when ID is unknown."""
         fake_release = {"PRETTY_NAME": "Pop!_OS 22.04", "ID": "pop", "ID_LIKE": "ubuntu debian"}
         with patch("platform.freedesktop_os_release", return_value=fake_release):
@@ -189,22 +189,22 @@ class TestCollectBinaries:
         """: 'kiso' must be in PROBE_BINARIES so the planner sees it as an available binary."""
         assert "kiso" in PROBE_BINARIES
 
-    def test_m370_system_info_tools(self):
+    def test_system_info_tools(self):
         """PROBE_BINARIES includes common system info wrappers."""
         for wrapper in ("free", "ps", "uptime", "uname", "id", "hostname", "df"):
             assert wrapper in PROBE_BINARIES, f"Missing system wrapper: {wrapper}"
 
-    def test_m370_ssh_tools(self):
+    def test_ssh_tools(self):
         """PROBE_BINARIES includes SSH wrappers."""
         for wrapper in ("ssh", "ssh-keygen", "ssh-keyscan", "scp"):
             assert wrapper in PROBE_BINARIES, f"Missing SSH wrapper: {wrapper}"
 
-    def test_m370_network_tools(self):
+    def test_network_tools(self):
         """PROBE_BINARIES includes network wrappers."""
         for wrapper in ("ss", "ip", "ping", "dig"):
             assert wrapper in PROBE_BINARIES, f"Missing network wrapper: {wrapper}"
 
-    def test_m370_process_tools(self):
+    def test_process_tools(self):
         """PROBE_BINARIES includes process management wrappers."""
         for wrapper in ("kill", "pkill"):
             assert wrapper in PROBE_BINARIES, f"Missing process wrapper: {wrapper}"
@@ -390,36 +390,36 @@ class TestBuildSystemEnvSection:
         section = build_system_env_section(sample_env)
         assert "Linux x86_64 (6.17.0-14-generic)" in section
 
-    def test_m731_distro_in_os_line(self, sample_env):
+    def test_distro_in_os_line(self, sample_env):
         """distro name appended to OS line when present."""
         sample_env["os"]["distro"] = "Debian GNU/Linux 12 (bookworm)"
         section = build_system_env_section(sample_env)
         assert "— Debian GNU/Linux 12 (bookworm)" in section
 
-    def test_m731_pkg_manager_line(self, sample_env):
+    def test_pkg_manager_line(self, sample_env):
         """Package manager line shown when detected."""
         sample_env["os"]["pkg_manager"] = "apt"
         section = build_system_env_section(sample_env)
         assert "Package manager: apt" in section
 
-    def test_m731_no_pkg_manager_line_when_absent(self, sample_env):
+    def test_no_pkg_manager_line_when_absent(self, sample_env):
         """No Package manager line when not detected."""
         section = build_system_env_section(sample_env)
         assert "Package manager:" not in section
 
-    def test_m732_user_root_sudo_not_needed(self, sample_env):
+    def test_user_root_sudo_not_needed(self, sample_env):
         """root user shows 'sudo not needed'."""
         sample_env["user_info"] = {"user": "root", "is_root": True, "has_sudo": False}
         section = build_system_env_section(sample_env)
         assert "User: root (sudo not needed" in section
 
-    def test_m732_user_with_sudo(self, sample_env):
+    def test_user_with_sudo(self, sample_env):
         """non-root user with sudo shows 'sudo available'."""
         sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": True}
         section = build_system_env_section(sample_env)
         assert "User: kiso (sudo available)" in section
 
-    def test_m732_user_without_sudo(self, sample_env):
+    def test_user_without_sudo(self, sample_env):
         """non-root user without sudo shows 'sudo not available'."""
         sample_env["user_info"] = {"user": "kiso", "is_root": False, "has_sudo": False}
         section = build_system_env_section(sample_env)
@@ -689,7 +689,7 @@ class TestCollectBinariesSysBin:
 
 
 class TestCollectSystemEnvNewKeys:
-    def test_m732_includes_user_info(self, config):
+    def test_includes_user_info(self, config):
         """collect_system_env includes user_info with expected keys."""
         with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
@@ -973,7 +973,7 @@ class TestWorkspaceInBuildSection:
         assert "internal.json" not in section
 
 
-class TestM888LoadRegistryHints:
+class TestLoadRegistryHints:
     """_load_registry_hints fetches from online registry."""
 
     def test_returns_tool_descriptions(self):

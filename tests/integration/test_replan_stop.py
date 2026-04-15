@@ -6,7 +6,7 @@ word overlap, strategy fingerprint Jaccard, install loops,
 goal-vs-failure variants).
 
 Unit-level coverage for the codegen guardrail is in
-``tests/test_brain.py`` (test_m1227_codegen_exec_after_tool_rejected
+``tests/test_brain.py`` (test_codegen_exec_after_tool_rejected
 and neighbors).
 
 This module pins the **integration-tier contract** that:

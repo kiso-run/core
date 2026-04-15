@@ -1270,7 +1270,7 @@ class TestDiscoverToolsCache:
 # ---------------------------------------------------------------------------
 
 
-class TestM826ConsumesField:
+class TestConsumesField:
     """consumes field in kiso.toml → file routing in planner wrapper list."""
 
     def _make_tool(self, name, summary, consumes=None):

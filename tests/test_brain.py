@@ -256,7 +256,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("msg task must have args = null" in e for e in errors)
 
-    def test_m386_msg_detail_only_language_prefix_fails(self):
+    def test_msg_detail_only_language_prefix_fails(self):
         """msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.", "expect": None, "wrapper": None, "args": None},
@@ -264,7 +264,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
 
-    def test_m386_msg_detail_with_content_after_prefix_passes(self):
+    def test_msg_detail_with_content_after_prefix_passes(self):
         """msg detail with substantive content after prefix passes."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian. Tell user the SSH key is at ~/.kiso/sys/ssh/",
@@ -273,7 +273,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
 
-    def test_m902_msg_detail_without_prefix_accepted(self):
+    def test_msg_detail_without_prefix_accepted(self):
         """msg detail without language prefix is accepted (_msg_task injects it at runtime)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results of the analysis",
@@ -283,7 +283,7 @@ class TestValidatePlan:
         assert not any("must start with" in e for e in errors)
         assert not any("empty or too short" in e for e in errors)
 
-    def test_m902_msg_detail_too_short_without_prefix_fails(self):
+    def test_msg_detail_too_short_without_prefix_fails(self):
         """very short msg detail (no prefix, <5 chars) is still rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "done", "expect": None, "wrapper": None, "args": None},
@@ -365,7 +365,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, installed_skills=["echo"])
         assert any("not available" in e for e in errors)
 
-    def test_m903_uninstalled_registry_tool_proposes_install(self):
+    def test_uninstalled_registry_tool_proposes_install(self):
         """uninstalled wrapper in registry → 'propose install' not 'use exec'."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "browse", "expect": "ok", "wrapper": "browser", "args": "{}"},
@@ -378,7 +378,7 @@ class TestValidatePlan:
         assert "msg task asking whether to install" in err
         assert "built-in task type" in err
 
-    def test_m903_uninstalled_unknown_tool_informs_user(self):
+    def test_uninstalled_unknown_tool_informs_user(self):
         """uninstalled wrapper NOT in registry → inform user."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "magic", "expect": "ok", "wrapper": "magic_tool", "args": "{}"},
@@ -431,7 +431,7 @@ class TestValidatePlan:
         assert "not available" in err
         assert "informing the user" in err
 
-    def test_m906_file_goal_no_exec_rejected(self):
+    def test_file_goal_no_exec_rejected(self):
         """goal mentions file creation without exec/wrapper → rejected."""
         plan = {"goal": "Write a Python script word_count.py", "tasks": [
             {"type": "msg", "detail": "Here is your script", "expect": None,
@@ -440,7 +440,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("Goal mentions creating" in e for e in errors)
 
-    def test_m906_file_goal_with_needs_install_accepted(self):
+    def test_file_goal_with_needs_install_accepted(self):
         """goal mentions file but needs_install is set → accepted (install first)."""
         plan = {"goal": "Write a Python script word_count.py",
                 "needs_install": ["aider"], "tasks": [
@@ -585,7 +585,7 @@ class TestValidatePlan:
 
     # --- announce msgs rejected ---
 
-    def test_m1217_announce_msg_first_rejected(self):
+    def test_announce_msg_first_rejected(self):
         """[msg, exec, msg] — announce msg before exec is rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "wrapper": None, "args": None},
@@ -595,7 +595,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("msg task must come after" in e for e in errors)
 
-    def test_m1037_needs_install_msg_only_valid(self):
+    def test_needs_install_msg_only_valid(self):
         """needs_install + [msg] plan passes validation."""
         plan = {
             "needs_install": ["browser"],
@@ -608,7 +608,7 @@ class TestValidatePlan:
 
     # --- exec-after-wrapper codegen guardrail ---
 
-    def test_m1227_codegen_exec_after_tool_rejected(self):
+    def test_codegen_exec_after_tool_rejected(self):
         """validate_plan rejects [wrapper, exec, msg] when goal is codegen-only."""
         plan = {
             "goal": "Create a Python script text_stats.py using aider for code generation.",
@@ -622,7 +622,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("exec immediately after wrapper" in e for e in errors)
 
-    def test_m1227_codegen_exec_after_tool_allowed_with_run(self):
+    def test_codegen_exec_after_tool_allowed_with_run(self):
         """validate_plan allows [wrapper, exec, msg] when goal says 'run'."""
         plan = {
             "goal": "Create text_stats.py then run it on the OCR text.",
@@ -640,7 +640,7 @@ class TestValidatePlan:
 
     # --- browser file:// URL rejection ---
 
-    def test_m1231_browser_file_url_rejected(self):
+    def test_browser_file_url_rejected(self):
         """browser wrapper with file:// URL is rejected."""
         plan = {
             "goal": "View the file",
@@ -654,7 +654,7 @@ class TestValidatePlan:
                                installed_skills_info={"browser": {"args_schema": {"url": {"type": "string", "required": True}}}})
         assert any("browser cannot open local files" in e for e in errors)
 
-    def test_m1231_browser_http_url_allowed(self):
+    def test_browser_http_url_allowed(self):
         """browser wrapper with http URL passes."""
         plan = {
             "goal": "Visit website",
@@ -806,7 +806,7 @@ class TestValidatePlan:
 
     # --- install only allowed in replan ---
 
-    def test_m420_install_in_first_plan_rejected(self):
+    def test_install_in_first_plan_rejected(self):
         """exec install + needs_install set in first plan → error (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
@@ -815,7 +815,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
-    def test_m420_msg_then_install_still_rejected(self):
+    def test_msg_then_install_still_rejected(self):
         """msg + exec install + needs_install → still rejected (mixed propose+install)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Confirm install", "expect": None},
@@ -825,7 +825,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("first plan" in e for e in errors)
 
-    def test_m420_msg_only_no_install_accepted(self):
+    def test_msg_only_no_install_accepted(self):
         """msg asking about install (no exec install) → passes."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Ask to install browser wrapper", "expect": None},
@@ -833,7 +833,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("first plan" in e for e in errors)
 
-    def test_m420_replan_allows_install(self):
+    def test_replan_allows_install(self):
         """is_replan=True allows exec install (user approved in prior cycle)."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
@@ -842,7 +842,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, is_replan=True)
         assert not any("first plan" in e for e in errors)
 
-    def test_m420_multiple_installs_single_error(self):
+    def test_multiple_installs_single_error(self):
         """Multiple install execs + needs_install → only one error."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso wrapper install browser", "expect": "installed"},
@@ -854,7 +854,7 @@ class TestValidatePlan:
         assert len(install_errors) == 1
         assert "Task 1:" in install_errors[0]
 
-    def test_m420_connector_install_also_caught(self):
+    def test_connector_install_also_caught(self):
         """kiso connector install + needs_install → blocked."""
         plan = {"tasks": [
             {"type": "exec", "detail": "kiso connector install telegram", "expect": "installed"},
@@ -1333,7 +1333,7 @@ class TestBuildPlannerMessages:
         pending_pos = content.index("## Pending Questions")
         assert facts_pos < sysenv_pos < pending_pos
 
-    async def test_m740_distro_in_planner_context(self, db, config):
+    async def test_distro_in_planner_context(self, db, config):
         """planner context contains distro and package manager from sysenv."""
         await create_session(db, "sess1")
         from kiso.config import KISO_DIR
@@ -1361,7 +1361,7 @@ class TestBuildPlannerMessages:
         assert "Debian GNU/Linux 12" in content
         assert "Package manager: apt" in content
 
-    async def test_m740_user_info_in_planner_context(self, db, config):
+    async def test_user_info_in_planner_context(self, db, config):
         """planner context contains user/sudo info from sysenv."""
         await create_session(db, "sess1")
         from kiso.config import KISO_DIR
@@ -1477,7 +1477,7 @@ class TestBuildPlannerMessages:
         user_content = msgs[1]["content"]
         assert "System Environment" in user_content
 
-    async def test_m1054_tools_rules_forced_when_tools_installed(self, db, config):
+    async def test_tools_rules_forced_when_tools_installed(self, db, config):
         """tools_rules forced when wrappers are installed, even if briefer selects 0."""
         await create_session(db, "sess1")
         cfg = Config(
@@ -1567,7 +1567,7 @@ class TestBuildPlannerMessages:
         # Full sysenv already has binaries, Install Context should not be duplicated
         assert "Install Context" not in user_content
 
-    async def test_m1083_install_routing_injected_for_python_lib(self, db, config):
+    async def test_install_routing_injected_for_python_lib(self, db, config):
         """deterministic Python-lib routing is injected into planner context."""
         await create_session(db, "sess1")
         cfg = Config(
@@ -1611,7 +1611,7 @@ class TestBuildPlannerMessages:
         assert "Mode: python_lib" in user_content
         assert "uv pip install flask" in user_content
 
-    async def test_m1083_install_routing_injected_for_system_package(self, db, config):
+    async def test_install_routing_injected_for_system_package(self, db, config):
         """deterministic system-package routing is injected into planner context."""
         await create_session(db, "sess1")
         cfg = Config(
@@ -1655,7 +1655,7 @@ class TestBuildPlannerMessages:
         assert "Mode: system_pkg" in user_content
         assert "Route: system package" in user_content
 
-    async def test_m1083_install_routing_injected_for_kiso_wrapper(self, db, config):
+    async def test_install_routing_injected_for_kiso_wrapper(self, db, config):
         """deterministic kiso-wrapper routing is injected into planner context."""
         await create_session(db, "sess1")
         cfg = Config(
@@ -1699,7 +1699,7 @@ class TestBuildPlannerMessages:
         assert "Mode: kiso_wrapper" in user_content
         assert "set needs_install + approval msg only" in user_content
 
-    async def test_m1234_install_routing_suppressed_when_approved(self, db, config):
+    async def test_install_routing_suppressed_when_approved(self, db, config):
         """Install Routing suppressed when install_approved=True."""
         await create_session(db, "sess1")
         cfg = Config(
@@ -2207,7 +2207,7 @@ _REVIEW_SCHEMA_INNER = REVIEW_SCHEMA["json_schema"]["schema"]
 _MSG_TASK_DICT = {"type": "msg", "detail": "Hello", "wrapper": None, "args": None, "expect": None}
 
 
-class TestM83PlanSchema:
+class TestPlanSchema:
     """: PLAN_SCHEMA inner schema accepts valid plans and rejects invalid ones."""
 
     def _valid(self, instance):
@@ -2337,7 +2337,7 @@ class TestM83PlanSchema:
         self._invalid(self._plan(knowledge=[123]))
 
 
-class TestM83ReviewSchema:
+class TestReviewSchema:
     """: REVIEW_SCHEMA inner schema accepts valid reviews and rejects invalid ones."""
 
     def _valid(self, instance):
@@ -3241,7 +3241,7 @@ class TestBuildMessengerMessages:
         msgs = build_messenger_messages(config, "", [], "say hi")
         assert "Current User Request" not in msgs[1]["content"]
 
-    def test_m744_system_prompt_has_published_files_rule(self):
+    def test_system_prompt_has_published_files_rule(self):
         """messenger system prompt contains Published files link rule."""
         config = _make_brain_config()
         msgs = build_messenger_messages(config, "", [], "report file")
@@ -3249,7 +3249,7 @@ class TestBuildMessengerMessages:
         assert "Published Files" in system
         assert "never construct" in system.lower()
 
-    def test_m744_published_files_in_outputs_context(self):
+    def test_published_files_in_outputs_context(self):
         """when task output has Published files, messenger sees them."""
         config = _make_brain_config()
         outputs_text = (
@@ -3558,7 +3558,7 @@ class TestRunMessenger:
         assert "## Session Summary" not in user_content
 
 
-class TestM369MessengerSanitizer:
+class TestMessengerSanitizer:
     """messenger output sanitization."""
 
     @pytest.mark.parametrize("text,expected", [
@@ -3599,7 +3599,7 @@ class TestM369MessengerSanitizer:
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         assert "no JSON, XML" in prompt or "Never emit XML" in prompt
 
-    def test_m1037_messenger_prompt_announce_and_anti_hallucination(self):
+    def test_messenger_prompt_announce_and_anti_hallucination(self):
         """messenger allows announce, forbids fabrication."""
         prompt = (_ROLES_DIR / "messenger.md").read_text()
         # Must allow announcement when no outputs available
@@ -3728,7 +3728,7 @@ class TestExecTranslatorSyntaxCheck:
             with pytest.raises(ExecTranslatorError, match="(?i)syntax error"):
                 await run_worker(config, "Run steps", "OS: Linux")
 
-    async def test_m1058_prompt_echo_back_rejected(self):
+    async def test_prompt_echo_back_rejected(self):
         """command containing prompt fragments is rejected."""
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         garbage = "ls /tmp\nPublic files: write to pub/"
@@ -3737,7 +3737,7 @@ class TestExecTranslatorSyntaxCheck:
             with pytest.raises(ExecTranslatorError, match="echo-back"):
                 await run_worker(config, "List files", "OS: Linux")
 
-    async def test_m1058_natural_language_rejected(self):
+    async def test_natural_language_rejected(self):
         """command starting with natural language is rejected."""
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         explanation = "I will run the ls command to list files in /tmp"
@@ -3746,7 +3746,7 @@ class TestExecTranslatorSyntaxCheck:
             with pytest.raises(ExecTranslatorError, match="Natural language"):
                 await run_worker(config, "List files", "OS: Linux")
 
-    async def test_m1084_syntax_error_gets_one_targeted_retry(self):
+    async def test_syntax_error_gets_one_targeted_retry(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         calls = []
 
@@ -3762,7 +3762,7 @@ class TestExecTranslatorSyntaxCheck:
         assert "Targeted repair" in calls[1]
         assert "bash syntax error" in calls[1].lower()
 
-    async def test_m1084_markdown_fences_get_one_targeted_retry(self):
+    async def test_markdown_fences_get_one_targeted_retry(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         calls = []
 
@@ -3780,7 +3780,7 @@ class TestExecTranslatorSyntaxCheck:
         assert "markdown fences" in calls[1].lower()
         assert "single direct command" in calls[1]
 
-    async def test_m1084_natural_language_gets_one_targeted_retry(self):
+    async def test_natural_language_gets_one_targeted_retry(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         calls = []
 
@@ -3797,7 +3797,7 @@ class TestExecTranslatorSyntaxCheck:
         assert len(calls) == 2
         assert "natural-language explanation" in calls[1].lower()
 
-    async def test_m1084_retry_still_fails_after_second_invalid_output(self):
+    async def test_retry_still_fails_after_second_invalid_output(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
         with patch("kiso.brain.call_llm", new_callable=AsyncMock,
                     side_effect=["```bash\npwd\n```", "```bash\npwd\n```"]):
@@ -3807,7 +3807,7 @@ class TestExecTranslatorSyntaxCheck:
                 )
 
 
-class TestM1084SimpleShellIntent:
+class TestSimpleShellIntent:
     def test_detects_simple_intent(self):
         assert _is_simple_shell_intent("Show the current working directory")
         assert _is_simple_shell_intent("List all files in the current directory")
@@ -3824,7 +3824,7 @@ class TestM1084SimpleShellIntent:
 
 
 class TestPlannerPromptContent:
-    def test_m144_long_exec_detail_rejected(self):
+    def test_long_exec_detail_rejected(self):
         """exec task with >500 char detail is rejected."""
         plan = {"tasks": [
             {"type": "exec", "detail": "x" * 501, "expect": "ok"},
@@ -3833,7 +3833,7 @@ class TestPlannerPromptContent:
         errors = validate_plan(plan)
         assert any("too long" in e for e in errors)
 
-    def test_m144_short_exec_detail_valid(self):
+    def test_short_exec_detail_valid(self):
         """exec task with <=500 char detail is fine."""
         plan = {"tasks": [
             {"type": "exec", "detail": "x" * 500, "expect": "ok"},
@@ -3843,7 +3843,7 @@ class TestPlannerPromptContent:
         assert not any("too long" in e for e in errors)
 
 
-    def test_m701_planner_prompt_knows_all_commands(self):
+    def test_planner_prompt_knows_all_commands(self):
         """planner prompt kiso_commands module lists all command families."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_commands"])
@@ -3851,7 +3851,7 @@ class TestPlannerPromptContent:
                      "kiso project", "kiso preset", "kiso session create"):
             assert cmd in prompt, f"Missing {cmd!r} in planner kiso_commands module"
 
-    def test_m701_planner_self_awareness(self):
+    def test_planner_self_awareness(self):
         """planner prompt includes capabilities summary."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", [])
@@ -3859,7 +3859,7 @@ class TestPlannerPromptContent:
                            "cron scheduling", "cross-session projects", "persona presets"):
             assert capability in prompt, f"Missing {capability!r} in planner core prompt"
 
-    def test_m697_planner_prompt_has_parallel_group_instructions(self):
+    def test_planner_prompt_has_parallel_group_instructions(self):
         """planner prompt planning_rules module mentions parallel groups."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["planning_rules"])
@@ -3867,14 +3867,14 @@ class TestPlannerPromptContent:
         assert "parallel" in prompt.lower()
         assert "in parallel" in prompt.lower() or "parallel execution" in prompt.lower()
 
-    def test_m1213_planner_knowledge_question_rule(self):
+    def test_planner_knowledge_question_rule(self):
         """planner planning_rules has knowledge-question safety net."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["planning_rules"])
         assert "conceptual" in prompt.lower() or "knowledge" in prompt.lower()
         assert "search" in prompt.lower() and "msg" in prompt.lower()
 
-    def test_m1214_planner_no_verify_after_codegen_tool(self):
+    def test_planner_no_verify_after_codegen_tool(self):
         """core planning rules say no exec after codegen wrapper."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["planning_rules"])
@@ -3889,7 +3889,7 @@ class TestPlannerPromptContent:
         assert "never use browser for web searches" in prompt.lower()
 
 
-class TestM166ValidatePlanSkillArgs:
+class TestValidatePlanSkillArgs:
     """validate_plan checks wrapper args against schema."""
 
     def test_missing_required_arg_rejected(self):
@@ -3958,7 +3958,7 @@ class TestM166ValidatePlanSkillArgs:
         assert not errors
 
 
-    def test_m184_args_example_in_validation_error(self):
+    def test_args_example_in_validation_error(self):
         """validation error includes args example from schema."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "do stuff", "wrapper": "browser",
@@ -3972,7 +3972,7 @@ class TestM166ValidatePlanSkillArgs:
         assert 'Required args object:' in errors[0]
         assert '"action": "value"' in errors[0]
 
-    def test_m184_args_example_required_only(self):
+    def test_args_example_required_only(self):
         """example includes only required params from schema."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "do stuff", "wrapper": "browser",
@@ -3996,7 +3996,7 @@ class TestM166ValidatePlanSkillArgs:
         assert "json string" not in prompt.lower()
 
 
-class TestM171StripExtendReplan:
+class TestStripExtendReplan:
     """strip extend_replan from initial plan."""
 
     def test_extend_replan_stripped_from_initial_plan(self):
@@ -4061,7 +4061,7 @@ _MSG_PLAN_FOR_USER = json.dumps({
 
 
 @pytest.mark.asyncio
-class TestM82PlannerAskThenAdd:
+class TestPlannerAskThenAdd:
     """: functional tests for the ask-then-add protection workflow.
 
     When Caller Role=user, a kiso user management request must result in a
@@ -4145,7 +4145,7 @@ class TestM82PlannerAskThenAdd:
             plan = await run_planner(db, config, "sess1", "user", "hello")
         assert plan["goal"]
 
-    async def test_m698_max_tasks_override(self, db, config):
+    async def test_max_tasks_override(self, db, config):
         """max_tasks_override limits plan size."""
         big_plan = json.dumps({
             "goal": "test", "secrets": None, "extend_replan": None,
@@ -4163,7 +4163,7 @@ class TestM82PlannerAskThenAdd:
                 await run_planner(db, config, "sess1", "admin", "hello",
                                   max_tasks_override=5)
 
-    async def test_m698_budget_injected_in_context(self, db, config):
+    async def test_budget_injected_in_context(self, db, config):
         """task budget line appears in the planner's user message."""
         captured: list[dict] = []
 
@@ -4179,7 +4179,7 @@ class TestM82PlannerAskThenAdd:
         assert user_msg is not None
         assert "Maximum tasks: 11" in user_msg["content"]
 
-    async def test_m712_install_status_injected_when_approved(self, db, config):
+    async def test_install_status_injected_when_approved(self, db, config):
         """Install Status section appears when install_approved=True."""
         messages, _, _ = await build_planner_messages(
             db, config, "sess1", "admin", "install browser",
@@ -4191,7 +4191,7 @@ class TestM82PlannerAskThenAdd:
         assert "user approved" in user_msg["content"]
         assert "replan" in user_msg["content"]
 
-    async def test_m712_install_status_absent_when_not_approved(self, db, config):
+    async def test_install_status_absent_when_not_approved(self, db, config):
         """Install Status section absent when install_approved=False."""
         messages, _, _ = await build_planner_messages(
             db, config, "sess1", "admin", "hello",
@@ -4404,7 +4404,7 @@ class TestClassifierPromptContent:
         assert "plugin" in prompt
 
 
-class TestM276ClassifierContext:
+class TestClassifierContext:
     """classifier receives conversation context for follow-up detection."""
 
     def test_build_messages_without_context(self):
@@ -4439,7 +4439,7 @@ class TestM276ClassifierContext:
         messages = mock_llm.call_args[0][2]
         assert "Recent Conversation" not in messages[1]["content"]
 
-    def test_m751_classifier_sees_kiso_response(self):
+    def test_classifier_sees_kiso_response(self):
         """classifier receives kiso's response in conversation context."""
         from kiso.brain import build_recent_context
         context = build_recent_context([
@@ -4452,7 +4452,7 @@ class TestM276ClassifierContext:
         assert "Vuoi che lo installi?" in user_content
         assert "oh yeah" in user_content
 
-    def test_m751_classifier_prompt_has_affirmative_rule(self):
+    def test_classifier_prompt_has_affirmative_rule(self):
         """classifier prompt mentions yes/no confirmation pattern."""
         from pathlib import Path
         prompt = (Path(__file__).parent.parent / "kiso" / "roles" / "classifier.md").read_text()
@@ -4712,7 +4712,7 @@ class TestExecTranslatorRetryContext:
 # --- reviewer prompt mentions retry_hint ---
 
 
-class TestM47ReviewerPlanContext:
+class TestReviewerPlanContext:
     """47b: reviewer receives Plan Context (not Plan Goal) and evaluates only expect."""
 
     async def test_reviewer_messages_use_plan_context_label(self):
@@ -4831,7 +4831,7 @@ class TestPrepareReviewerOutput:
         assert int(match.group(1)) > 0
 
 
-class TestM47WorkerHintPriority:
+class TestWorkerHintPriority:
     """47d: worker gives priority to retry hint over literal task detail re-translation."""
 
     def test_retry_context_with_hint_is_visible_to_translator(self):
@@ -4864,7 +4864,7 @@ class TestM47WorkerHintPriority:
 # --- edge cases ---
 
 
-class TestM47ReviewerPlanContextEdgeCases:
+class TestReviewerPlanContextEdgeCases:
     """Edge cases for reviewer Plan Context / expect evaluation."""
 
     async def test_reviewer_messages_goal_text_present_as_context(self):
@@ -5029,7 +5029,7 @@ class TestPlannerContextualRules:
         assert "CRITICAL" in system
 
 
-class TestM48CuratorCategoryField:
+class TestCuratorCategoryField:
     """48d: curator category field — prompt, schema, and validation."""
 
     def test_48d_curator_schema_has_category_field(self):
@@ -5082,13 +5082,13 @@ class TestM48CuratorCategoryField:
         errors = validate_curator(result)
         assert any("category" in e for e in errors)
 
-    def test_m282_tag_reuse_rule(self):
+    def test_tag_reuse_rule(self):
         """curator prompt enforces tag reuse over synonyms."""
         prompt = (_ROLES_DIR / "curator.md").read_text()
         assert "Tag reuse" in prompt
         assert "NEVER create a synonym" in prompt or "NEVER create synonym" in prompt
 
-    def test_m282_contradiction_rule(self):
+    def test_contradiction_rule(self):
         """curator prompt handles contradicting facts."""
         prompt = (_ROLES_DIR / "curator.md").read_text()
         assert "Contradicting facts" in prompt
@@ -5114,7 +5114,7 @@ class TestM48CuratorCategoryField:
 # --- curator entity_name + entity_kind ---
 
 
-class TestM343CuratorEntityFields:
+class TestCuratorEntityFields:
     """validate_curator enforces entity_name + entity_kind for promote."""
 
     def test_promote_missing_entity_name_error(self):
@@ -5201,7 +5201,7 @@ class TestM343CuratorEntityFields:
 # --- curator dedup — existing entity facts ---
 
 
-class TestM347CuratorExistingFacts:
+class TestCuratorExistingFacts:
     """build_curator_messages injects existing facts for dedup."""
 
     def test_existing_facts_section_injected(self):
@@ -5250,7 +5250,7 @@ class TestM347CuratorExistingFacts:
 # --- exit code notes, default model, prompt rules ---
 
 
-class TestM106ExitCodeNotes:
+class TestExitCodeNotes:
     """M106c: _EXIT_CODE_NOTES dictionary completeness."""
 
     def test_notes_cover_expected_codes(self):
@@ -5270,7 +5270,7 @@ class TestM106ExitCodeNotes:
         assert "not found" in _EXIT_CODE_NOTES[127].lower()
 
 
-class TestM106DefaultPlannerModel:
+class TestDefaultPlannerModel:
     """M110c/: default planner model is deepseek-v3.2."""
 
     def test_default_planner_model(self):
@@ -5699,7 +5699,7 @@ class TestRunMessengerIncludeRecent:
         assert "Recent Conversation" not in user_content
 
 
-class TestM186EscalatingValidationError:
+class TestEscalatingValidationError:
     """repeated identical validation errors get escalated."""
 
     @pytest.fixture()
@@ -5965,7 +5965,7 @@ class TestMemoryPack:
         assert "wrong approach" in feedback
 
 
-class TestM194ReviewerDomainCheck:
+class TestReviewerDomainCheck:
     """Reviewer prompt contains search domain cross-check rule."""
 
     def test_build_reviewer_messages_contains_domain_rule(self):
@@ -5980,13 +5980,13 @@ class TestM194ReviewerDomainCheck:
         system_content = msgs[0]["content"]
         assert "wrong domain" in system_content
 
-    def test_m280_truncated_output_rule(self):
+    def test_truncated_output_rule(self):
         """reviewer prompt handles truncated output gracefully."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "[truncated]" in prompt
         assert "Truncated output" in prompt and "ok" in prompt
 
-    def test_m280_partial_success_rule(self):
+    def test_partial_success_rule(self):
         """reviewer prompt defines partial success boundaries."""
         prompt = (_ROLES_DIR / "reviewer.md").read_text()
         assert "Partial success" in prompt
@@ -6174,7 +6174,7 @@ class TestPlannerSemanticToolValidation:
         assert not any("file paths only" in error for error in errors)
 
 
-class TestM283SearcherPrompt:
+class TestSearcherPrompt:
     """searcher prompt quality and language rules."""
 
     def test_searcher_prompt_exists(self):
@@ -6195,7 +6195,7 @@ class TestM283SearcherPrompt:
         assert "specific URL or domain" in prompt
 
 
-class TestM418NoSilentAutoCorrect:
+class TestNoSilentAutoCorrect:
     """Uninstalled wrapper plans raise PlanError (no silent auto-correction)."""
 
     UNINSTALLED_SKILL_PLAN = json.dumps({
@@ -6347,7 +6347,7 @@ class TestBrieferMessages:
         assert "- replan: re-planning after failure" in content
         assert "- plugin_install: plugin discovery" in content
 
-    def test_m426_module_descriptions_concise(self):
+    def test_module_descriptions_concise(self):
         """each module description is ≤60 chars."""
         from kiso.brain import _BRIEFER_MODULE_DESCRIPTIONS
         for name, desc in _BRIEFER_MODULE_DESCRIPTIONS.items():
@@ -6366,14 +6366,14 @@ class TestBrieferMessages:
         system = msgs[0]["content"]
         assert "System Environment" in system
 
-    def test_m281_fast_path_examples(self):
+    def test_fast_path_examples(self):
         """briefer prompt has explicit fast-path examples."""
         prompt = (_ROLES_DIR / "briefer.md").read_text()
         assert "Fast-path" in prompt
         assert "greetings" in prompt.lower()
         assert "Needs modules" in prompt
 
-    def test_m281_conflict_handling(self):
+    def test_conflict_handling(self):
         """briefer prompt has conflict handling guidance."""
         prompt = (_ROLES_DIR / "briefer.md").read_text()
         assert "Conflicting facts" in prompt
@@ -6385,13 +6385,13 @@ class TestBrieferMessages:
         assert "opinions" in prompt.lower()
         assert "not in the input" in prompt.lower()
 
-    def test_m265_messenger_no_modules_or_skills_rule(self):
+    def test_messenger_no_modules_or_skills_rule(self):
         """briefer prompt says messenger gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
         system = msgs[0]["content"]
         assert "For messenger/worker: modules=[] and wrappers=[] always" in system
 
-    def test_m265_worker_no_modules_or_tools_rule(self):
+    def test_worker_no_modules_or_tools_rule(self):
         """briefer prompt says worker gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("worker", "translate command", {})
         system = msgs[0]["content"]
@@ -6601,7 +6601,7 @@ class TestRunBriefer:
                 await run_briefer(config, "planner", "task", {})
 
     @pytest.mark.asyncio
-    async def test_m368_filters_hallucinated_skills(self, config):
+    async def test_filters_hallucinated_skills(self, config):
         """run_briefer filters wrapper names not matching installed wrappers."""
         response = json.dumps({
             "modules": [],
@@ -6619,7 +6619,7 @@ class TestRunBriefer:
         assert "cpu-info" not in result["wrappers"]
 
     @pytest.mark.asyncio
-    async def test_m368_preserves_valid_skills(self, config):
+    async def test_preserves_valid_skills(self, config):
         """run_briefer preserves wrapper names that match installed wrappers."""
         response = json.dumps({
             "modules": [],
@@ -6636,7 +6636,7 @@ class TestRunBriefer:
         assert result["wrappers"][0] == "search"
 
     @pytest.mark.asyncio
-    async def test_m387_clears_skills_when_none_installed(self, config):
+    async def test_clears_skills_when_none_installed(self, config):
         """all briefer wrappers cleared when no wrappers in context pool."""
         response = json.dumps({
             "modules": [],
@@ -6652,7 +6652,7 @@ class TestRunBriefer:
         assert result["wrappers"] == []
 
     @pytest.mark.asyncio
-    async def test_m387_clears_skills_with_empty_string_pool(self, config):
+    async def test_clears_skills_with_empty_string_pool(self, config):
         """all briefer wrappers cleared when wrappers key is empty string."""
         response = json.dumps({
             "modules": [],
@@ -6667,7 +6667,7 @@ class TestRunBriefer:
         assert result["wrappers"] == []
 
     @pytest.mark.asyncio
-    async def test_m387_no_skills_returned_passes_through(self, config):
+    async def test_no_skills_returned_passes_through(self, config):
         """when briefer returns no wrappers, nothing to filter."""
         response = json.dumps({
             "modules": [],
@@ -7203,7 +7203,7 @@ class TestBrieferTagRetrieval:
 # ---------------------------------------------------------------------------
 
 
-class TestM346BrieferEntityRetrieval:
+class TestBrieferEntityRetrieval:
     """briefer uses relevant_entities for entity-scoped fact retrieval."""
 
     @pytest.fixture()
@@ -7396,7 +7396,7 @@ class TestM346BrieferEntityRetrieval:
 # ---------------------------------------------------------------------------
 
 
-class TestM258SysEnvAndGapFiltering:
+class TestSysEnvAndGapFiltering:
     """sys_env goes through briefer, not unconditional."""
 
     @pytest.fixture()
@@ -7491,7 +7491,7 @@ class TestM258SysEnvAndGapFiltering:
 # ---------------------------------------------------------------------------
 
 
-class TestM266BrowserAvailability:
+class TestBrowserAvailability:
     """planner gets browser warning when web module active but browser not installed."""
 
     @pytest.fixture()
@@ -7631,7 +7631,7 @@ class TestM266BrowserAvailability:
 # ---------------------------------------------------------------------------
 
 
-class TestM261PromptSizeReduction:
+class TestPromptSizeReduction:
     """verify planner prompt size decreases with selective module loading."""
 
     def test_core_always_contains_install_rules(self):
@@ -7671,7 +7671,7 @@ class TestM261PromptSizeReduction:
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         assert len(replan_prompt) < len(all_modules) * 0.40
 
-    def test_m743_system_package_and_wrapper_recovery_coexist(self):
+    def test_system_package_and_wrapper_recovery_coexist(self):
         """core allows system packages, wrapper_recovery blocks apt for deps.
         Both rules must coexist in the full prompt without contradiction."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
@@ -7686,7 +7686,7 @@ class TestM261PromptSizeReduction:
         tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
         assert pkg_pos < tool_rec_pos
 
-    def test_m849_core_has_install_rules(self):
+    def test_core_has_install_rules(self):
         """core prompt (no modules) contains install decision rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
@@ -7694,7 +7694,7 @@ class TestM261PromptSizeReduction:
         assert "needs_install" in core_only
         assert "Install Routing" in core_only
 
-    def test_m743_wrapper_recovery_module_still_blocks_apt(self):
+    def test_wrapper_recovery_module_still_blocks_apt(self):
         """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
         wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
         assert "Never apt-get/pip install to fix" in wrapper_recovery
@@ -7717,7 +7717,7 @@ class TestM261PromptSizeReduction:
         assert "Plugin installation" in all_modules  # plugin_install
 
 
-class TestM1083InstallRoutingHelper:
+class TestInstallRoutingHelper:
     def test_kiso_wrapper_mode(self):
         route = _classify_install_mode(
             "install browser",
@@ -7891,7 +7891,7 @@ class TestBrieferModuleCoverage:
         assert "Plugin installation" not in system
 
 
-class TestM261MessengerContextReduction:
+class TestMessengerContextReduction:
     """verify messenger briefer filters plan_outputs effectively."""
 
     @pytest.fixture()
@@ -7954,7 +7954,7 @@ class TestM261MessengerContextReduction:
 # --- Retry on empty LLM response ---
 
 
-class TestM269RetryOnLLMError:
+class TestRetryOnLLMError:
     """_retry_llm_with_validation retries on LLMError instead of crashing."""
 
     @pytest.fixture()
@@ -8053,7 +8053,7 @@ class TestM269RetryOnLLMError:
         assert hasattr(exc_info.value, "last_errors")
 
 
-class TestM308FallbackModel:
+class TestFallbackModel:
     """_retry_llm_with_validation switches to fallback_model when primary exhausts LLM retries."""
 
     @pytest.fixture()
@@ -8176,7 +8176,7 @@ class TestM308FallbackModel:
         assert any("fallback" in r.lower() for r in retry_reasons)
 
 
-class TestM630CircuitBreakerFallback:
+class TestCircuitBreakerFallback:
     """circuit breaker open triggers immediate fallback switch."""
 
     @pytest.fixture()
@@ -8238,7 +8238,7 @@ class TestM630CircuitBreakerFallback:
                 )
 
 
-class TestM309ReplanContextDedup:
+class TestReplanContextDedup:
     """build_planner_messages excludes system_env from context_pool on replan,
     and run_planner passes is_replan to validate_plan preserving extend_replan."""
 
@@ -8339,7 +8339,7 @@ class TestM309ReplanContextDedup:
 # --- Briefer omits irrelevant sections for messenger/worker ---
 
 
-class TestM272BrieferSimpleConsumers:
+class TestBrieferSimpleConsumers:
     """build_briefer_messages omits modules/wrappers/sys_env for messenger/worker."""
 
     def _pool(self):
@@ -8387,7 +8387,7 @@ class TestM272BrieferSimpleConsumers:
 
 
 @pytest.mark.asyncio()
-class TestM274NoItalianKeywords:
+class TestNoItalianKeywords:
     """keyword fallback path uses only English keywords."""
 
     @pytest.fixture()
@@ -8443,7 +8443,7 @@ class TestM274NoItalianKeywords:
 
 
 @pytest.mark.asyncio
-class TestM899RegistryToolsInjection:
+class TestRegistryToolsInjection:
     """registry wrappers always injected into planner context."""
 
     @pytest.fixture()
@@ -8543,7 +8543,7 @@ def _brain_stream_cm(content: str, usage: dict | None = None) -> _BrainStreamCM:
 # --- No timeout partitioning — each attempt uses full role timeout ---
 
 
-class TestM298NoTimeoutPartitioning:
+class TestNoTimeoutPartitioning:
     """_retry_llm_with_validation does NOT partition timeout across retries."""
 
     @pytest.fixture()
@@ -8626,7 +8626,7 @@ class TestM298NoTimeoutPartitioning:
 # --- max_tokens removed for non-classifier roles ---
 
 
-class TestM1057MaxTokensRemoved:
+class TestMaxTokensRemoved:
     """only classifier gets max_tokens; other roles have no cap."""
 
     def _config(self):
@@ -8675,7 +8675,7 @@ class TestM1057MaxTokensRemoved:
 # --- Retry status notification ---
 
 
-class TestM297RetryNotification:
+class TestRetryNotification:
     """on_retry callback fires before each retry, not on first attempt."""
 
     @pytest.fixture()
@@ -8781,7 +8781,7 @@ class TestM297RetryNotification:
 # --- Integration tests — stall simulation, retry separation ---
 
 
-class TestM302StallRetryIntegration:
+class TestStallRetryIntegration:
     """end-to-end stall detection + separate retry budgets."""
 
     async def test_stall_switches_to_fallback(self):
@@ -8962,7 +8962,7 @@ class TestM302StallRetryIntegration:
 # --- Briefer skip module validation for simple consumers ---
 
 
-class TestM304BrieferModuleValidationSkip:
+class TestBrieferModuleValidationSkip:
     """validate_briefing skips module name check for simple consumers."""
 
     def test_check_modules_true_rejects_unknown(self):
@@ -9010,7 +9010,7 @@ class TestM304BrieferModuleValidationSkip:
 
 
 @pytest.mark.asyncio()
-class TestM304RunBrieferSimpleConsumers:
+class TestRunBrieferSimpleConsumers:
     """run_briefer skips module validation and forces modules=[] for messenger/worker."""
 
     @pytest.fixture()
@@ -9106,7 +9106,7 @@ class TestBuildInflightClassifierMessages:
         assert '{"port": 8080}' in msgs[0]["content"]
         assert "deploy app" in msgs[0]["content"]
 
-    def test_m752_with_conversation_context(self):
+    def test_with_conversation_context(self):
         """inflight classifier includes conversation context when provided."""
         from kiso.brain import build_recent_context
         context = build_recent_context([
@@ -9118,7 +9118,7 @@ class TestBuildInflightClassifierMessages:
         assert "[kiso]" in text
         assert "Vuoi che lo installi?" in text
 
-    def test_m752_no_context_no_conversation_block(self):
+    def test_no_context_no_conversation_block(self):
         """without context, no 'Recent conversation' block in output."""
         msgs = build_inflight_classifier_messages("goal", "msg", recent_context="")
         text = msgs[0]["content"]
@@ -9329,7 +9329,7 @@ class TestValidatePlanOrdering:
         assert any("replan" in e for e in errors)
 
 
-class TestM1052MsgOnlyValidation:
+class TestMsgOnlyValidation:
     """msg-only plans rejected unless exemption applies."""
 
     def test_msg_only_rejected(self):
@@ -9508,7 +9508,7 @@ class TestM1052MsgOnlyValidation:
         assert not any("Plan has only msg tasks" in e for e in errors)
 
 
-class TestM1303KbAnswerFlag:
+class TestKbAnswerFlag:
     """ Bug B: kb_answer flag allows msg-only plans for KB recall.
 
     The planner sets kb_answer=true when it can answer the user from
@@ -10037,7 +10037,7 @@ class TestSelfInspectionPlanSemantics:
         assert any("not available" in e for e in errors)
 
 
-class TestM950ForceMsgOnly:
+class TestForceMsgOnly:
     """force_msg_only rejects non-msg tasks after wrapper-not-in-registry."""
 
     _MSG_ONLY_PLAN = {"tasks": [
@@ -10094,7 +10094,7 @@ class TestM950ForceMsgOnly:
         assert not any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errors)
 
 
-class TestM1198InstallRouteValidation:
+class TestInstallRouteValidation:
     def _exec_msg_plan(self, detail: str) -> dict:
         return {"goal": "test", "needs_install": None, "tasks": [
             {"type": "exec", "detail": detail, "expect": "installed"},
@@ -10181,7 +10181,7 @@ class TestM1198InstallRouteValidation:
         assert not any("kiso wrapper install browser" in e for e in errors)
 
 
-class TestM1210ExplicitInstallRequest:
+class TestExplicitInstallRequest:
     """explicit user install request allows direct exec without prior approval.
 
      fix: natural-language detail (e.g. "Install the browser wrapper") is
@@ -10310,7 +10310,7 @@ class TestNeedsInstallCoherence:
         assert "msg asking" in err or "ask" in err.lower()
 
 
-class TestM984NeedsInstallMsgOnly:
+class TestNeedsInstallMsgOnly:
     """needs_install set → only msg tasks allowed."""
 
     def test_needs_install_with_exec_rejected(self):

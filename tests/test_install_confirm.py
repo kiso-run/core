@@ -46,14 +46,14 @@ class TestPlannerPromptInstallRules:
     def test_plugin_install_requires_prior_approval(self):
         assert "approved" in self.full.lower() or "consent" in self.full.lower()
 
-    def test_m733_core_allows_system_packages(self):
+    def test_core_allows_system_packages(self):
         """core prompt allows system pkg manager for non-kiso packages."""
         core = _load_modular_prompt("planner", [])
         assert "System package requests" in core
         assert "uv pip install" in core
         assert "needs_install" in core
 
-    def test_m733_wrapper_recovery_still_blocks_apt_for_deps(self):
+    def test_wrapper_recovery_still_blocks_apt_for_deps(self):
         """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
         wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
         assert "Never apt-get/pip install to fix" in wrapper_recovery
@@ -431,7 +431,7 @@ def _exec_msg_plan():
 
 
 @pytest.mark.asyncio
-class TestM670MsgOnlyFreshInstanceProposal:
+class TestMsgOnlyFreshInstanceProposal:
     """Install proposal must reflect explicit install intent, not missing wrappers."""
 
     @pytest.fixture()
@@ -582,7 +582,7 @@ class TestReplanInstallProposalPersistence:
 
 
 @pytest.mark.asyncio
-class TestM901NeedsInstallFilter:
+class TestNeedsInstallFilter:
     """needs_install is filtered to remove already-installed wrappers."""
 
     @pytest.fixture()

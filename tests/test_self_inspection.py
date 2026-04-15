@@ -18,7 +18,7 @@ from kiso.store import (
 )
 
 
-class TestM358SelfInspection:
+class TestSelfInspection:
     """End-to-end prompt/data flow for self-inspection queries."""
 
     @pytest.fixture()

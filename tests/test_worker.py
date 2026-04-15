@@ -1808,7 +1808,7 @@ class TestBuildReplanContext:
         assert len(facts) <= 15
 
 
-class TestM949TaskTypeLabel:
+class TestTaskTypeLabel:
     """replan context includes wrapper name in task type labels."""
 
     def test_wrapper_task_includes_wrapper_name(self):
@@ -4020,7 +4020,7 @@ class TestApplyCuratorResult:
 # --- _apply_curator_result — entity creation + fact linking ---
 
 
-class TestM344CuratorEntityFlow:
+class TestCuratorEntityFlow:
     """promote creates entity and links fact."""
 
     @pytest.fixture()
@@ -5819,7 +5819,7 @@ class TestBuildFailureSummary:
         assert "Completed successfully (1):" in result
         assert "Failed/Skipped" not in result
 
-    def test_m270_replan_failure_explicit(self):
+    def test_replan_failure_explicit(self):
         """when all tasks succeeded but replan failed, say so explicitly."""
         completed = [
             {"type": "exec", "detail": "Install browser"},
@@ -5833,7 +5833,7 @@ class TestBuildFailureSummary:
         assert "re-planning" in result
         assert "Failure reason: Replan failed" in result
 
-    def test_m270_no_replan_msg_when_remaining(self):
+    def test_no_replan_msg_when_remaining(self):
         """don't add replan clarification when tasks are still remaining."""
         completed = [{"type": "exec", "detail": "step 1"}]
         remaining = [{"type": "exec", "detail": "step 2"}]
@@ -6740,7 +6740,7 @@ class TestReportPubFiles:
         assert result[0]["url"].startswith("/pub/")
 
 
-    def test_m736_external_url_overrides_base_url(self, tmp_path):
+    def test_external_url_overrides_base_url(self, tmp_path):
         """external_url setting takes precedence over base_url."""
         cfg = Config(
             tokens={"cli": "test-secret-token"},
@@ -6761,7 +6761,7 @@ class TestReportPubFiles:
         assert len(result) == 1
         assert result[0]["url"].startswith("https://miobot.example.com/pub/")
 
-    def test_m736_empty_external_url_uses_base_url(self, tmp_path, config):
+    def test_empty_external_url_uses_base_url(self, tmp_path, config):
         """empty external_url falls back to base_url."""
         session_dir = tmp_path / "sessions" / "test-session"
         pub_dir = session_dir / "pub"
@@ -6773,7 +6773,7 @@ class TestReportPubFiles:
 
         assert result[0]["url"].startswith("http://host:8333/pub/")
 
-    def test_m742_external_url_in_format_pub_note(self, tmp_path):
+    def test_external_url_in_format_pub_note(self, tmp_path):
         """full chain — external_url appears in formatted pub note output."""
         from kiso.worker.utils import _format_pub_note
         cfg = Config(
@@ -6797,7 +6797,7 @@ class TestReportPubFiles:
         assert "screenshot.png" in note
         assert "localhost" not in note
 
-    def test_m742_no_external_url_uses_base_url_in_note(self, tmp_path, config):
+    def test_no_external_url_uses_base_url_in_note(self, tmp_path, config):
         """without external_url, pub note uses base_url."""
         from kiso.worker.utils import _format_pub_note
         session_dir = tmp_path / "sessions" / "test-session"
@@ -8145,7 +8145,7 @@ class TestIncrementalLLMCalls:
 
 
 @pytest.mark.asyncio
-class TestM44gAppendCallsRobustness:
+class TestAppendCallsRobustness:
     """M44g: _append_calls must survive exceptions and be called on all code paths."""
 
     @pytest.fixture()
@@ -8242,7 +8242,7 @@ class TestM44gAppendCallsRobustness:
 
 
 @pytest.mark.asyncio
-class TestM44gRetryLLMCalls:
+class TestRetryLLMCalls:
     """M44g: on exec retry, llm_calls accumulates across attempts."""
 
     @pytest.fixture()
@@ -8297,7 +8297,7 @@ class TestM44gRetryLLMCalls:
 # ---------------------------------------------------------------------------
 
 
-class TestM48ApplyCuratorCategory:
+class TestApplyCuratorCategory:
     """48d: _apply_curator_result uses category from evaluation and scopes session correctly."""
 
     @pytest.fixture()
@@ -11225,7 +11225,7 @@ class TestMsgTaskBrieferIntegration:
         # Briefer was called and failed, then messenger was called
         assert call_count[0] >= 2  # at least briefer + messenger
 
-    async def test_m1053_briefer_timeout_falls_back(self, db):
+    async def test_briefer_timeout_falls_back(self, db):
         """briefer exceeding _BRIEFER_MSG_TIMEOUT triggers fallback."""
         import kiso.worker.loop as _loop
         config = make_config(settings={"briefer_enabled": True})
@@ -11283,7 +11283,7 @@ class TestMsgTaskBrieferIntegration:
 # ---------------------------------------------------------------------------
 
 
-class TestM365MsgTaskEntityEnrichment:
+class TestMsgTaskEntityEnrichment:
     """_msg_task injects available_entities and fetches entity facts."""
 
     @pytest.fixture()
@@ -11571,7 +11571,7 @@ class TestExecTaskBrieferIntegration:
         assert "echo first" in translator_calls[1] or "first" in translator_calls[1]
 
 
-def test_m270_messenger_prompt_has_precision_rule():
+def test_messenger_prompt_has_precision_rule():
     """messenger.md has rule about completed vs failed task accuracy."""
     prompt = (Path(__file__).resolve().parent.parent / "kiso" / "roles" / "messenger.md").read_text()
     assert "Never say a completed task failed" in prompt
@@ -11581,7 +11581,7 @@ def test_m270_messenger_prompt_has_precision_rule():
 
 
 @pytest.mark.asyncio()
-class TestM273FlushBrieferUsage:
+class TestFlushBrieferUsage:
     """_append_calls fires between briefer and consumer for msg & exec tasks."""
 
     @pytest.fixture()
@@ -11676,7 +11676,7 @@ class TestM273FlushBrieferUsage:
 # ---------------------------------------------------------------------------
 
 
-class TestM307FailureMsgRaceIntegration:
+class TestFailureMsgRaceIntegration:
     """integration tests verifying failure/cancel msg task is visible
     in the DB while the messenger is composing, BEFORE plan status changes.
 
@@ -11810,7 +11810,7 @@ class TestM307FailureMsgRaceIntegration:
         assert row["total_output_tokens"] == 200
 
 
-class TestM310Phase13Integration:
+class TestPhase13Integration:
     """end-to-end integration tests for Phase 13.
 
     Tests the full _run_planning_loop flow when replan fails due to PlanError,
@@ -11931,7 +11931,7 @@ _REPLAN_MSG_CASES = [
 ]
 
 
-class TestM332GetReplanMessage:
+class TestGetReplanMessage:
     """Replan messages: user-visible templates must not leak internal
     reviewer reason or replan history text."""
 
@@ -11985,7 +11985,7 @@ REVIEW_STUCK = {
 
 
 @pytest.mark.asyncio
-class TestM336StuckHandling:
+class TestStuckHandling:
     """Verify stuck review status stops execution without triggering replan."""
 
     async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
@@ -12051,7 +12051,7 @@ class TestM336StuckHandling:
 
 
 @pytest.mark.asyncio
-class TestM337BroadenedCircularDetection:
+class TestBroadenedCircularDetection:
     """circular detection scans ALL history, not just consecutive pairs."""
 
     @pytest.fixture()
@@ -12132,7 +12132,7 @@ class TestM337BroadenedCircularDetection:
 
 
 @pytest.mark.asyncio
-class TestM338BlockExtendWhenStuck:
+class TestBlockExtendWhenStuck:
     """deny extend_replan when circular/stuck pattern detected."""
 
     @pytest.fixture()
@@ -12200,7 +12200,7 @@ class TestM338BlockExtendWhenStuck:
 # --- sudo stripping when running as root ---
 
 
-class TestM735SudoStripping:
+class TestSudoStripping:
     """exec detail has sudo stripped when running as root."""
 
     def test_sudo_stripped_from_detail_when_root(self):
@@ -12228,7 +12228,7 @@ class TestM735SudoStripping:
         assert detail == "apt-get install -y timg"
 
 
-class TestM741SudoStrippingIntegration:
+class TestSudoStrippingIntegration:
     """integration test — sudo stripping reads from actual sysenv in exec handler.
 
     Verifies the code path in loop.py where get_system_env().user_info.is_root
@@ -12279,7 +12279,7 @@ class TestM741SudoStrippingIntegration:
 # --- Integration test: stuck → user notification flow ---
 
 
-class TestM371SysenvRefreshAndInstallLoop:
+class TestSysenvRefreshAndInstallLoop:
     """sysenv cache invalidation after package install + install loop detection."""
 
     @pytest.fixture()
@@ -12354,7 +12354,7 @@ class TestM371SysenvRefreshAndInstallLoop:
 
 
 @pytest.mark.asyncio
-class TestM341StuckFlow:
+class TestStuckFlow:
     """full flow from reviewer 'stuck' to user notification, no replan."""
 
     @pytest.fixture()

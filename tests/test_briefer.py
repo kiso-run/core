@@ -508,7 +508,7 @@ class TestRecipesInBriefer:
 # ---------------------------------------------------------------------------
 
 
-class TestM824ToolFilterThreshold:
+class TestToolFilterThreshold:
     """briefer wrapper filter is skipped when installed wrappers <= threshold."""
 
     async def test_few_tools_injects_all(self, db):
@@ -658,7 +658,7 @@ class TestM824ToolFilterThreshold:
 # ---------------------------------------------------------------------------
 
 
-class TestM825SessionFilesModule:
+class TestSessionFilesModule:
     """session_files module injected when workspace has files."""
 
     async def test_session_with_files_gets_module(self, db):

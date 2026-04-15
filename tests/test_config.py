@@ -431,7 +431,7 @@ class TestSettingBool:
 # --- settings defaults ---
 
 
-def test_m34_settings_defaults():
+def test_settings_defaults():
     """ fact decay/archive settings have correct defaults."""
     assert SETTINGS_DEFAULTS["fact_decay_days"] == 7
     assert SETTINGS_DEFAULTS["fact_decay_rate"] == 0.1
@@ -441,12 +441,12 @@ def test_m34_settings_defaults():
 # --- robustness fixes ---
 
 
-def test_m37_fact_consolidation_min_ratio_default():
+def test_fact_consolidation_min_ratio_default():
     """: fact_consolidation_min_ratio has correct default."""
     assert SETTINGS_DEFAULTS["fact_consolidation_min_ratio"] == 0.3
 
 
-def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
+def test_missing_consolidation_ratio_uses_default(tmp_path: Path):
     """: missing fact_consolidation_min_ratio falls back to default."""
     text = VALID.replace("fact_consolidation_min_ratio = 0.3\n", "")
     cfg = load_config(_write(tmp_path, text))
@@ -456,7 +456,7 @@ def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
 # --- M84e: settings type validation ---
 
 
-def test_m84e_setting_wrong_type_int_exits(tmp_path: Path, capsys):
+def test_setting_wrong_type_int_exits(tmp_path: Path, capsys):
     """M84e: setting an int key to a string must exit with type error."""
     text = VALID.replace("max_plan_tasks            = 20",
                          'max_plan_tasks            = "twenty"')
@@ -467,7 +467,7 @@ def test_m84e_setting_wrong_type_int_exits(tmp_path: Path, capsys):
     assert "max_plan_tasks" in err
 
 
-def test_m84e_setting_wrong_type_bool_exits(tmp_path: Path, capsys):
+def test_setting_wrong_type_bool_exits(tmp_path: Path, capsys):
     """M84e: setting a bool key to an int must exit with type error."""
     text = VALID.replace("fast_path_enabled         = true",
                          "fast_path_enabled         = 1")
@@ -476,14 +476,14 @@ def test_m84e_setting_wrong_type_bool_exits(tmp_path: Path, capsys):
     assert "fast_path_enabled" in _die_msg(capsys)
 
 
-def test_m84e_unknown_setting_key_ignored(tmp_path: Path):
+def test_unknown_setting_key_ignored(tmp_path: Path):
     """M84e: unknown settings keys are allowed (forward-compatible)."""
     text = VALID + 'unknown_future_key = "hello"\n'
     cfg = load_config(_write(tmp_path, text))
     assert cfg.settings["unknown_future_key"] == "hello"
 
 
-def test_m84e_valid_settings_no_error(tmp_path: Path):
+def test_valid_settings_no_error(tmp_path: Path):
     """M84e: correct types must not trigger any error."""
     cfg = load_config(_write(tmp_path, VALID))
     assert cfg.settings["max_plan_tasks"] == 20

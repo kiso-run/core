@@ -28,7 +28,7 @@ from kiso.store import (
 from kiso.worker.loop import _apply_curator_result
 
 
-class TestM348EntityLifecycle:
+class TestEntityLifecycle:
     """Full lifecycle: learnings → curator → entities → facts → dedup."""
 
     @pytest.fixture()

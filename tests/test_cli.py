@@ -2061,7 +2061,7 @@ def test_poll_every_is_160ms():
     assert _POLL_EVERY == 2
 
 
-def test_m41_shows_spinner_before_plan_created(capsys):
+def test_shows_spinner_before_plan_created(capsys):
     """: planning spinner must activate when worker is running but plan not yet created.
 
     During the pre-plan phase (classifier + planner LLM calls, typically 4-15 s) the
@@ -2126,14 +2126,14 @@ class TestVersionFile:
         assert isinstance(__version__, str)
         assert __version__ == __import__("kiso._version", fromlist=["__version__"]).__version__
 
-    def test_m363_version_matches_metadata(self):
+    def test_version_matches_metadata(self):
         """__version__ reads from importlib.metadata, not hardcoded."""
         from importlib.metadata import version as pkg_version
         from kiso._version import __version__ as v
         assert v == pkg_version("kiso"), \
             f"__version__ ({v}) != metadata ({pkg_version('kiso')}): version is hardcoded!"
 
-    def test_m363_no_hardcoded_version_in_version_py(self):
+    def test_no_hardcoded_version_in_version_py(self):
         """_version.py must not contain a hardcoded version string."""
         from pathlib import Path
         src = (Path(__file__).resolve().parent.parent / "kiso" / "_version.py").read_text()
@@ -3205,7 +3205,7 @@ def test_spinner_restored_after_inflight_clears_it():
 # ---------: spinner restored for msg tasks after inflight clears it ----------
 
 
-def test_m376_spinner_restored_for_msg_task():
+def test_spinner_restored_for_msg_task():
     """Spinner must be restored for msg tasks after inflight clears it."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3234,7 +3234,7 @@ def test_m376_spinner_restored_for_msg_task():
 # ---------: deduplicate inflight indicator on validation retry ----------
 
 
-def test_m267_duplicate_planner_inflight_suppressed(capsys):
+def test_duplicate_planner_inflight_suppressed(capsys):
     """Two planner inflight events (validation retry) → only first renders IN panel."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     state = _PollRenderState(seen={}, verbose_shown={})
@@ -3269,7 +3269,7 @@ def test_m267_duplicate_planner_inflight_suppressed(capsys):
     assert "PLAN_ATTEMPT_2" not in out2
 
 
-def test_m267_different_roles_both_render(capsys):
+def test_different_roles_both_render(capsys):
     """Inflight IN panels for different roles both render."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     state = _PollRenderState(seen={}, verbose_shown={})
@@ -3303,7 +3303,7 @@ def test_m267_different_roles_both_render(capsys):
     assert "BRIEFER_MSG" in out2
 
 
-def test_m267_role_reset_after_out_panel(capsys):
+def test_role_reset_after_out_panel(capsys):
     """After OUT panel renders for a role, a new inflight for that role renders again."""
     import json as _json
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
@@ -3362,7 +3362,7 @@ def test_m267_role_reset_after_out_panel(capsys):
 # --- partial content role filter + ANSI overwrite ---
 
 
-def test_m306_partial_content_filtered_for_structured_roles(capsys):
+def test_partial_content_filtered_for_structured_roles(capsys):
     """Partial content from planner/briefer/reviewer is NOT shown."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3383,7 +3383,7 @@ def test_m306_partial_content_filtered_for_structured_roles(capsys):
     assert state.partial_content_len == 0
 
 
-def test_m306_partial_content_shown_for_messenger(capsys):
+def test_partial_content_shown_for_messenger(capsys):
     """Partial content from messenger IS shown."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3403,7 +3403,7 @@ def test_m306_partial_content_shown_for_messenger(capsys):
     assert state.partial_content_len == len("Il sistema sta installando")
 
 
-def test_m306_partial_content_shown_for_summarizer(capsys):
+def test_partial_content_shown_for_summarizer(capsys):
     """Partial content from summarizer IS shown."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3422,7 +3422,7 @@ def test_m306_partial_content_shown_for_summarizer(capsys):
     assert "Summary so far" in out
 
 
-def test_m306_ansi_overwrite_on_tty(capsys):
+def test_ansi_overwrite_on_tty(capsys):
     """On TTY, previous partial lines are overwritten via ANSI escape."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=True)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3455,7 +3455,7 @@ def test_m306_ansi_overwrite_on_tty(capsys):
     assert "Second chunk" in out2
 
 
-def test_m306_no_ansi_on_non_tty(capsys):
+def test_no_ansi_on_non_tty(capsys):
     """On non-TTY, no ANSI escapes even on repeated renders."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3479,7 +3479,7 @@ def test_m306_no_ansi_on_non_tty(capsys):
     assert "\033[" not in out2  # no ANSI on non-TTY
 
 
-def test_m306_reset_on_inflight_complete(capsys):
+def test_reset_on_inflight_complete(capsys):
     """When inflight call completes, partial tracking resets."""
     caps = TermCaps(color=False, unicode=False, width=80, height=24, tty=False)
     plan = {"id": 1, "message_id": 1, "status": "running", "goal": "g"}
@@ -3519,7 +3519,7 @@ def _make_llm_calls_json(*calls):
     return _json.dumps(calls)
 
 
-class TestM326VerbosePanelDedup:
+class TestVerbosePanelDedup:
     """verify IN panels are never duplicated for msg tasks in verbose mode."""
 
     def _caps(self):
@@ -3686,7 +3686,7 @@ class TestM326VerbosePanelDedup:
             "_render_msg_task should use _emit_verbose_calls, not render_llm_calls_verbose"
 
 
-class TestM331SuppressPendingHeaders:
+class TestSuppressPendingHeaders:
     """pending tasks should not render individual task headers."""
 
     def _caps(self):

@@ -97,7 +97,7 @@ class TestWrapperRenameRuntimeInvariants:
         assert _INSTALL_CMD_RE.search("kiso connector install discord")
 
 
-class TestM1320NoStrayToolSkillReferences:
+class TestNoStrayToolSkillReferences:
     """: source must not contain stray tool/skill refs as kiso concepts.
 
     Allowed exceptions:
