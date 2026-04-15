@@ -1,8 +1,8 @@
-"""M1282: Paraphraser → planner context boundary.
+""": Paraphraser → planner context boundary.
 
 Pin the contract that untrusted messages flow through the
 paraphraser before reaching the planner. Without this guard, the
-adversarial matrix in M1283 would be testing on top of an unverified
+adversarial matrix in would be testing on top of an unverified
 assumption: that injection-prone literal text is paraphrased away
 before the planner ever sees it.
 

@@ -30,7 +30,7 @@ def _clear_cache():
     reg._registry_ts = 0.0
 
 
-# --- registry.json shape (M1280) ---
+# --- registry.json shape ---
 
 
 class TestRegistryJsonShape:

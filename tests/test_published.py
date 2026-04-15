@@ -1,4 +1,4 @@
-"""Tests for M26 — direct pub/ file serving (HMAC-based URLs)."""
+"""Tests for — direct pub/ file serving (HMAC-based URLs)."""
 
 from __future__ import annotations
 

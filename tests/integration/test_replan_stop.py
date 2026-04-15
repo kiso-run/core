@@ -1,11 +1,11 @@
-"""Circular replan deterministic stop oracle (M1275).
+"""Circular replan deterministic stop oracle.
 
 Unit-level coverage for ``_detect_circular_replan`` is already
 comprehensive in ``tests/test_worker.py:9418+`` (11+ tests covering
 word overlap, strategy fingerprint Jaccard, install loops,
 goal-vs-failure variants).
 
-Unit-level coverage for the codegen guardrail (M1233) is in
+Unit-level coverage for the codegen guardrail is in
 ``tests/test_brain.py`` (test_m1227_codegen_exec_after_tool_rejected
 and neighbors).
 

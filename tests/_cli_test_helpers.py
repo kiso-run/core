@@ -1,7 +1,7 @@
 """Shared test helpers for CLI command tests.
 
 Extracted from test_cli_knowledge.py, test_cli_behavior.py, test_presets.py,
-test_cli.py, test_cli_session.py, test_cli_env.py (M706).
+test_cli.py, test_cli_session.py, test_cli_env.py.
 """
 
 from __future__ import annotations

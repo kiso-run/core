@@ -1,4 +1,4 @@
-"""`uploads/` attachment handoff end-to-end (M1272).
+"""`uploads/` attachment handoff end-to-end.
 
 Unit-level plumbing for ``_session_workspace`` is already covered in
 ``tests/test_worker.py`` (``test_workspace_creates_uploads_dir`` and
@@ -101,7 +101,7 @@ class TestUploadsWorkspaceHandoff:
 
 
 class TestPublishedFilePersistence:
-    """M1274: published file persistence and identity across plans.
+    """: published file persistence and identity across plans.
 
     Unit-level coverage for the /pub/{token}/{filename} endpoint is in
     tests/test_published.py (~15 tests). This class covers the

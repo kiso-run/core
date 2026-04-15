@@ -163,7 +163,7 @@ class TestKnowledgeImportCLI:
         assert "not found" in capsys.readouterr().err
 
 
-# --- M676: Nested headings and mixed sections ---
+# --- Nested headings and mixed sections ---
 
 
 class TestNestedHeadingsAndMixedSections:
@@ -247,7 +247,7 @@ class TestNestedHeadingsAndMixedSections:
         assert facts[1].category == "general"
 
 
-# --- M677: Round-trip export → import ---
+# --- Round-trip export → import ---
 
 
 class TestRoundTripExportImport:

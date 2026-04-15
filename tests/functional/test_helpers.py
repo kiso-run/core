@@ -291,7 +291,7 @@ class TestFunctionalResult:
 
 
 # ---------------------------------------------------------------------------
-# assert_no_command_word — M1286
+# assert_no_command_word
 # ---------------------------------------------------------------------------
 
 
@@ -319,7 +319,7 @@ class TestAssertNoCommandWord:
             assert_no_command_word(tasks, ["curl", "wget"])
 
     def test_curly_in_detail_does_not_match_curl_word(self):
-        """Regression for the M1286 false positive: 'curly brackets'
+        """Regression for the false positive: 'curly brackets'
         in heredoc body must NOT match 'curl' as a command word."""
         from tests.functional.conftest import assert_no_command_word
         tasks = [
@@ -384,7 +384,7 @@ class TestAssertNoCommandWord:
 
 
 # ---------------------------------------------------------------------------
-# drive_install_flow — M1286
+# drive_install_flow
 # ---------------------------------------------------------------------------
 
 
@@ -402,7 +402,7 @@ class TestDriveInstallFlow:
     """
 
     async def test_tool_already_installed_returns_after_first_call(self):
-        """M1329: if the wrapper is already installed when called, the
+        """: if the wrapper is already installed when called, the
         helper runs the prompt EXACTLY ONCE. The old behavior re-issued
         the prompt a second time (harmless but inflated the plan count
         for pipeline tests like F17/F30 that chain multiple install_flow

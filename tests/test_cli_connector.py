@@ -18,7 +18,7 @@ from cli.connector import (
 )
 from tests._cli_plugin_helpers import mock_admin, _ok_run, fake_clone_plugin  # noqa: F401
 
-# Parse tests now in _cli_plugin_helpers.py (M601)
+# Parse tests now in _cli_plugin_helpers.py
 
 # ── run_connector_command dispatcher ─────────────────────────
 
@@ -349,7 +349,7 @@ def test_connector_install_official(tmp_path, mock_admin, capsys):
 
 
 def test_connector_install_env_warning_includes_description(tmp_path, mock_admin, capsys):
-    """M46: install output includes env var description so the agent can relay it to the user."""
+    """: install output includes env var description so the agent can relay it to the user."""
     from cli.connector import _connector_install
 
     connectors_dir = tmp_path / "connectors"
@@ -569,7 +569,7 @@ def test_connector_update_all(tmp_path, mock_admin, capsys):
 def test_connector_update_preserves_edited_config_toml(
     tmp_path, mock_admin, capsys,
 ):
-    """M1277: an edited config.toml in an installed connector survives
+    """: an edited config.toml in an installed connector survives
     an update — _update_plugin (git pull + deps) must not clobber it."""
     from cli.connector import _connector_update
 
@@ -1273,7 +1273,7 @@ def test_discover_connectors_no_dir():
 
 
 def test_discover_connectors_corrupted_toml(tmp_path, caplog):
-    """M37: corrupted kiso.toml is skipped and a warning is logged."""
+    """: corrupted kiso.toml is skipped and a warning is logged."""
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     d = connectors_dir / "broken"
@@ -1290,7 +1290,7 @@ def test_discover_connectors_corrupted_toml(tmp_path, caplog):
 
 
 def test_discover_connectors_invalid_manifest_skipped(tmp_path, caplog):
-    """M37: valid TOML but invalid manifest is skipped with a warning."""
+    """: valid TOML but invalid manifest is skipped with a warning."""
     connectors_dir = tmp_path / "connectors"
     connectors_dir.mkdir()
     d = connectors_dir / "bad"
@@ -1745,7 +1745,7 @@ class TestConnectorTest:
 
 
 # ---------------------------------------------------------------------------
-# M1276: Full lifecycle matrix (run → status → stop) over fake connector dir
+# Full lifecycle matrix (run → status → stop) over fake connector dir
 # ---------------------------------------------------------------------------
 
 class TestConnectorLifecycleMatrix:

@@ -318,7 +318,7 @@ class TestF24CreateThenReference:
         """What: Creates a file in plan 1, queries it in plan 2.
 
         Why: Validates cross-plan state — the planner sees files created
-        in previous plans via session workspace listing (M822).
+        in previous plans via session workspace listing.
         Expects: Plan 1 creates file, Plan 2 references it.
         """
         r1 = await run_message(

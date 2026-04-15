@@ -76,7 +76,7 @@ class TestPlannerLive:
         types = [t["type"] for t in plan["tasks"]]
         # accept replan or msg as final task — the planner may choose to
         # investigate and report directly (exec + msg) instead of replanning.
-        # Both are valid strategies for a discovery query (same as M655).
+        # Both are valid strategies for a discovery query.
         last_type = plan["tasks"][-1]["type"]
         assert last_type in ("replan", "msg"), (
             f"Expected last task to be 'replan' or 'msg', got types: {types}"
@@ -172,7 +172,7 @@ class TestReviewerLive:
         assert review["reason"]
 
     async def test_warning_with_satisfied_expect_returns_ok(self, live_config):
-        """What: Warning in output but expect is satisfied and exit code is 0 (M96).
+        """What: Warning in output but expect is satisfied and exit code is 0.
 
         Why: Validates the reviewer does not over-react to warnings when the core expectation is met.
         Expects: Valid review with status 'ok'.
@@ -194,7 +194,7 @@ class TestReviewerLive:
         assert review["status"] == "ok"
 
     async def test_warning_with_explicit_no_warnings_expect_returns_replan(self, live_config):
-        """What: Warning in output and expect explicitly requires 'no warnings' (M96).
+        """What: Warning in output and expect explicitly requires 'no warnings'.
 
         Why: Validates the reviewer correctly replans when warnings violate an explicit no-warnings expectation.
         Expects: Valid review with status 'replan'.
@@ -216,7 +216,7 @@ class TestReviewerLive:
         assert review["status"] == "replan"
 
     async def test_nonzero_exit_with_warning_returns_replan(self, live_config):
-        """What: Non-zero exit code with warning and error output (M96).
+        """What: Non-zero exit code with warning and error output.
 
         Why: Validates the reviewer always replans on non-zero exit, regardless of other signals.
         Expects: Valid review with status 'replan'.
@@ -288,7 +288,7 @@ class TestWorkerLive:
     async def test_thinking_field_in_usage_entries(
         self, live_config, seeded_db, live_session,
     ):
-        """What: Runs a msg task and inspects the usage tracking entries (M98).
+        """What: Runs a msg task and inspects the usage tracking entries.
 
         Why: Validates that every LLM call records a 'thinking' field in usage data.
         Expects: At least one usage call entry, each with a string 'thinking' field.

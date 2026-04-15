@@ -1,4 +1,4 @@
-"""Tests for the M1292 `kiso roles` CLI command group and roles registry."""
+"""Tests for the `kiso roles` CLI command group and roles registry."""
 
 from __future__ import annotations
 

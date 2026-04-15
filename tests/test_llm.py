@@ -1330,7 +1330,7 @@ class TestJsonSchemaFallback:
         assert result == '{"result": true}'
 
 
-# --- M271: Reasoning budget control per role ---
+# --- Reasoning budget control per role ---
 
 
 class TestM271ReasoningDefaults:
@@ -1388,7 +1388,7 @@ def test_m271_reasoning_defaults_import():
     assert "messenger" not in REASONING_DEFAULTS
 
 
-# --- M299: SSE stream parsing ---
+# --- SSE stream parsing ---
 
 
 class TestM299SSEStreamParsing:
@@ -1474,7 +1474,7 @@ class TestM299SSEStreamParsing:
         assert ct == 7
 
 
-# --- M300: Stall detection & raised timeouts ---
+# --- Stall detection & raised timeouts ---
 
 
 class TestM300StallDetection:
@@ -1588,7 +1588,7 @@ class TestM300RaisedTimeouts:
         assert SETTINGS_DEFAULTS["stall_timeout"] == 60
 
 
-# --- M303: Partial content accumulation during streaming ---
+# --- Partial content accumulation during streaming ---
 
 
 class TestM303PartialContent:
@@ -1704,7 +1704,7 @@ class TestM303PartialContent:
         assert captured_partial.get("got_dict") is True
 
 
-# --- M305: Empty response reasoning fallback ---
+# --- Empty response reasoning fallback ---
 
 
 def _reasoning_only_stream(reasoning: str, usage: dict | None = None) -> _StreamCM:
@@ -1807,7 +1807,7 @@ class TestM305ReasoningFallback:
         assert result == review_json
 
 
-# --- M629: Circuit breaker tests ---
+# --- Circuit breaker tests ---
 
 
 class TestCircuitBreaker:

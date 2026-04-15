@@ -89,7 +89,7 @@ _DENY_LIST_CASES = [
     ("rm -r ~", True, None),
     ("rm -r /", True, None),
     ("a(){ a|a& }; a", True, None),
-    # --- M488: actionable hints ---
+    # --- actionable hints ---
     ('python3 -c "print(1)"', True, "script.py"),
     ('node -e "console.log(1)"', True, "script.js"),
     ("eval echo hello", True, "directly"),

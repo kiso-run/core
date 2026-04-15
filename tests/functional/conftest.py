@@ -673,10 +673,10 @@ def preset_tools_installed():
 
 
 # ---------------------------------------------------------------------------
-# M1286: drive_install_flow + assert_no_command_word
+# drive_install_flow + assert_no_command_word
 # ---------------------------------------------------------------------------
 
-# Two test-infrastructure helpers added by M1286 to make functional
+# Two test-infrastructure helpers to make functional
 # tests robust against:
 # 1. LLM behavior drift on Turn 1 of an install flow (the planner is
 #    free to propose, install directly, or work around — the helper
@@ -723,7 +723,7 @@ async def drive_install_flow(
         from tests.conftest import LLM_INSTALL_TIMEOUT
         timeout = LLM_INSTALL_TIMEOUT
     kwargs = {"timeout": timeout}
-    # M1329: if the wrapper is already installed before turn 1, the
+    # if the wrapper is already installed before turn 1, the
     # first call already executes the prompt with the wrapper available
     # — no need to re-issue. The re-issue at the end exists specifically
     # for the install-happened path (where turns 2..N are install

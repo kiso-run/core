@@ -1508,7 +1508,7 @@ def test_render_llm_calls_verbose_thinking_ascii():
     assert "?" in result  # ASCII icon
 
 
-# ── M101: verbose timestamp + skip ───────────────────────────
+# ──: verbose timestamp + skip ───────────────────────────
 
 
 def test_render_llm_calls_verbose_timestamp():
@@ -1639,7 +1639,7 @@ def test_render_llm_calls_verbose_skip_zero():
     assert "reviewer" in result
 
 
-# ── M31: search icon + substatus ──────────────────────────────
+# ──: search icon + substatus ──────────────────────────────
 
 
 def test_search_icon_unicode():
@@ -1702,7 +1702,7 @@ def test_task_header_no_substatus():
     assert "composing" not in result
 
 
-# ── M33: render_review retry indicator ───────────────────────
+# ──: render_review retry indicator ───────────────────────
 
 
 def test_render_review_ok_after_retry():
@@ -1743,7 +1743,7 @@ def test_render_review_no_retry_no_indicator():
     assert "retried" not in result3.lower()
 
 
-# ── M98: _parse_llm_calls + get_last_thinking ────────────────
+# ──: _parse_llm_calls + get_last_thinking ────────────────
 
 
 class TestParseLlmCalls:
@@ -1797,7 +1797,7 @@ class TestGetLastThinking:
         assert get_last_thinking("broken") is None
 
 
-# ── M98: extract_thinking edge cases ─────────────────────────
+# ──: extract_thinking edge cases ─────────────────────────
 
 
 def test_extract_thinking_whitespace_only():
@@ -1832,7 +1832,7 @@ def test_extract_thinking_unicode_content():
     assert clean == "答え"
 
 
-# --- M303: render_partial_content ---
+# --- render_partial_content ---
 
 
 class TestM303RenderPartialContent:

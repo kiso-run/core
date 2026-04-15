@@ -109,7 +109,7 @@ class TestMCPMethod:
             m.name = "other"  # type: ignore[misc]
 
     def test_qualified_name_property(self):
-        """M1336 will use 'server:method' as the canonical qualified form.
+        """ will use 'server:method' as the canonical qualified form.
         Expose it on the dataclass so all consumers agree."""
         from kiso.mcp.schemas import MCPMethod
 

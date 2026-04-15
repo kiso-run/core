@@ -71,7 +71,7 @@ def test_is_url(target: str, expected: bool):
 # ── Subparser parsing ────────────────────────────────────────
 
 
-# Parse tests now in _cli_plugin_helpers.py (M601)
+# Parse tests now in _cli_plugin_helpers.py
 
 
 # ── run_wrapper_command dispatcher ─────────────────────────────
@@ -1247,7 +1247,7 @@ def test_install_preserves_existing_override(tmp_path, mock_admin, capsys):
     assert override_path.read_text() == custom_content
 
 
-# --- M563: _update_plugin shared helper ---
+# --- _update_plugin shared helper ---
 
 
 class TestUpdatePlugin:

@@ -547,7 +547,7 @@ class TestFactPoisoning:
         Why: Validates the curator discards ephemeral session-specific learnings that have no lasting value.
         Expects: Curator verdict is 'discard'.
 
-        M1070: Retries up to 3 times to handle ~10% LLM flakiness where the
+        Retries up to 3 times to handle ~10% LLM flakiness where the
         curator promotes instead of discarding despite explicit prompt instructions.
         """
         await save_learning(

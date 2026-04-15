@@ -249,7 +249,7 @@ class TestRunSubprocess:
         assert "hello from stdin" in stdout
 
 
-# --- _run_subprocess cancel_event (M766) ---
+# --- _run_subprocess cancel_event ---
 
 
 class TestRunSubprocessCancel:
@@ -311,7 +311,7 @@ class TestRunSubprocessCancel:
         assert exit_code == -15
 
     async def test_cancel_branch_leaves_pending_task_done(self, tmp_path, monkeypatch):
-        """M1295 regression-keeper: verify that
+        """ regression-keeper: verify that
         ``_run_subprocess``'s cancel branch already drives the
         cancelled ``proc.communicate()`` task to ``done()`` state
         by virtue of yielding to the loop inside
@@ -319,9 +319,9 @@ class TestRunSubprocessCancel:
 
         This test exists to prevent a future refactor from
         breaking the implicit cleanup that ``_run_subprocess``
-        already provides. The actual M1295 leak is in
+        already provides. The actual leak is in
         ``kiso/hooks.py`` and ``kiso/tool_repair.py`` — see
-        the M1295 milestone in devplan/v0.9-wip.md for the
+        the milestone in devplan/v0.9-wip.md for the
         corrected diagnosis. ``_run_subprocess`` itself is
         clean.
         """
@@ -709,7 +709,7 @@ class TestRunWorker:
         assert plan["status"] == "failed"
 
     async def test_exec_failure_review_error_marks_failed(self, db, tmp_path):
-        """Exec fails, reviewer errors → plan fails (after replan attempts, M170)."""
+        """Exec fails, reviewer errors → plan fails (after replan attempts,)."""
         config = make_config(settings={"max_replan_depth": 1})
         await create_session(db, "sess1")
         msg_id = await save_message(db, "sess1", "alice", "user", "fail", processed=False)
@@ -1186,7 +1186,7 @@ class TestRunWorker:
         )
         system_msgs = [r[0] for r in await cur.fetchall()]
         assert any("Replanning" in m for m in system_msgs)
-        # M1328: reason is no longer interpolated into user-visible replan
+        # reason is no longer interpolated into user-visible replan
         # messages (internal metadata, can leak failure language/paths).
         # The reason still reaches the planner and the logs.
         assert not any("Task failed" in m for m in system_msgs)
@@ -1496,7 +1496,7 @@ class TestReviewTask:
         assert count == 1
 
 
-# --- M226: Smoke tests — large output handling ---
+# --- Smoke tests — large output handling ---
 
 class TestReviewTaskLargeOutput:
     """verify _review_task truncates large output via prepare_reviewer_output."""
@@ -1944,7 +1944,7 @@ class TestExecutePlan:
         assert completed[0]["output"] == "hello"
 
     async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
-        """Wrapper not installed → replan with error message (M164)."""
+        """Wrapper not installed → replan with error message."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
@@ -1972,7 +1972,7 @@ class TestExecutePlan:
         assert "not installed" in _po[0]["output"]
 
     async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
-        """Invalid JSON in wrapper args → replan with error (M164)."""
+        """Invalid JSON in wrapper args → replan with error."""
         config = make_config()
         tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -1996,7 +1996,7 @@ class TestExecutePlan:
         assert result.plan_output is not None
 
     async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
-        """Wrapper args missing required field → replan with error (M164)."""
+        """Wrapper args missing required field → replan with error."""
         config = make_config()
         tool_info = {
             "name": "browser",
@@ -2054,7 +2054,7 @@ class TestExecutePlan:
         assert result.plan_output is not None
 
     async def test_skill_review_error(self, db, tmp_path):
-        """Wrapper not installed → replan (M164); reviewer never reached."""
+        """Wrapper not installed → replan; reviewer never reached."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
@@ -2097,7 +2097,7 @@ class TestExecutePlan:
         assert len(remaining) == 2  # second exec + msg
         assert len(review_calls) == 1  # only first exec reviewed
 
-    # --- M25: replan task type in _execute_plan ---
+    # --- replan task type in _execute_plan ---
 
     async def test_replan_task_triggers_replan(self, db, tmp_path):
         """Plan with exec + replan → returns (False, 'Self-directed replan: ...', completed, remaining)."""
@@ -2211,7 +2211,7 @@ class TestExecTranslatorIntegration:
         assert "translated" in exec_tasks[0]["output"]
 
     async def test_translator_failure_triggers_replan(self, db, tmp_path):
-        """ExecTranslatorError → replan with error message (M168)."""
+        """ExecTranslatorError → replan with error message."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec",
@@ -2770,7 +2770,7 @@ class TestFormatPlanOutputsForMsg:
         assert pos1 < pos2 < pos3
 
     def test_raw_output_primary_even_with_summary_when_fits(self):
-        """M1327: raw output is ground truth — always included when it fits
+        """: raw output is ground truth — always included when it fits
         the budget, even if a reviewer_summary is present. The summary is
         a budget-fallback, not a replacement for the raw output that the
         messenger needs to cite verbatim."""
@@ -2795,7 +2795,7 @@ class TestFormatPlanOutputsForMsg:
         assert "Summary:" not in result
 
     def test_mixed_with_and_without_summary(self):
-        """M1327: raw output is primary for all entries when it fits the
+        """: raw output is primary for all entries when it fits the
         budget, regardless of whether a summary is available."""
         outputs = [
             {"index": 1, "type": "exec", "detail": "step 1", "output": "raw1", "status": "done"},
@@ -2811,7 +2811,7 @@ class TestFormatPlanOutputsForMsg:
         assert "raw search output" in result
 
     def test_oversized_raw_falls_back_to_reviewer_summary(self):
-        """M1327: when raw output exceeds budget, fall back to the
+        """: when raw output exceeds budget, fall back to the
         reviewer_summary in the summary_parts section — this is the only
         case where the summary replaces the raw output."""
         big_raw = "x" * 20000
@@ -2829,7 +2829,7 @@ class TestFormatPlanOutputsForMsg:
         assert big_raw not in result
 
 
-# --- _extract_published_urls (M763) ---
+# --- _extract_published_urls ---
 
 
 class TestExtractPublishedUrls:
@@ -3680,7 +3680,7 @@ class TestExecutePlanTool:
         assert reviewer_side.call_count == 1
 
 
-# --- M486: Post-install rescan ---
+# --- Post-install rescan ---
 
 
 class TestPostInstallRescan:
@@ -4017,7 +4017,7 @@ class TestApplyCuratorResult:
         assert "web-framework" in tags
 
 
-# --- M344: _apply_curator_result — entity creation + fact linking ---
+# --- _apply_curator_result — entity creation + fact linking ---
 
 
 class TestM344CuratorEntityFlow:
@@ -4366,7 +4366,7 @@ class TestKnowledgeProcessing:
         assert call_order == ["curator", "summarizer"]
 
 
-# --- M10: Paraphraser integration ---
+# --- Paraphraser integration ---
 
 class TestParaphraserIntegration:
     @pytest.fixture()
@@ -4447,7 +4447,7 @@ class TestParaphraserIntegration:
         assert plan["status"] == "done"
 
 
-# --- M10: Fencing in plan outputs and replan context ---
+# --- Fencing in plan outputs and replan context ---
 
 class TestFencingInWorker:
     def test_plan_outputs_fenced(self):
@@ -4478,7 +4478,7 @@ class TestFencingInWorker:
         assert "(no output)" in ctx
 
 
-# --- M10 Batch 3: Permission re-validation + exec sandbox ---
+# -- Batch 3: Permission re-validation + exec sandbox ---
 
 
 class TestPermissionRevalidation:
@@ -5545,7 +5545,7 @@ class TestSandboxWorkspaceInExecutePlan:
         assert 42 in workspace_calls
 
 
-# --- M34: Fact usage tracking ---
+# --- Fact usage tracking ---
 
 
 class TestFactUsageTracking:
@@ -5575,7 +5575,7 @@ class TestFactUsageTracking:
         assert facts[0]["last_used"] is not None
 
 
-# --- M34: Fact decay and archive in post-plan ---
+# --- Fact decay and archive in post-plan ---
 
 
 class TestFactDecayInPostPlan:
@@ -5889,7 +5889,7 @@ class TestBuildFailureSummarySafetyRedaction:
     refusal sees only counts and a generic directive, so it cannot echo
     forbidden content from the planner's task list.
 
-    Same architectural pattern as M1328 (reviewer.reason leaking into
+    Same architectural pattern as (reviewer.reason leaking into
     replan messages) applied to the stuck/failure path.
     """
 
@@ -6197,7 +6197,7 @@ class TestBuildExecEnv:
         assert venv_idx < len(parts) - 1
 
 
-# --- M25: Planner-initiated replan (discovery plans) ---
+# --- Planner-initiated replan (discovery plans) ---
 
 
 class TestSelfDirectedReplan:
@@ -6413,7 +6413,7 @@ class TestExtendReplan:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
 
-        # Use varying reasons to avoid M337 circular replan detection
+        # Use varying reasons to avoid circular replan detection
         review_idx = [0]
         review_reasons = [
             "Task failed — expected output not found",
@@ -6499,7 +6499,7 @@ class TestExtendReplan:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
 
-        # Use varying reasons to avoid M429 stuck detection (M337 word overlap)
+        # Use varying reasons to avoid stuck detection ( word overlap)
         _cap_reasons = [
             "network timeout while connecting to remote server",
             "disk space insufficient for temporary files",
@@ -6568,7 +6568,7 @@ class TestExtendReplan:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg_id, "content": "do it", "user_role": "admin"})
 
-        # Use very different failure reasons per replan to avoid M337 stuck detection
+        # Use very different failure reasons per replan to avoid stuck detection
         _distinct_reasons = [
             "network timeout while connecting to remote server",
             "disk space insufficient for temporary files",
@@ -6686,7 +6686,7 @@ class TestReportPubFiles:
         assert any("cli token" in r.message for r in caplog.records)
 
     def test_pub_scan_cap_truncates_and_warns(self, tmp_path, config, caplog):
-        """M37: pub/ listing capped at 1000 entries with a warning."""
+        """: pub/ listing capped at 1000 entries with a warning."""
         import logging
         session_dir = tmp_path / "sessions" / "cap-session"
         pub_dir = session_dir / "pub"
@@ -6944,7 +6944,7 @@ class TestAutoPublishToolFiles:
         assert published == []
 
 
-# --- M31: search output truncation in replan context ---
+# --- search output truncation in replan context ---
 
 
 class TestBuildReplanContextSearchLimit:
@@ -6979,7 +6979,7 @@ class TestBuildReplanContextSearchLimit:
         assert len(one_liners) > 0
 
 
-# --- M31: session workspace pub/ directory ---
+# --- session workspace pub/ directory ---
 
 
 class TestSessionWorkspacePubDir:
@@ -7076,7 +7076,7 @@ class TestExecutePlanSearch:
         assert call_kwargs.kwargs.get("country") is None
 
     async def test_search_malformed_args_emits_warning(self, db, tmp_path, caplog):
-        """M37: malformed search args emit a warning log."""
+        """: malformed search args emit a warning log."""
         import logging
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
@@ -7127,7 +7127,7 @@ class TestExecutePlanSearch:
         assert call_kwargs.kwargs.get("country") is None
 
     async def test_search_searcher_error_triggers_replan(self, db, tmp_path):
-        """SearcherError triggers replan with error message (M169)."""
+        """SearcherError triggers replan with error message."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
@@ -7814,7 +7814,7 @@ class TestFastPathEdgeCases:
         assert tasks[0]["status"] == "done"
 
 
-# --- M33: Worker Retry ---
+# --- Worker Retry ---
 
 
 class TestWorkerRetry:
@@ -8063,11 +8063,11 @@ class TestIncrementalLLMCalls:
             )
 
         assert success is True
-        # exec task: 3 _append_calls (M273 briefer + translator + reviewer), msg task: 2 (M273 briefer + messenger)
+        # exec task: 3 _append_calls ( briefer + translator + reviewer), msg task: 2 ( briefer + messenger)
         assert mock_append.call_count >= 3
 
     async def test_msg_task_appends_calls_after_messenger(self, db, tmp_path):
-        """msg task: _append_calls called twice — M273 briefer flush + after messenger."""
+        """msg task: _append_calls called twice briefer flush + after messenger."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="msg", detail="hello")
@@ -8101,7 +8101,7 @@ class TestIncrementalLLMCalls:
             )
 
         assert success is True
-        # search: 2 calls (searcher + reviewer), msg: 2 calls (M273 briefer + messenger) = 4 total
+        # search: 2 calls (searcher + reviewer), msg: 2 calls ( briefer + messenger) = 4 total
         assert mock_append.call_count >= 2
 
     async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
@@ -8284,10 +8284,10 @@ class TestM44gRetryLLMCalls:
             )
 
         assert success is True
-        # exec task: M273 briefer flush = 1 call
+        # exec task: briefer flush = 1 call
         # attempt 1: translator+reviewer = 2 calls
         # attempt 2: translator+reviewer = 2 calls
-        # msg task: M273 briefer flush + messenger = 2 calls
+        # msg task: briefer flush + messenger = 2 calls
         # total _append_calls = 7
         assert mock_append.call_count == 7
 
@@ -8419,7 +8419,7 @@ class TestM48ApplyCuratorCategory:
 
 
 # ---------------------------------------------------------------------------
-# M62: Tests for task handlers (62a) and planning loop (62c)
+# Tests for task handlers (62a) and planning loop (62c)
 # ---------------------------------------------------------------------------
 
 def _make_ctx(db, config=None, plan_outputs=None, installed_wrappers=None) -> _PlanCtx:
@@ -8588,7 +8588,7 @@ class TestTaskHandlers:
     # --- _handle_exec_task ---
 
     async def test_handle_exec_task_translator_error_triggers_replan(self, db, plan_id, tmp_path):
-        """exec handler returns stop_replan when translator raises ExecTranslatorError (M168)."""
+        """exec handler returns stop_replan when translator raises ExecTranslatorError."""
         task_row = await _make_task_row(db, plan_id, "exec", "list files")
         ctx = _make_ctx(db)
         with patch(
@@ -8745,7 +8745,7 @@ class TestTaskHandlers:
         assert result.plan_output["type"] == "search"
 
     async def test_handle_search_task_error_triggers_replan(self, db, plan_id, tmp_path):
-        """search handler returns stop_replan on SearcherError (M169)."""
+        """search handler returns stop_replan on SearcherError."""
         from kiso.worker.search import SearcherError
         task_row = await _make_task_row(db, plan_id, "search", "find something")
         ctx = _make_ctx(db)
@@ -9240,7 +9240,7 @@ class TestHandleLoopCancel:
 
 
 class TestMsgTaskWithFallback:
-    """Unit tests for _msg_task_with_fallback (post-M94 simplify).
+    """Unit tests for _msg_task_with_fallback (post simplify).
 
     _msg_task is fully patched in every test so no real DB is needed;
     None is passed for the db argument.
@@ -9358,7 +9358,7 @@ class TestRunPlanningLoop:
 
     async def test_failure_no_replan_path(self, db, tmp_path):
         """On _execute_plan failure (no replan), loop handles failure and breaks.
-        M481: final msg task failure now falls back to raw detail (plan='done'),
+        final msg task failure now falls back to raw detail (plan='done'),
         so test exec task failure path with max_replan_depth=0 instead.
         """
         plan = {
@@ -9427,7 +9427,7 @@ class TestRunPlanningLoop:
 
     async def test_auto_replan_no_failed_outputs_fails(self, db, tmp_path):
         """when replan_reason is None and no failed outputs, fall through to failure.
-        M481: final msg messenger failure no longer produces success=False; mock _execute_plan
+        final msg messenger failure no longer produces success=False; mock _execute_plan
         directly to simulate the (False, None, no-failed-outputs) scenario."""
         plan = VALID_PLAN
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
@@ -9806,7 +9806,7 @@ class TestCircularReplanDetection:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         # After 2 similar failures, a "stuck" message should appear.
-        # M1328: the stuck message no longer interpolates the reviewer
+        # the stuck message no longer interpolates the reviewer
         # reason (internal metadata, can leak failure language and
         # paths). It only signals that the worker gave up after N
         # attempts and asks for human input.
@@ -10374,7 +10374,7 @@ class TestMessengerTimeout:
 
     async def test_handle_msg_task_uses_ctx_messenger_timeout(self, db, plan_id, tmp_path):
         """_handle_msg_task times out according to ctx.messenger_timeout.
-        M481: when is_final=True, timeout falls back to raw detail."""
+        when is_final=True, timeout falls back to raw detail."""
         task_row = await _make_task_row(db, plan_id, "msg", "Say hello")
         ctx = _make_ctx(db)
         ctx.messenger_timeout = 1  # very short
@@ -10566,7 +10566,7 @@ class TestProcessMessagePhaseCallback:
         assert last_planning < last_executing
 
 
-# --- M145: Retry hint carry-forward to replan context ---
+# --- Retry hint carry-forward to replan context ---
 
 
 @pytest.mark.asyncio
@@ -10684,7 +10684,7 @@ class TestRetryHintInReplanContext:
         assert "Site returned a CAPTCHA page" in ctx
 
 
-# --- M147: Suggested Fixes section in replan context ---
+# --- Suggested Fixes section in replan context ---
 
 
 class TestSuggestedFixesSection:
@@ -10745,7 +10745,7 @@ class TestSuggestedFixesSection:
         assert "try wget instead" in fixes_section
 
 
-# --- M146: Reviewer summary field for intelligent output condensation ---
+# --- Reviewer summary field for intelligent output condensation ---
 
 
 class TestReviewerSummaryInReplanContext:
@@ -10998,7 +10998,7 @@ class TestE2EWebScenario:
 
 
 
-# --- M218: _check_disk_limit ---
+# --- _check_disk_limit ---
 
 
 class TestKisoDirBytes:
@@ -11081,7 +11081,7 @@ class TestCheckDiskLimit:
 
 
 
-# --- M218 integration: disk limit blocks exec in _execute_plan ---
+# -- integration: disk limit blocks exec in _execute_plan ---
 
 
 class TestDiskLimitIntegration:
@@ -11126,7 +11126,7 @@ class TestDiskLimitIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Briefer integration for messenger (M245)
+# Briefer integration for messenger
 # ---------------------------------------------------------------------------
 
 
@@ -11448,7 +11448,7 @@ class TestM365MsgTaskEntityEnrichment:
 
 
 # ---------------------------------------------------------------------------
-# Briefer integration for worker / exec translator (M246)
+# Briefer integration for worker / exec translator
 # ---------------------------------------------------------------------------
 
 
@@ -11577,7 +11577,7 @@ def test_m270_messenger_prompt_has_precision_rule():
     assert "Never say a completed task failed" in prompt
 
 
-# --- M273: flush briefer usage before consumer LLM call ---
+# --- flush briefer usage before consumer LLM call ---
 
 
 @pytest.mark.asyncio()
@@ -11814,8 +11814,8 @@ class TestM310Phase13Integration:
     """end-to-end integration tests for Phase 13.
 
     Tests the full _run_planning_loop flow when replan fails due to PlanError,
-    verifying M307 (msg task before status), M308 (fallback model), and
-    M309 (is_replan passed through) all work together.
+    verifying (msg task before status), (fallback model), and
+     (is_replan passed through) all work together.
     """
 
     @pytest.fixture()
@@ -11916,7 +11916,7 @@ class TestM310Phase13Integration:
         assert planner_kwargs_captured[0].get("is_replan") is True
 
 
-# M1328: replan messages must NOT leak reviewer.reason or replan_history
+# replan messages must NOT leak reviewer.reason or replan_history
 # text into user-visible output — reviewer reason is internal metadata
 # that can contain failure language, absolute paths, or other sensitive
 # diagnostic details. Tests encode: (phase, attempt, max, kwargs,
@@ -11933,7 +11933,7 @@ _REPLAN_MSG_CASES = [
 
 class TestM332GetReplanMessage:
     """Replan messages: user-visible templates must not leak internal
-    reviewer reason or replan history text (M1328)."""
+    reviewer reason or replan history text."""
 
     @pytest.mark.parametrize(
         "phase,attempt,max_attempts,kwargs,required_subs,forbidden_subs",
@@ -11951,7 +11951,7 @@ class TestM332GetReplanMessage:
             assert sub not in msg, f"Leaked {sub!r} into user-visible {msg!r}"
 
     def test_replanning_does_not_leak_failure_language(self):
-        """M1328: reviewer reason may contain 'failed to' / 'error' / path
+        """: reviewer reason may contain 'failed to' / 'error' / path
         references — none of it should surface to the user."""
         from kiso.worker.utils import get_replan_message
         evil_reason = (
@@ -11964,7 +11964,7 @@ class TestM332GetReplanMessage:
         assert "disclosed" not in msg
 
     def test_stuck_does_not_leak_failure_language(self):
-        """M1328: same protection for the stuck template, which also
+        """: same protection for the stuck template, which also
         interpolates reviewer reason and replan history."""
         from kiso.worker.utils import get_replan_message
         evil_reason = "failed to find /home/user/secret.key"
@@ -11976,7 +11976,7 @@ class TestM332GetReplanMessage:
         assert "/root/" not in msg
 
 
-# --- M336: Handle "stuck" in execution loop ---
+# --- Handle "stuck" in execution loop ---
 
 REVIEW_STUCK = {
     "status": "stuck", "reason": "CAPTCHA requires human verification",
@@ -12047,7 +12047,7 @@ class TestM336StuckHandling:
         assert stuck is None
 
 
-# --- M337: Broaden circular replan detection ---
+# --- Broaden circular replan detection ---
 
 
 @pytest.mark.asyncio
@@ -12128,7 +12128,7 @@ class TestM337BroadenedCircularDetection:
         )
 
 
-# --- M338: Block extend_replan when stuck detected ---
+# --- Block extend_replan when stuck detected ---
 
 
 @pytest.mark.asyncio
@@ -12143,11 +12143,11 @@ class TestM338BlockExtendWhenStuck:
         await conn.close()
 
     async def test_extend_denied_when_stuck(self, db, tmp_path):
-        """With stuck pattern, loop breaks immediately (M429).
+        """With stuck pattern, loop breaks immediately.
 
         max_replan_depth=1, so only 1 replan allowed initially.
         Replan 1: only 1 history entry → no stuck → extend granted (+3 → depth=4).
-        Replan 2: 2 entries, same failure → stuck → M429 breaks loop.
+        Replan 2: 2 entries, same failure → stuck → breaks loop.
         Total: 1 initial + 1 replan = 2 planner calls.
         """
         config = make_config(settings={
@@ -12190,14 +12190,14 @@ class TestM338BlockExtendWhenStuck:
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=10)
 
         # Replan 1: extend +3 granted (no stuck yet) → planner call 2
-        # Replan 2: stuck detected → M429 breaks loop immediately
+        # Replan 2: stuck detected → breaks loop immediately
         # Total: 1 initial + 1 replan = 2 planner calls
         assert call_count[0] == 2, (
             f"Expected 2 planner calls (1 initial + 1 replan before stuck), got {call_count[0]}"
         )
 
 
-# --- M735: sudo stripping when running as root ---
+# --- sudo stripping when running as root ---
 
 
 class TestM735SudoStripping:
@@ -12276,7 +12276,7 @@ class TestM741SudoStrippingIntegration:
         assert detail == "sudo apt-get install -y timg"
 
 
-# --- M341: Integration test: stuck → user notification flow ---
+# --- Integration test: stuck → user notification flow ---
 
 
 class TestM371SysenvRefreshAndInstallLoop:
@@ -12501,7 +12501,7 @@ class TestPendingMessagesDrain:
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put({"id": msg1_id, "content": "do task", "user_role": "admin"})
 
-        # Second message goes to pending (simulating M408 independent classification)
+        # Second message goes to pending (simulating independent classification)
         pending = [{"id": msg2_id, "content": "pending task", "user_role": "admin"}]
 
         planner_calls = [0]
@@ -12525,7 +12525,7 @@ class TestPendingMessagesDrain:
         assert len(pending) == 0
 
 
-# --- M560: _fail_task_and_audit helper ---
+# --- _fail_task_and_audit helper ---
 
 
 class TestFailTaskAndAudit:
@@ -12584,7 +12584,7 @@ class TestFailTaskAndAudit:
         assert call_kwargs[1]["stderr"] == "stderr msg"
 
 
-# --- M561: _sanitize_task_output, _log_task_done, _notify_phase helpers ---
+# --- _sanitize_task_output, _log_task_done, _notify_phase helpers ---
 
 
 class TestSanitizeTaskOutput:
@@ -12629,7 +12629,7 @@ class TestNotifyPhase:
         _notify_phase(None, "planning")  # no error
 
 
-# --- M562: _handle_review_error helper ---
+# --- _handle_review_error helper ---
 
 
 class TestHandleReviewError:
@@ -12648,7 +12648,7 @@ class TestHandleReviewError:
         assert result.plan_output is plan_output
 
 
-# --- M569: _format_task_list helper ---
+# --- _format_task_list helper ---
 
 
 _FORMAT_TASK_LIST_CASES = [
@@ -13274,7 +13274,7 @@ class TestWriteLastPlanSummary:
             assert data["produced_files"] == []
             assert data["key_results"] == []
 
-    # M1259: produced-file provenance must be tied to the actual producing
+    # produced-file provenance must be tied to the actual producing
     # task via plan-output file_refs, not guessed by scanning all completed
     # tasks. When provenance is unknown, fields are omitted/None — never
     # invented.
@@ -13735,7 +13735,7 @@ class TestSafetyRulePreExecCheck:
         assert result.completed_row is not None
 
 
-# --- M1211: Wrapper-arg file-reference harvesting boundary hardening ---
+# --- Wrapper-arg file-reference harvesting boundary hardening ---
 
 
 class TestBuildToolFileRefs:

@@ -1,4 +1,4 @@
-"""Tests for M1293 — Roles naming alignment.
+"""Tests for — Roles naming alignment.
 
 Two changes verified here:
 

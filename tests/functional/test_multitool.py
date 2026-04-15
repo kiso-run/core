@@ -7,8 +7,8 @@ Exercises the full cross-wrapper pipeline in a single session:
 4. Run the script (exec)
 5. Deliver results to the user (msg)
 
-Validates M822 (session file listing), M823 (cross-plan state),
-M824 (wrapper injection), M825/M826 (file routing).
+Validates session file listing, cross-plan state, wrapper
+injection, and file routing.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class TestF17FullPipeline:
     """F17: Full multi-wrapper pipeline — browser → ocr → aider → exec → msg.
 
     Each step is a separate plan in the same session, exercising cross-plan
-    file awareness (M822-M826). Wrappers are installed via the standard
+    file awareness. Wrappers are installed via the standard
     conversational install flow (same as F1) if not already present.
     """
 

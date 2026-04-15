@@ -186,7 +186,7 @@ class TestCollectBinaries:
         assert not set(found) & set(missing)
 
     def test_kiso_in_probe_list(self):
-        """M45: 'kiso' must be in PROBE_BINARIES so the planner sees it as an available binary."""
+        """: 'kiso' must be in PROBE_BINARIES so the planner sees it as an available binary."""
         assert "kiso" in PROBE_BINARIES
 
     def test_m370_system_info_tools(self):
@@ -549,7 +549,7 @@ class TestBuildSystemEnvSection:
         assert "pub/" in section
 
 
-# --- M937: build_system_env_essential ---
+# --- build_system_env_essential ---
 
 
 class TestBuildSystemEnvEssential:
@@ -610,7 +610,7 @@ class TestBuildSystemEnvEssential:
         assert len(essential) < len(full) * 0.5
 
 
-# --- M963: build_install_context ---
+# --- build_install_context ---
 
 
 class TestBuildInstallContext:
@@ -776,7 +776,7 @@ class TestCollectWorkspaceFiles:
         assert result == ""
 
     def test_workspace_files_scan_cap(self, tmp_path):
-        """M37: rglob scan caps at 1000 files to avoid materialising huge dirs."""
+        """: rglob scan caps at 1000 files to avoid materialising huge dirs."""
         session_dir = tmp_path / "sessions" / "huge-session"
         session_dir.mkdir(parents=True)
         for i in range(1001):
@@ -787,7 +787,7 @@ class TestCollectWorkspaceFiles:
         assert "truncated" in result
 
 
-# --- get_resource_limits (M217) ---
+# --- get_resource_limits ---
 
 
 class TestGetResourceLimits:

@@ -1,4 +1,4 @@
-"""Integration tests for cancel flow (M414)."""
+"""Integration tests for cancel flow."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ async def _insert_running_plan(db, sess: str, goal: str = "do something"):
 
 
 # ---------------------------------------------------------------------------
-# M414-1: Cancel endpoint sets event and returns 200
+# Cancel endpoint sets event and returns 200
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +81,7 @@ async def test_cancel_sets_event_returns_200(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M414-2: Cancel during multi-task plan stops execution
+# Cancel during multi-task plan stops execution
 # ---------------------------------------------------------------------------
 
 
@@ -114,7 +114,7 @@ async def test_cancel_during_plan_drains_queue(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M414-3: Cancel on idle session → not cancelled
+# Cancel on idle session → not cancelled
 # ---------------------------------------------------------------------------
 
 
@@ -151,7 +151,7 @@ async def test_cancel_no_running_plan_returns_not_cancelled(client: httpx.AsyncC
 
 
 # ---------------------------------------------------------------------------
-# M414-4: CLI `kiso cancel` output
+# CLI `kiso cancel` output
 # ---------------------------------------------------------------------------
 
 

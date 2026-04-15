@@ -4,7 +4,7 @@ Lightweight guards that role prompt files exist, load, and contain core
 terms.  Behavioral validation lives in test_brain.py and test_worker.py —
 these only catch accidental file deletion or catastrophic rewrites.
 
-Also includes coarse prompt-budget tests merged from test_timeout_prompts.py (M708).
+Also includes coarse prompt-budget tests merged from test_timeout_prompts.py.
 """
 
 from pathlib import Path

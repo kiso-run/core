@@ -1,4 +1,4 @@
-"""Integration tests for in-flight message classification (M415)."""
+"""Integration tests for in-flight message classification."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ async def _cleanup_worker(session: str, blocked, task):
 
 
 # ---------------------------------------------------------------------------
-# M415-1: Stop fast-path — "STOP" → immediate cancel without LLM call
+# Stop fast-path — "STOP" → immediate cancel without LLM call
 # ---------------------------------------------------------------------------
 
 
@@ -84,7 +84,7 @@ async def test_stop_fast_path_variants(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M415-2: Independent classification → message queued, ack sent
+# Independent classification → message queued, ack sent
 # ---------------------------------------------------------------------------
 
 
@@ -108,7 +108,7 @@ async def test_independent_queues_to_pending_with_ack(client: httpx.AsyncClient)
 
 
 # ---------------------------------------------------------------------------
-# M415-3: Update classification → replan hint injected
+# Update classification → replan hint injected
 # ---------------------------------------------------------------------------
 
 
@@ -132,7 +132,7 @@ async def test_update_adds_hint_with_ack(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M415-4: Conflict classification → current job cancelled, new job queued
+# Conflict classification → current job cancelled, new job queued
 # ---------------------------------------------------------------------------
 
 
@@ -157,7 +157,7 @@ async def test_conflict_cancels_and_queues_first(client: httpx.AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# M415-5: Fast-path doesn't trigger on "stop using port 80"
+# Fast-path doesn't trigger on "stop using port 80"
 # ---------------------------------------------------------------------------
 
 

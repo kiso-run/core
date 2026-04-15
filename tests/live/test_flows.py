@@ -371,7 +371,7 @@ class TestDiscoveryPlanReplanFlow:
         )
         # two valid strategies:
         #  a) exec/search investigation tasks (discovery plan)
-        #  b) msg-only proposal when needs_install is set (M984 semantic)
+        # b) msg-only proposal when needs_install is set ( semantic)
         task_types = [t["type"] for t in discovery_plan["tasks"]]
         has_investigation = any(t in ("exec", "search") for t in task_types)
         has_install_proposal = bool(discovery_plan.get("needs_install"))

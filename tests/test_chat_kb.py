@@ -129,7 +129,7 @@ class TestChatKBEntityFlow:
 
 
 class TestChatKBPreflightFallback:
-    """M1291: pre-flight chat_kb facts check + investigate fallback."""
+    """: pre-flight chat_kb facts check + investigate fallback."""
 
     @pytest.fixture()
     async def db(self, tmp_path):
@@ -331,7 +331,7 @@ class TestMessengerSanitization:
         assert result == ""
 
     def test_sanitizer_strips_emoji(self):
-        """M1300: messenger sanitizer also strips emoji deterministically."""
+        """: messenger sanitizer also strips emoji deterministically."""
         text = "**🎯 Interaction**\n💻 Code\n🌐 Net\n🛠 Wrappers\n🔬 Lab\n📚 Docs"
         result = _sanitize_messenger_output(text)
         for ch in ("🎯", "💻", "🌐", "🛠", "🔬", "📚"):
@@ -342,7 +342,7 @@ class TestMessengerSanitization:
 
 
 class TestStripEmoji:
-    """M1300: deterministic emoji stripping for messenger output."""
+    """: deterministic emoji stripping for messenger output."""
 
     @pytest.mark.parametrize("emoji,name", [
         ("\U0001F3AF", "1F3AF target"),

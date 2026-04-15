@@ -372,7 +372,7 @@ class TestInitKisoDirs:
         assert "Failed to sync reference file failing.md" in caplog.text
 
 
-# ── _init_ssh_keys (M355) ────────────────────────────────────
+# ── _init_ssh_keys ────────────────────────────────────
 
 
 class TestInitSshKeys:
@@ -469,7 +469,7 @@ class TestInitSshKeys:
         assert "github.com" in kh.read_text()
 
 
-# ── _collect_boot_facts (M356) ───────────────────────────────
+# ── _collect_boot_facts ───────────────────────────────
 
 
 @pytest.mark.asyncio

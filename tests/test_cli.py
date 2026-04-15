@@ -794,7 +794,7 @@ def test_poll_status_blank_line_between_tasks(capsys, plain_caps):
 
 
 def test_poll_status_msg_task_shows_header(capsys, plain_caps):
-    """Msg tasks show a [x/y] header when running, plus output when done (M228)."""
+    """Msg tasks show a [x/y] header when running, plus output when done."""
     mock_client = MagicMock()
     resp1 = MagicMock()
     resp1.json.return_value = {
@@ -827,7 +827,7 @@ def test_poll_status_msg_task_shows_header(capsys, plain_caps):
 
 
 def test_poll_status_msg_task_numbering_consistent(capsys, plain_caps):
-    """All tasks (exec + msg) should show in consistent [x/y] numbering (M228)."""
+    """All tasks (exec + msg) should show in consistent [x/y] numbering."""
     mock_client = MagicMock()
     resp = MagicMock()
     resp.json.return_value = {
@@ -856,7 +856,7 @@ def test_poll_status_msg_task_numbering_consistent(capsys, plain_caps):
 
 
 def test_poll_status_plan_header_updates_with_real_goal(capsys, plain_caps):
-    """Plan header re-renders when goal changes from 'Planning...' to real goal (M229)."""
+    """Plan header re-renders when goal changes from 'Planning...' to real goal."""
     mock_client = MagicMock()
     resp1 = MagicMock()
     resp1.json.return_value = {
@@ -2053,7 +2053,7 @@ def test_poll_status_corrupted_llm_calls_does_not_crash(capsys, plain_caps):
     assert "ok" in out
 
 
-# ── M41: CLI polling UX gaps ───────────────────────────────────────────────────
+# ──: CLI polling UX gaps ───────────────────────────────────────────────────
 
 
 def test_poll_every_is_160ms():
@@ -2062,7 +2062,7 @@ def test_poll_every_is_160ms():
 
 
 def test_m41_shows_spinner_before_plan_created(capsys):
-    """M41: planning spinner must activate when worker is running but plan not yet created.
+    """: planning spinner must activate when worker is running but plan not yet created.
 
     During the pre-plan phase (classifier + planner LLM calls, typically 4-15 s) the
     server returns worker_running=True but plan=None.  The CLI must show the
@@ -2102,7 +2102,7 @@ def test_m41_shows_spinner_before_plan_created(capsys):
 
 
 # ---------------------------------------------------------------------------
-# M49: versioning — kiso/_version.py + kiso version command
+# versioning — kiso/_version.py + kiso version command
 # ---------------------------------------------------------------------------
 
 
@@ -2558,7 +2558,7 @@ class TestRenderPlanStatus:
         assert "file.txt" in out
 
 
-# ── M101: verbose dedup + replan reset ────────────────────────
+# ──: verbose dedup + replan reset ────────────────────────
 
 
 def test_poll_verbose_incremental_dedup(capsys, plain_caps):
@@ -3119,7 +3119,7 @@ def test_classifier_output_shows_without_inflight(capsys):
     assert "PLANNER_OUTPUT" in out
 
 
-# ── M128: verbose OUT panel counter mismatch ──────────────
+# ──: verbose OUT panel counter mismatch ──────────────
 
 
 def test_verbose_panels_with_mixed_calls(capsys):
@@ -3202,7 +3202,7 @@ def test_spinner_restored_after_inflight_clears_it():
     assert state.active_spinner_task is running_task
 
 
-# ---------- M376: spinner restored for msg tasks after inflight clears it ----------
+# ---------: spinner restored for msg tasks after inflight clears it ----------
 
 
 def test_m376_spinner_restored_for_msg_task():
@@ -3231,7 +3231,7 @@ def test_m376_spinner_restored_for_msg_task():
     assert state.active_spinner_index == 1
 
 
-# ---------- M267: deduplicate inflight indicator on validation retry ----------
+# ---------: deduplicate inflight indicator on validation retry ----------
 
 
 def test_m267_duplicate_planner_inflight_suppressed(capsys):
@@ -3359,7 +3359,7 @@ def test_m267_role_reset_after_out_panel(capsys):
     assert "REPLAN_V2" in out3
 
 
-# --- M306: partial content role filter + ANSI overwrite ---
+# --- partial content role filter + ANSI overwrite ---
 
 
 def test_m306_partial_content_filtered_for_structured_roles(capsys):
@@ -3624,7 +3624,7 @@ class TestM326VerbosePanelDedup:
         assert len(lines_with_briefer_in) == 0, "Briefer IN panel should be deduped"
 
     def test_msg_intermediate_verbose_rendering(self, capsys):
-        """Intermediate update path emits verbose panels for msg tasks (M325)."""
+        """Intermediate update path emits verbose panels for msg tasks."""
         caps = self._caps()
         state = _PollRenderState(seen={}, verbose_shown={})
         one_call_json = _make_llm_calls_json({
@@ -3752,7 +3752,7 @@ class TestM331SuppressPendingHeaders:
         assert "task 1" in out2
 
 
-# ── M404: kiso cancel ──────────────────────────────────────
+# ──: kiso cancel ──────────────────────────────────────
 
 
 def test_cancel_cmd_success(capsys):

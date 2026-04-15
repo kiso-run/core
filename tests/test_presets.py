@@ -1,4 +1,4 @@
-"""M690-M694: Tests for preset manifest, registry, CLI, and orchestration."""
+""": Tests for preset manifest, registry, CLI, and orchestration."""
 
 from __future__ import annotations
 
@@ -538,7 +538,7 @@ class TestPresetSubcommandRegistration:
             assert getattr(args, attr) == value
 
 
-# --- M757: basic preset validation ---
+# --- basic preset validation ---
 
 
 class TestDefaultPresetInRegistry:
@@ -552,7 +552,7 @@ class TestDefaultPresetInRegistry:
         assert "default" in names
 
 
-# --- M758: preset install auto-installs wrappers ---
+# --- preset install auto-installs wrappers ---
 
 
 class TestM758AutoInstallTools:
@@ -607,7 +607,7 @@ class TestM758AutoInstallTools:
         assert saved_data["installed_wrappers"] == ["websearch"]
 
 
-# --- M760: Preset validation in CI ---
+# --- Preset validation in CI ---
 
 
 class TestPresetValidation:

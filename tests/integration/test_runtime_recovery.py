@@ -1,4 +1,4 @@
-"""Startup recovery end-to-end (M1269).
+"""Startup recovery end-to-end.
 
 These tests exercise ``kiso.main._startup_recovery`` against a real
 ASGI app + worker, not just the store helpers (which

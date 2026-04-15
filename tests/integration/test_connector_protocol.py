@@ -105,7 +105,7 @@ class TestPollingFallback:
 
 
 class TestWebhookRetryRouteLevel:
-    """M1271: prove the route → deliver_webhook → final-state pipeline
+    """: prove the route → deliver_webhook → final-state pipeline
     propagates retry results correctly. Unit-level retry/backoff is
     already covered in tests/test_webhook.py:209-341 — this is the
     integration counterpart that asserts the runtime invokes the
@@ -141,7 +141,7 @@ class TestWebhookRetryRouteLevel:
 
 
 class TestPollingFallbackRecovery:
-    """M1271: prove that when webhook delivery is silently dropped, the
+    """: prove that when webhook delivery is silently dropped, the
     connector can recover the missed response via GET /status?after=
     cursor."""
 
@@ -188,7 +188,7 @@ class TestPollingFallbackRecovery:
 
 
 class TestStatusAfterCursor:
-    """M1271: explicit cursor correctness — only tasks past the cursor
+    """: explicit cursor correctness — only tasks past the cursor
     are returned, not the full historical status payload."""
 
     async def test_after_cursor_filters_old_tasks(self, kiso_client):

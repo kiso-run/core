@@ -1,4 +1,4 @@
-"""M683-M689: Tests for project management."""
+""": Tests for project management."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ async def db(tmp_path):
     await conn.close()
 
 
-# --- M683: Project CRUD ---
+# --- Project CRUD ---
 
 
 async def test_create_project(db):
@@ -86,7 +86,7 @@ async def test_delete_project_cascades_members(db):
     assert members == []
 
 
-# --- M683: Project members ---
+# --- Project members ---
 
 
 async def test_creator_is_auto_member(db):
@@ -146,7 +146,7 @@ async def test_user_in_multiple_projects(db):
     assert names == {"proj-a", "proj-b"}
 
 
-# --- M684: Session-project binding ---
+# --- Session-project binding ---
 
 
 async def test_bind_session_to_project(db):
@@ -169,7 +169,7 @@ async def test_session_project_id_default_none(db):
     assert await get_session_project_id(db, "sess1") is None
 
 
-# --- M685: Fact visibility scoping (3-level query) ---
+# --- Fact visibility scoping (3-level query) ---
 
 
 async def test_fact_global_visible_to_all(db):
@@ -230,7 +230,7 @@ async def test_fact_admin_no_session_sees_all(db):
 
 
 async def test_fact_admin_with_session_excludes_project_facts(db):
-    """M1305: Admin with an active session but no project binding must
+    """: Admin with an active session but no project binding must
     NOT see project-scoped facts.  Admin privilege bypasses session scoping
     (can see user-category from any session), not project scoping.
     """
@@ -355,7 +355,7 @@ async def test_require_project_role_viewer_allowed_for_viewer(db):
     await _require_project_role(db, "proj-sess4", "bob", min_role="viewer")
 
 
-# --- M687/M688: CLI project commands ---
+# --- CLI project commands ---
 
 
 @pytest.mark.parametrize("args_list,expected", [
@@ -378,7 +378,7 @@ def test_cli_project_parser(args_list, expected):
         assert getattr(args, attr) == value
 
 
-# --- M689: Curator project-awareness ---
+# --- Curator project-awareness ---
 
 
 @pytest.mark.parametrize("category,has_project,expected_project_id_set,extra_checks", [
@@ -423,7 +423,7 @@ async def test_curator_project_scoping(db, category, has_project, expected_proje
 
     await _apply_curator_result(db, sess, {"evaluations": [evaluation]})
 
-    # Pass project_id so admin can see project-scoped facts (M1305:
+    # Pass project_id so admin can see project-scoped facts (:
     # admin without project context no longer bypasses project filter).
     facts = await get_facts(db, is_admin=True, project_id=pid)
     matched = [f for f in facts if fact_text in f["content"]]
@@ -438,7 +438,7 @@ async def test_curator_project_scoping(db, category, has_project, expected_proje
         assert matched[0]["session"] == sess
 
 
-# --- M1257: project_id-based filtering (no-username path) ---
+# --- project_id-based filtering (no-username path) ---
 
 
 async def test_get_facts_no_username_no_project_id_excludes_project_facts(db):
@@ -524,11 +524,11 @@ async def test_search_facts_scored_admin_with_project_id(db):
     assert any("zeta" in r["content"] for r in results)
 
 
-# --- M1305: is_admin must NOT bypass project isolation ---
+# --- is_admin must NOT bypass project isolation ---
 
 
 async def test_is_admin_does_not_bypass_project_isolation_scored(db):
-    """M1305: is_admin=True must still respect project_id filtering.
+    """: is_admin=True must still respect project_id filtering.
 
     Admin privilege bypasses *session* scoping (see user-category facts
     from any session).  It must NOT bypass *project* scoping — an admin
@@ -555,7 +555,7 @@ async def test_is_admin_does_not_bypass_project_isolation_scored(db):
 
 
 async def test_is_admin_does_not_bypass_project_isolation_get_facts(db):
-    """M1305: get_facts with is_admin=True must still filter by project_id."""
+    """: get_facts with is_admin=True must still filter by project_id."""
     pid_a = await create_project(db, "admin-getf-a", "alice")
     pid_b = await create_project(db, "admin-getf-b", "bob")
     await save_fact(db, "Alpha secret in A", "curator",
@@ -575,7 +575,7 @@ async def test_is_admin_does_not_bypass_project_isolation_get_facts(db):
 
 
 async def test_is_admin_does_not_bypass_project_isolation_search_facts(db):
-    """M1305: search_facts with is_admin=True + project_id must filter."""
+    """: search_facts with is_admin=True + project_id must filter."""
     pid_a = await create_project(db, "admin-sf-a", "alice")
     pid_b = await create_project(db, "admin-sf-b", "bob")
     await save_fact(db, "Xylophone encryption in project A", "curator",

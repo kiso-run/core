@@ -12,7 +12,7 @@ from cli import build_parser
 from kiso.config import User
 
 
-# ── Shared parse tests (M601) ──
+# ── Shared parse tests ──
 
 # Each tuple: (plugin_type, subcommand, extra_args, checks)
 # checks: list of (attr_suffix, expected) — attr = f"{plugin_type}_command" for subcommand

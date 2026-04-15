@@ -1,4 +1,4 @@
-"""M678-M682: Tests for cron job management."""
+""": Tests for cron job management."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ async def db(tmp_path):
     await conn.close()
 
 
-# --- M678: Store functions ---
+# --- Store functions ---
 
 
 async def test_create_cron_job(db):
@@ -98,7 +98,7 @@ async def test_update_cron_last_run(db):
     assert jobs[0]["next_run"] == "2026-03-18T09:00:00"
 
 
-# --- M679: _cron_scheduler loop ---
+# --- _cron_scheduler loop ---
 
 
 def _fake_sleep(max_calls=1):

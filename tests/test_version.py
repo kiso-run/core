@@ -1,4 +1,4 @@
-"""Tests for kiso._version.count_loc (M53)."""
+"""Tests for kiso._version.count_loc."""
 
 import os
 from pathlib import Path

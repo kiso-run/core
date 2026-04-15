@@ -1,4 +1,4 @@
-"""Scoped session_secrets containment end-to-end (M1273).
+"""Scoped session_secrets containment end-to-end.
 
 Unit-level containment for ``build_wrapper_input`` is already covered in
 ``tests/test_tools.py:1092-1138`` (test_scoped_session_secrets,
@@ -8,7 +8,7 @@ test_no_declared_secrets_scoped_empty, test_none_session_secrets), and
 
 This module covers the **end-to-end runtime path**: the full flow from
 session_secrets passed to ``_wrapper_task`` → real subprocess execution
-→ wrapper stdout. The fake wrapper from M1268 echoes the stdin payload so
+→ wrapper stdout. The fake wrapper echoes the stdin payload so
 the test can assert exactly what the subprocess actually received.
 
 The goal is to prove that:

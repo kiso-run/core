@@ -1,4 +1,4 @@
-"""Runtime-focused guards for the wrapper rename (M1306-M1320).
+"""Runtime-focused guards for the wrapper rename.
 
 These tests protect runtime invariants: the correct modules import,
 legacy files are gone, and the registry/schema use the expected names.
@@ -72,20 +72,20 @@ class TestWrapperRenameRuntimeInvariants:
         assert "tool" not in _ENTITY_KINDS
 
     def test_db_tasks_column_is_wrapper(self):
-        """M1319: DB schema uses 'wrapper' column, not 'skill'."""
+        """: DB schema uses 'wrapper' column, not 'skill'."""
         from kiso.store.shared import SCHEMA
         assert "wrapper" in SCHEMA
         assert "skill" not in SCHEMA
 
     def test_create_task_uses_wrapper_kwarg(self):
-        """M1319: create_task() accepts wrapper= kwarg, not skill=."""
+        """: create_task() accepts wrapper= kwarg, not skill=."""
         from kiso.store.plans import create_task
         sig = inspect.signature(create_task)
         assert "wrapper" in sig.parameters
         assert "skill" not in sig.parameters
 
     def test_cli_user_wrappers_flag(self):
-        """M1319: CLI user command uses --wrappers flag, not --skills."""
+        """: CLI user command uses --wrappers flag, not --skills."""
         import cli.user as user_mod
         src = inspect.getsource(user_mod)
         assert "--wrappers" in src
@@ -98,7 +98,7 @@ class TestWrapperRenameRuntimeInvariants:
 
 
 class TestM1320NoStrayToolSkillReferences:
-    """M1320: source must not contain stray tool/skill refs as kiso concepts.
+    """: source must not contain stray tool/skill refs as kiso concepts.
 
     Allowed exceptions:
     - [tool.uv], [tool.pytest], [tool.hatch] TOML sections (Python ecosystem)

@@ -70,7 +70,7 @@ class TestPreExecHooks:
             kiso.hooks._HOOK_TIMEOUT = orig
 
     async def test_pre_hook_timeout_reaps_subprocess(self, tmp_path):
-        """M1295: when a pre-exec hook times out, the underlying
+        """: when a pre-exec hook times out, the underlying
         subprocess must be killed and reaped before
         run_pre_exec_hooks returns. Otherwise the hook process
         keeps running, the asyncio child watcher keeps a stale
@@ -192,7 +192,7 @@ class TestPostExecHooks:
         await run_post_exec_hooks(hooks, "ls", "list", "s1", 1, "", "", 0)
 
     async def test_post_hook_timeout_reaps_subprocess(self, tmp_path):
-        """M1295: same contract as the pre-exec test, applied to
+        """: same contract as the pre-exec test, applied to
         post-exec. When a post-exec hook times out, the helper
         must SIGKILL + reap the spawned process. Verified
         OS-level via os.kill(pid, 0)."""

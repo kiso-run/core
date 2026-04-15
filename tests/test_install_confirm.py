@@ -1,8 +1,8 @@
 """— Integration tests for install confirmation flow.
 
 End-to-end checks that the system prevents silent wrapper/connector
-installation without user approval.  M615 adds server-side detection
-of install proposals (replaces keyword heuristic).  M670 broadens
+installation without user approval. adds server-side detection
+of install proposals (replaces keyword heuristic). broadens
 detection for msg-only plans on fresh instances.
 """
 
@@ -128,7 +128,7 @@ class TestAutoCorrectRemoved:
         assert not hasattr(brain_mod, "_SKILL_NOT_INSTALLED_RE")
 
 
-# --- M428: session-aware install approval ---
+# --- session-aware install approval ---
 
 
 class TestValidatePlanInstallApproved:
@@ -203,7 +203,7 @@ class TestSessionHasInstallProposal:
         await db.close()
 
 
-# --- M615: install-proposal edge cases (replaces M435 keyword tests) ---
+# --- install-proposal edge cases (replaces keyword tests) ---
 
 
 @pytest.mark.asyncio
@@ -287,7 +287,7 @@ class TestInstallProposalEdgeCases:
         await db.close()
 
 
-# --- M615: server-side install-proposal detection ---
+# --- server-side install-proposal detection ---
 
 
 from tests.conftest import make_config
@@ -384,7 +384,7 @@ class TestRetryLoopUninstalledToolFlag:
         assert result["_saw_uninstalled_wrapper"] is True
 
 
-# --- M670: msg-only plan on fresh instance → install_proposal ---
+# --- msg-only plan on fresh instance → install_proposal ---
 
 
 def _msg_only_plan(*, needs_install=None):
@@ -488,7 +488,7 @@ class TestM670MsgOnlyFreshInstanceProposal:
         assert plan["install_proposal"] is False
 
 
-# --- M897: install_proposal persistence on replan plans ---
+# --- install_proposal persistence on replan plans ---
 
 
 @pytest.mark.asyncio
@@ -578,7 +578,7 @@ class TestReplanInstallProposalPersistence:
         await db.close()
 
 
-# --- M901: filter needs_install against installed wrappers ---
+# --- filter needs_install against installed wrappers ---
 
 
 @pytest.mark.asyncio

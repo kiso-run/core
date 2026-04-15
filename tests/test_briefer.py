@@ -1,4 +1,4 @@
-"""Integration tests for the briefer pipeline (M253).
+"""Integration tests for the briefer pipeline.
 
 These tests verify end-to-end briefer behavior with mocked LLM responses,
 covering different request types and fallback scenarios.
@@ -513,7 +513,7 @@ class TestM824ToolFilterThreshold:
 
     async def test_few_tools_injects_all(self, db):
         """5 wrappers installed with threshold=10 → planner sees all 5."""
-        # Briefer selects only 'browser' — but M824 overrides
+        # Briefer selects only 'browser' — but overrides
         briefing = _briefing(
             modules=["web"],
             wrappers=["browser"],

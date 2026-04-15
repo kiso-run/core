@@ -186,7 +186,7 @@ class TestF13ChatKBClassification:
 class TestF14CuratorEntityCreation:
     """F14: curator creates entity + tags from seeded learning → recall.
 
-    M651: seeds a high-quality learning directly in the DB to isolate the
+    seeds a high-quality learning directly in the DB to isolate the
     curator from reviewer non-determinism. The test validates the curator
     pipeline (promote → entity → fact → tag), not the review→learn flow.
     """
@@ -390,7 +390,7 @@ class TestF16ScoredFactRetrieval:
 # F12 — messenger quality
 # ---------------------------------------------------------------------------
 
-# M1300: import the production emoji regex so the test cannot drift
+# import the production emoji regex so the test cannot drift
 # from the deterministic strip applied to messenger output.
 from kiso.brain.text_roles import EMOJI_STRIP_RE as _EMOJI_RE  # noqa: E402
 _FALSE_ACTION_RE = re.compile(
@@ -405,7 +405,7 @@ class TestMessengerQuality:
     async def test_messenger_no_emoji_no_hallucination(self, run_message):
         """What: Messenger output quality check for emoji and hallucination rules.
 
-        Why: Validates M384 quality rules -- the messenger must not use emoji and must
+        Why: Validates quality rules -- the messenger must not use emoji and must
         not claim actions it did not perform (e.g. "ho esaminato", "ho verificato").
         Without this, users receive unprofessional or misleading responses.
         Expects: Italian response with no emoji characters and no false action verbs.

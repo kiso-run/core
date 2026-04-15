@@ -1,7 +1,7 @@
 """F36: Cross-plan file handoff — screenshot → OCR in same session.
 
-Validates M933 (session_files/last_plan in planner prompt), M1037
-(announce msgs allowed, no hallucination), and M935 (detail/expect consistency).
+Validates (session_files/last_plan in planner prompt),
+(announce msgs allowed, no hallucination), and (detail/expect consistency).
 
 Two messages in the same session:
 1. Take a screenshot of example.com
@@ -56,9 +56,9 @@ class TestF36CrossPlanFileHandoff:
     async def test_screenshot_then_ocr(self, run_message):
         """Two-plan pipeline: screenshot → OCR with correct file routing.
 
-        Verifies that the planner knows where files are (M933), doesn't
-        hallucinate results in announce msgs (M1037), and generates
-        consistent detail/expect pairs (M935).
+        Verifies that the planner knows where files are, doesn't
+        hallucinate results in announce msgs, and generates
+        consistent detail/expect pairs.
         """
         # --- Plan 1: screenshot ---
         r1 = await _ensure_tool(
@@ -90,7 +90,7 @@ class TestF36CrossPlanFileHandoff:
         ]
         # Word-boundary check on the command field only — avoids false
         # positives like "libcurl" or "curly" that may appear in
-        # command text but are not the curl program (M1286).
+        # command text but are not the curl program.
         assert_no_command_word(last_plan_tasks, ["curl", "wget"])
         exec_tasks = [
             t for t in last_plan_tasks if t.get("type") == "exec"

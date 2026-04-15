@@ -68,7 +68,7 @@ class TestF28ScreenshotOCR:
     async def test_screenshot_and_ocr(self, preset_tools_installed, run_message):
         """What: Screenshots example.com and extracts text via OCR.
 
-        Why: Validates browser→ocr cross-wrapper pipeline and file routing (M826).
+        Why: Validates browser→ocr cross-wrapper pipeline and file routing.
         Expects: Success, screenshot published, OCR output mentions 'example'.
         """
         result = await run_message(
@@ -106,7 +106,7 @@ class TestF28ScreenshotOCR:
 class TestF29AiderWriteCode:
     """Write a non-trivial Python module using aider wrapper.
 
-    M1304: the original test asked for a one-liner hello.py, which the
+    the original test asked for a one-liner hello.py, which the
     planner legitimately handled via exec (echo "print(...)"). The prompt
     now requests a multi-method class with real logic — complex enough
     that aider is the natural wrapper choice over exec.

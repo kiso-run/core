@@ -54,7 +54,7 @@ class TestF3SSHKey:
         assert_italian(result.last_plan_msg_output)
         assert_no_failure_language(result.last_plan_msg_output)
 
-        # M1301: do not assert on the presence of an exec task. The SSH
+        # do not assert on the presence of an exec task. The SSH
         # public key is in boot facts, so the classifier may legitimately
         # route this query to the chat_kb fast path (single msg task) or
         # the planner may emit an exec task to read the file. Both paths

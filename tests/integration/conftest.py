@@ -353,7 +353,7 @@ async def wait_for_worker_idle(client: httpx.AsyncClient, session: str,
 # Minimal manifest schema accepted by Kiso. The script reads its stdin
 # (a JSON payload from the worker), echoes the keys it received plus
 # the env vars it can see and any session_secrets keys, and exits 0.
-# Designed for M1273 secret-containment tests where the test asserts
+# Designed for secret-containment tests where the test asserts
 # what the wrapper actually receives vs what was declared.
 
 _FAKE_TOOL_MANIFEST = """\
@@ -400,7 +400,7 @@ def fake_wrapper(tmp_path: Path):
     Returns a dict shaped like the entries produced by
     ``kiso.wrappers.discover_wrappers``: ``{"name", "path", "session_secrets",
     "env", ...}``. The wrapper's `run.py` reads stdin as JSON and prints
-    a containment report. Used by M1273 secret containment tests to
+    a containment report. Used by secret containment tests to
     assert via real subprocess execution.
     """
     name = "faketool"
@@ -474,7 +474,7 @@ def fake_connector_dir(tmp_path: Path):
     `FAKE_CONNECTOR_MODE` from the environment so the test can pick:
     `clean_exit`, `crash`, `hang`, `stable`, or `crash_after`.
 
-    Used by M1276 connector lifecycle tests to drive the supervisor
+    Used by connector lifecycle tests to drive the supervisor
     deterministically without depending on a real connector binary.
     """
     name = "fakeconnector"

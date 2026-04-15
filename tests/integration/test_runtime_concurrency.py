@@ -1,4 +1,4 @@
-"""Same-session worker spawn atomicity (M1270).
+"""Same-session worker spawn atomicity.
 
 Tests that ``kiso.main._ensure_worker`` produces exactly one worker per
 session under concurrent /msg arrivals AND under interleaved cron
@@ -6,7 +6,7 @@ firings, both of which call the same ``_ensure_worker`` helper.
 
 Boundary vs neighbouring tests:
 
-- ``tests/test_inflight.py`` (M415) covers `/msg` arriving when a
+- ``tests/test_inflight.py`` covers `/msg` arriving when a
   worker is **already busy**: in-flight classification (stop /
   independent / update / conflict). It uses ``_make_busy_worker`` to
   pre-create the worker.

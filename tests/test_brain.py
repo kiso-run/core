@@ -130,7 +130,7 @@ def test_worker_phases_frozenset():
     assert len(WORKER_PHASES) == 4
 
 
-# --- M320: clean_learn_items ---
+# --- clean_learn_items ---
 
 
 class TestCleanLearnItems:
@@ -161,7 +161,7 @@ class TestCleanLearnItems:
         assert clean_learn_items(items) == expected
 
 
-# --- M373: output-backed learning validation ---
+# --- output-backed learning validation ---
 
 class TestLearningContradictsOutput:
     def test_negative_claim_contradicted_by_output(self):
@@ -533,7 +533,7 @@ class TestValidatePlan:
         errors = validate_plan(plan, max_tasks=20)
         assert not any("max allowed" in e for e in errors)
 
-    # --- M137: msg must come after data-gathering tasks ---
+    # --- msg must come after data-gathering tasks ---
 
     def test_msg_before_exec_rejected(self):
         """[msg, exec, msg] — msg first is rejected."""
@@ -583,7 +583,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
-    # --- M1217: announce msgs rejected ---
+    # --- announce msgs rejected ---
 
     def test_m1217_announce_msg_first_rejected(self):
         """[msg, exec, msg] — announce msg before exec is rejected."""
@@ -606,7 +606,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
 
-    # --- M1227: exec-after-wrapper codegen guardrail ---
+    # --- exec-after-wrapper codegen guardrail ---
 
     def test_m1227_codegen_exec_after_tool_rejected(self):
         """validate_plan rejects [wrapper, exec, msg] when goal is codegen-only."""
@@ -636,9 +636,9 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert not any("exec immediately after wrapper" in e for e in errors)
 
-    # --- M25: replan task type ---
+    # --- replan task type ---
 
-    # --- M1231: browser file:// URL rejection ---
+    # --- browser file:// URL rejection ---
 
     def test_m1231_browser_file_url_rejected(self):
         """browser wrapper with file:// URL is rejected."""
@@ -744,7 +744,7 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
 
-    # --- M31: search task type ---
+    # --- search task type ---
 
     def test_search_task_valid(self):
         """search + expect, wrapper=null → valid."""
@@ -804,7 +804,7 @@ class TestValidatePlan:
         ]}
         assert validate_plan(plan) == []
 
-    # --- M420: install only allowed in replan ---
+    # --- install only allowed in replan ---
 
     def test_m420_install_in_first_plan_rejected(self):
         """exec install + needs_install set in first plan → error (mixed propose+install)."""
@@ -869,7 +869,7 @@ class TestValidatePlan:
 class TestLoadSystemPrompt:
     """The runtime loader reads roles from the user dir
     (KISO_DIR/roles/). The user dir is the runtime source of
-    truth; M1296 lazy self-heal copies the bundled default into
+    truth; lazy self-heal copies the bundled default into
     the user dir on first access if the file is missing or
     empty (mirrors the eager seed performed by
     ``_init_kiso_dirs`` at server startup). Hard
@@ -926,7 +926,7 @@ class TestLoadSystemPrompt:
     def test_missing_user_role_self_heals_from_bundle(
         self, _isolated_kiso_dir, caplog,
     ):
-        """M1296: when the user role file is missing, the loader
+        """: when the user role file is missing, the loader
         copies the bundled default into the user dir, logs a
         WARNING, and returns the bundled content. After self-heal
         the file exists in the user dir (the runtime source of
@@ -946,7 +946,7 @@ class TestLoadSystemPrompt:
         ), f"missing self-heal warning, records={[r.message for r in caplog.records]}"
 
     def test_empty_user_file_triggers_self_heal(self, _isolated_kiso_dir):
-        """M1296: a zero-byte user file is treated as missing.
+        """: a zero-byte user file is treated as missing.
         Catches `> file.md` accidents and partial writes."""
         target = _isolated_kiso_dir / "roles" / "planner.md"
         target.write_text("")
@@ -959,7 +959,7 @@ class TestLoadSystemPrompt:
     def test_self_heal_does_not_overwrite_existing_user_override(
         self, _isolated_kiso_dir,
     ):
-        """M1296: a non-empty user file is the source of truth and
+        """: a non-empty user file is the source of truth and
         is read verbatim. Self-heal must not touch it."""
         target = _isolated_kiso_dir / "roles" / "planner.md"
         target.write_text("CUSTOM PLANNER OVERRIDE")
@@ -970,7 +970,7 @@ class TestLoadSystemPrompt:
     def test_unknown_role_raises_when_bundle_missing_too(
         self, _isolated_kiso_dir,
     ):
-        """M1296: a role name that exists in neither the user dir
+        """: a role name that exists in neither the user dir
         nor the bundle still raises FileNotFoundError. This is the
         only remaining hard-fail path — it indicates the kiso
         installation itself is corrupted."""
@@ -978,7 +978,7 @@ class TestLoadSystemPrompt:
             _load_system_prompt("nonexistent_role_xyz")
 
     def test_self_heal_uses_atomic_write(self, _isolated_kiso_dir):
-        """M1296: self-heal must use a tmp + rename pattern so a
+        """: self-heal must use a tmp + rename pattern so a
         crash mid-copy cannot leave a partial file behind. Verify
         no .tmp file remains after the copy."""
         _load_system_prompt("planner")
@@ -988,13 +988,13 @@ class TestLoadSystemPrompt:
         assert not tmp_residue.exists()
 
     def test_functional_fixture_pattern_self_heals(self, tmp_path):
-        """M1296 regression: replicate the multi-module patch
+        """ regression: replicate the multi-module patch
         pattern used by tests/functional/conftest.py:_func_kiso_dir
         (creates an isolated kiso dir, patches KISO_DIR on every
         consumer module, but does NOT pre-populate roles/) and
         verify the loader self-heals on first access. This is the
         deterministic equivalent of the 36 functional + 9 extended
-        fails reported in the M1296 problem statement.
+        fails reported in the problem statement.
         """
         _modules = [
             "kiso.config", "kiso.brain", "kiso.wrappers", "kiso.main",
@@ -1021,7 +1021,7 @@ class TestLoadSystemPrompt:
             invalidate_prompt_cache()
 
     def test_live_fixture_pattern_self_heals(self, tmp_path):
-        """M1296 regression: replicate the
+        """ regression: replicate the
         ``with patch("kiso.brain.KISO_DIR", tmp_path):`` pattern
         used by 18 per-test sites in tests/live/test_e2e.py,
         test_flows.py, test_practical.py, test_roles.py — none of
@@ -1864,7 +1864,7 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "Use exec tasks" not in content
 
-    # --- M933: session_files + last_plan in planner context ---
+    # --- session_files + last_plan in planner context ---
 
     async def test_session_files_in_planner_context(self, db, config):
         """Session workspace file listing appears as dedicated section."""
@@ -2088,7 +2088,7 @@ class TestRunPlannerInvestigateMode:
 
 # --- _load_system_prompt (reviewer) ---
 
-# --- M571: reviewer modular prompt ---
+# --- reviewer modular prompt ---
 
 class TestReviewerModularPrompt:
     def test_select_modules_with_output_and_safety(self):
@@ -2199,7 +2199,7 @@ class TestValidateReview:
         assert len(errors) >= 1
 
 
-# --- M83: JSON-Schema validation for PLAN_SCHEMA and REVIEW_SCHEMA ---
+# --- JSON-Schema validation for PLAN_SCHEMA and REVIEW_SCHEMA ---
 
 
 _PLAN_SCHEMA_INNER = PLAN_SCHEMA["json_schema"]["schema"]
@@ -2208,7 +2208,7 @@ _MSG_TASK_DICT = {"type": "msg", "detail": "Hello", "wrapper": None, "args": Non
 
 
 class TestM83PlanSchema:
-    """M83: PLAN_SCHEMA inner schema accepts valid plans and rejects invalid ones."""
+    """: PLAN_SCHEMA inner schema accepts valid plans and rejects invalid ones."""
 
     def _valid(self, instance):
         _jsonschema.validate(instance=instance, schema=_PLAN_SCHEMA_INNER)
@@ -2338,7 +2338,7 @@ class TestM83PlanSchema:
 
 
 class TestM83ReviewSchema:
-    """M83: REVIEW_SCHEMA inner schema accepts valid reviews and rejects invalid ones."""
+    """: REVIEW_SCHEMA inner schema accepts valid reviews and rejects invalid ones."""
 
     def _valid(self, instance):
         _jsonschema.validate(instance=instance, schema=_REVIEW_SCHEMA_INNER)
@@ -2491,7 +2491,7 @@ class TestBuildReviewerMessages:
         content = msgs[1]["content"]
         assert "## Command Status" not in content
 
-    # --- M106: exit_code parameter (parametrized in M600) ---
+    # --- exit_code parameter (parametrized in) ---
 
     _EXIT_CODE_CASES = [
         (0, True, "Exit code: 0 (success)", None),
@@ -3005,7 +3005,7 @@ class TestRunSummarizer:
         assert result == "Fallback after timeout"
         assert captured_overrides == [None, "fallback/model"]
 
-# --- M10: Paraphraser ---
+# --- Paraphraser ---
 
 class TestBuildParaphraserMessages:
     def test_formats_messages(self):
@@ -3053,7 +3053,7 @@ class TestRunParaphraser:
                 await run_paraphraser(config, messages)
 
 
-# --- M10: Fencing in planner messages ---
+# --- Fencing in planner messages ---
 
 class TestPlannerMessagesFencing:
     @pytest.fixture()
@@ -3107,7 +3107,7 @@ class TestPlannerMessagesFencing:
         assert "Paraphrased" not in content
 
 
-# --- M10: Fencing in reviewer messages ---
+# --- Fencing in reviewer messages ---
 
 class TestReviewerMessagesFencing:
     async def test_reviewer_messages_fence_output(self):
@@ -4034,7 +4034,7 @@ class TestM171StripExtendReplan:
         assert not errors
 
 
-# --- M82: planner ask-then-add workflow (functional) ---
+# --- planner ask-then-add workflow (functional) ---
 
 
 _MSG_PLAN_FOR_USER = json.dumps({
@@ -4062,7 +4062,7 @@ _MSG_PLAN_FOR_USER = json.dumps({
 
 @pytest.mark.asyncio
 class TestM82PlannerAskThenAdd:
-    """M82: functional tests for the ask-then-add protection workflow.
+    """: functional tests for the ask-then-add protection workflow.
 
     When Caller Role=user, a kiso user management request must result in a
     msg task (not exec).  The protection is prompt-based; these tests verify:
@@ -4333,13 +4333,13 @@ class TestClassifierPromptContent:
         assert "plan" in prompt
 
     def test_classifier_prompt_covers_urls(self):
-        """Classifier prompt should explicitly mention URLs/websites as 'plan' (M230)."""
+        """Classifier prompt should explicitly mention URLs/websites as 'plan'."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "url" in prompt or "website" in prompt
         assert "domain" in prompt
 
     def test_classifier_prompt_covers_any_language(self):
-        """Classifier prompt should handle actions in any language (M230, M956)."""
+        """Classifier prompt should handle actions in any language."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
         assert "any language" in prompt
 
@@ -4459,11 +4459,11 @@ class TestM276ClassifierContext:
         assert "affirmative" in prompt.lower() or "yes/no" in prompt.lower()
 
 
-# --- M234: Planner — don't decompose atomic CLI operations ---
+# --- Planner — don't decompose atomic CLI operations ---
 
 
 class TestRolePromptContent:
-    """Parametrized prompt content assertions (M234, M275, M286, M235, M106, M6, M48, M47)."""
+    """Parametrized prompt content assertions (,,,,, M6,,)."""
 
     @pytest.mark.parametrize("role,assertions", [
         # planner atomic operations
@@ -4538,19 +4538,19 @@ class TestRolePromptContent:
         ("worker", [
             (["command -v"], "exact"),
         ]),
-        # M48: worker no sudo rule present
+        # worker no sudo rule present
         ("worker", [
             (["sudo"], None),
         ]),
-        # M48: worker sudo requires explicit mention
+        # worker sudo requires explicit mention
         ("worker", [
             (["explicit", "explicitly"], "any"),
         ]),
-        # M48: worker sudo rule says do not add
+        # worker sudo rule says do not add
         ("worker", [
             (["not add", "do not add", "never add"], "any"),
         ]),
-        # M47: worker hint takes priority
+        # worker hint takes priority
         ("worker", [
             (["hint"], None),
             (["ABSOLUTE priority"], "exact"),
@@ -4599,7 +4599,7 @@ class TestRolePromptContent:
                 ), f"{role}: none of {subs!r} found (mixed)"
 
 
-# --- M33: retry_hint in REVIEW_SCHEMA ---
+# --- retry_hint in REVIEW_SCHEMA ---
 
 
 class TestRetryHintInSchema:
@@ -4636,7 +4636,7 @@ class TestRetryHintInSchema:
         assert review["retry_hint"] == "use /opt/app"
 
 
-# --- M33: retry_context in exec translator ---
+# --- retry_context in exec translator ---
 
 
 class TestExecTranslatorRetryContext:
@@ -4709,7 +4709,7 @@ class TestExecTranslatorRetryContext:
         assert "valid JSON object" in user_content
 
 
-# --- M33: reviewer prompt mentions retry_hint ---
+# --- reviewer prompt mentions retry_hint ---
 
 
 class TestM47ReviewerPlanContext:
@@ -4861,7 +4861,7 @@ class TestM47WorkerHintPriority:
         assert "## Task" in content
 
 
-# --- M47: edge cases ---
+# --- edge cases ---
 
 
 class TestM47ReviewerPlanContextEdgeCases:
@@ -5111,7 +5111,7 @@ class TestM48CuratorCategoryField:
         assert errors == []
 
 
-# --- M343: curator entity_name + entity_kind ---
+# --- curator entity_name + entity_kind ---
 
 
 class TestM343CuratorEntityFields:
@@ -5198,7 +5198,7 @@ class TestM343CuratorEntityFields:
         assert "## Existing Entities" not in msgs[1]["content"]
 
 
-# --- M347: curator dedup — existing entity facts ---
+# --- curator dedup — existing entity facts ---
 
 
 class TestM347CuratorExistingFacts:
@@ -5247,7 +5247,7 @@ class TestM347CuratorExistingFacts:
         assert "## Existing Facts" in user_msg["content"]
 
 
-# --- M106: exit code notes, default model, prompt rules ---
+# --- exit code notes, default model, prompt rules ---
 
 
 class TestM106ExitCodeNotes:
@@ -5271,7 +5271,7 @@ class TestM106ExitCodeNotes:
 
 
 class TestM106DefaultPlannerModel:
-    """M110c/M969: default planner model is deepseek-v3.2."""
+    """M110c/: default planner model is deepseek-v3.2."""
 
     def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
@@ -5464,7 +5464,7 @@ class TestValidatePlanPluginDiscovery:
 
 
 class TestExecTranslatorMaxTokens:
-    """M105b/M1057: worker role has no artificial max_tokens cap."""
+    """M105b/: worker role has no artificial max_tokens cap."""
 
     @pytest.mark.asyncio
     async def test_exec_translator_no_max_tokens(self):
@@ -5500,7 +5500,7 @@ class TestRepairJson:
         assert json.loads(_repair_json(raw)) == expected_parsed
 
 
-# --- M1209: _extract_json_object + reviewer structured-output recovery ---
+# --- _extract_json_object + reviewer structured-output recovery ---
 
 
 class TestExtractJsonObject:
@@ -6253,7 +6253,7 @@ class TestM418NoSilentAutoCorrect:
 
 
 # ---------------------------------------------------------------------------
-# Briefer tests (M242)
+# Briefer tests
 # ---------------------------------------------------------------------------
 
 
@@ -6732,7 +6732,7 @@ class TestBrieferSchema:
 
 
 # ---------------------------------------------------------------------------
-# _load_modular_prompt (M243)
+# _load_modular_prompt
 # ---------------------------------------------------------------------------
 
 
@@ -6817,7 +6817,7 @@ class TestLoadModularPrompt:
 
 
 # ---------------------------------------------------------------------------
-# Briefer integration for planner (M244)
+# Briefer integration for planner
 # ---------------------------------------------------------------------------
 
 
@@ -7023,7 +7023,7 @@ class TestBrieferPlannerIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Briefer tag-based fact retrieval (M250)
+# Briefer tag-based fact retrieval
 # ---------------------------------------------------------------------------
 
 
@@ -7647,7 +7647,7 @@ class TestM261PromptSizeReduction:
         """Core-only prompt (no modules) is significantly smaller than all modules."""
         core_only = _load_modular_prompt("planner", [])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Core-only should be less than 35% of full prompt (+M353 self-identity rules)
+        # Core-only should be less than 35% of full prompt (+ self-identity rules)
         assert len(core_only) < len(all_modules) * 0.35
 
     def test_core_plus_web_is_small(self):
@@ -7675,7 +7675,7 @@ class TestM261PromptSizeReduction:
         """core allows system packages, wrapper_recovery blocks apt for deps.
         Both rules must coexist in the full prompt without contradiction."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Core: system packages allowed (M849 — in core now)
+        # Core: system packages allowed ( — in core now)
         assert "System package requests" in all_modules
         assert "Python package/library requests" in all_modules
         assert "needs_install" in all_modules
@@ -7951,7 +7951,7 @@ class TestM261MessengerContextReduction:
         assert "User asked about weather in Rome." in messenger_content
 
 
-# --- M269: Retry on empty LLM response ---
+# --- Retry on empty LLM response ---
 
 
 class TestM269RetryOnLLMError:
@@ -8037,7 +8037,7 @@ class TestM269RetryOnLLMError:
         assert len(captured_messages[0]) == len(captured_messages[1])
 
     async def test_llm_error_preserves_last_errors_on_exhaustion(self, config):
-        """exc.last_errors is set when LLM errors exhaust all attempts (M195 compat)."""
+        """exc.last_errors is set when LLM errors exhaust all attempts ( compat)."""
         from kiso.llm import LLMError
 
         async def _always_fail(cfg, role, messages, **kw):
@@ -8336,7 +8336,7 @@ class TestM309ReplanContextDedup:
         assert kwargs.get("is_replan") is True
 
 
-# --- M272: Briefer omits irrelevant sections for messenger/worker ---
+# --- Briefer omits irrelevant sections for messenger/worker ---
 
 
 class TestM272BrieferSimpleConsumers:
@@ -8383,7 +8383,7 @@ class TestM272BrieferSimpleConsumers:
         assert "Plan Outputs" in content
 
 
-# --- M274: no Italian keywords in fallback path ---
+# --- no Italian keywords in fallback path ---
 
 
 @pytest.mark.asyncio()
@@ -8540,7 +8540,7 @@ def _brain_stream_cm(content: str, usage: dict | None = None) -> _BrainStreamCM:
     return _BrainStreamCM(_MockStreamResp(200, lines))
 
 
-# --- M298: No timeout partitioning — each attempt uses full role timeout ---
+# --- No timeout partitioning — each attempt uses full role timeout ---
 
 
 class TestM298NoTimeoutPartitioning:
@@ -8623,7 +8623,7 @@ class TestM298NoTimeoutPartitioning:
         assert call_count[0] == 2
 
 
-# --- M1057: max_tokens removed for non-classifier roles ---
+# --- max_tokens removed for non-classifier roles ---
 
 
 class TestM1057MaxTokensRemoved:
@@ -8672,7 +8672,7 @@ class TestM1057MaxTokensRemoved:
         assert not hasattr(cfg_mod, "MAX_TOKENS_DEFAULTS")
 
 
-# --- M297: Retry status notification ---
+# --- Retry status notification ---
 
 
 class TestM297RetryNotification:
@@ -8778,7 +8778,7 @@ class TestM297RetryNotification:
                 )
 
 
-# --- M302: Integration tests — stall simulation, retry separation ---
+# --- Integration tests — stall simulation, retry separation ---
 
 
 class TestM302StallRetryIntegration:
@@ -8955,11 +8955,11 @@ class TestM302StallRetryIntegration:
                 [{"role": "user", "content": "test"}],
                 PLAN_SCHEMA, lambda p: validate_plan(p), PlanError, "Plan",
             )
-        # No timeout_override should be passed (removed in M298)
+        # No timeout_override should be passed (removed in)
         assert "timeout_override" not in captured_kwargs[0]
 
 
-# --- M304: Briefer skip module validation for simple consumers ---
+# --- Briefer skip module validation for simple consumers ---
 
 
 class TestM304BrieferModuleValidationSkip:
@@ -9209,7 +9209,7 @@ class TestIsStopMessage:
         assert is_stop_message("OK") is False
 
 
-# ── M557: Sub-validator focused tests ────────────────────────
+# ──: Sub-validator focused tests ────────────────────────
 
 
 class TestValidatePlanStructure:
@@ -9509,7 +9509,7 @@ class TestM1052MsgOnlyValidation:
 
 
 class TestM1303KbAnswerFlag:
-    """M1303 Bug B: kb_answer flag allows msg-only plans for KB recall.
+    """ Bug B: kb_answer flag allows msg-only plans for KB recall.
 
     The planner sets kb_answer=true when it can answer the user from
     briefer-supplied facts (KB context) and no action is needed. The
@@ -10184,7 +10184,7 @@ class TestM1198InstallRouteValidation:
 class TestM1210ExplicitInstallRequest:
     """explicit user install request allows direct exec without prior approval.
 
-    M1212 fix: natural-language detail (e.g. "Install the browser wrapper") is
+     fix: natural-language detail (e.g. "Install the browser wrapper") is
     accepted — the validation no longer requires the shell command pattern.
     """
 
@@ -10330,7 +10330,7 @@ class TestM984NeedsInstallMsgOnly:
         assert not any("needs_install is set" in e for e in errors)
 
     def test_no_needs_install_exec_accepted(self):
-        """needs_install=None → M984 does not fire."""
+        """needs_install=None → does not fire."""
         plan = {"goal": "Search web", "needs_install": None, "tasks": [
             {"type": "exec", "detail": "echo hello", "expect": "hello"},
             {"type": "msg", "detail": "Answer in English. Done"},
@@ -10471,7 +10471,7 @@ class TestArtifactGoalMismatch:
         )
 
 
-# --- M558: _build_strict_schema + _join_or_empty helpers ---
+# --- _build_strict_schema + _join_or_empty helpers ---
 
 
 class TestBuildStrictSchema:
@@ -10546,7 +10546,7 @@ class TestJoinOrEmpty:
         assert _join_or_empty(["only"]) == "- only"
 
 
-# --- M559: _format_message_history + _format_pending_items helpers ---
+# --- _format_message_history + _format_pending_items helpers ---
 
 
 class TestFormatMessageHistory:

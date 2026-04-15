@@ -428,26 +428,26 @@ class TestSettingBool:
         assert setting_bool(settings, key, **kwargs) is expected
 
 
-# --- M34: settings defaults ---
+# --- settings defaults ---
 
 
 def test_m34_settings_defaults():
-    """M34 fact decay/archive settings have correct defaults."""
+    """ fact decay/archive settings have correct defaults."""
     assert SETTINGS_DEFAULTS["fact_decay_days"] == 7
     assert SETTINGS_DEFAULTS["fact_decay_rate"] == 0.1
     assert SETTINGS_DEFAULTS["fact_archive_threshold"] == 0.3
 
 
-# --- M37: robustness fixes ---
+# --- robustness fixes ---
 
 
 def test_m37_fact_consolidation_min_ratio_default():
-    """M37: fact_consolidation_min_ratio has correct default."""
+    """: fact_consolidation_min_ratio has correct default."""
     assert SETTINGS_DEFAULTS["fact_consolidation_min_ratio"] == 0.3
 
 
 def test_m37_missing_consolidation_ratio_uses_default(tmp_path: Path):
-    """M39: missing fact_consolidation_min_ratio falls back to default."""
+    """: missing fact_consolidation_min_ratio falls back to default."""
     text = VALID.replace("fact_consolidation_min_ratio = 0.3\n", "")
     cfg = load_config(_write(tmp_path, text))
     assert cfg.settings["fact_consolidation_min_ratio"] == 0.3
@@ -579,7 +579,7 @@ def test_config_template_models_match_defaults():
     )
 
 
-# --- M1264: metadata as single source of truth ---
+# --- metadata as single source of truth ---
 
 
 class TestConfigMetadataSingleSource:
@@ -697,7 +697,7 @@ class TestConfigMetadataSingleSource:
             )
 
 
-# --- M217: resource limits in config ---
+# --- resource limits in config ---
 
 
 class TestResourceLimitDefaults:
@@ -736,7 +736,7 @@ class TestResourceLimitDefaults:
         assert cfg.settings["max_pids"] == 1024
 
 
-# --- M542: KISO_HOME env var ---
+# --- KISO_HOME env var ---
 
 
 class TestKisoHomeEnvVar:

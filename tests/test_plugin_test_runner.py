@@ -1,4 +1,4 @@
-"""Tests for cli/plugin_test_runner.py (M647)."""
+"""Tests for cli/plugin_test_runner.py."""
 
 from __future__ import annotations
 

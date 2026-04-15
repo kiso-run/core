@@ -1,7 +1,7 @@
-"""M1283: Cross-layer adversarial input matrix.
+""": Cross-layer adversarial input matrix.
 
 Compact deterministic matrix covering the highest-value cross-layer
-defenses Kiso explicitly relies on. Builds on M1282 (paraphraser
+defenses Kiso explicitly relies on. Builds on (paraphraser
 boundary) and the unit-level coverage in test_security.py and
 test_audit.py.
 
@@ -95,8 +95,8 @@ class TestMaliciousToolOutputSanitizedBeforeReuse:
 
 
 class TestInstallFakeSuccessNotBypassValidation:
-    """The 'install + use' loop guard (M1234 install routing
-    suppression + M1233 codegen guardrail) is unit-tested already.
+    """The 'install + use' loop guard ( install routing
+    suppression + codegen guardrail) is unit-tested already.
     This integration check pins that:
     1. validate_plan rejects msg-only "install proposal" bypasses
        when goal does not indicate install/test, and

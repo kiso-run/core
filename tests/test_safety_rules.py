@@ -1,4 +1,4 @@
-"""Integration tests for safety rules (M416)."""
+"""Integration tests for safety rules."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from tests.conftest import AUTH_HEADER, DISCORD_AUTH_HEADER
 
 
 # ---------------------------------------------------------------------------
-# M416-1: Safety fact CRUD (add/list/remove via store)
+# Safety fact CRUD (add/list/remove via store)
 # ---------------------------------------------------------------------------
 
 
@@ -41,7 +41,7 @@ async def test_safety_fact_crud_via_store(db):
 
 
 # ---------------------------------------------------------------------------
-# M416-2: Safety facts injected into planner messages (always, bypassing briefer)
+# Safety facts injected into planner messages (always, bypassing briefer)
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +130,7 @@ def test_no_behavior_rules_no_section():
 
 
 # ---------------------------------------------------------------------------
-# M416-3: Safety facts survive decay/cleanup
+# Safety facts survive decay/cleanup
 # ---------------------------------------------------------------------------
 
 
@@ -161,7 +161,7 @@ async def test_safety_facts_survive_decay(db):
 
 
 # ---------------------------------------------------------------------------
-# M416-4: Reviewer flags safety rule violation as stuck
+# Reviewer flags safety rule violation as stuck
 # ---------------------------------------------------------------------------
 
 
@@ -203,7 +203,7 @@ def test_reviewer_messages_without_safety_rules():
 
 
 # ---------------------------------------------------------------------------
-# M416-5: CLI `kiso rules` commands (API-level)
+# CLI `kiso rules` commands (API-level)
 # ---------------------------------------------------------------------------
 
 

@@ -177,7 +177,7 @@ class TestMsgDetailValidation:
 
 
 class TestBrieferToolFilterNoTools:
-    """P55: M387 clears hallucinated wrappers when none installed."""
+    """P55: clears hallucinated wrappers when none installed."""
 
     @pytest.fixture()
     def config(self):

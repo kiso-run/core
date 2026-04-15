@@ -1,4 +1,4 @@
-"""Tests for kiso._subprocess_utils.communicate_with_timeout (M1295)."""
+"""Tests for kiso._subprocess_utils.communicate_with_timeout."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class TestCommunicateWithTimeoutHappyPath:
 
 class TestCommunicateWithTimeoutReaps:
     async def test_timeout_kills_and_reaps_proc(self, tmp_path):
-        """The core M1295 contract: when wait_for hits the timeout,
+        """The core contract: when wait_for hits the timeout,
         the helper must SIGKILL the subprocess and await its
         termination so the OS process is reaped and its
         _UnixSubprocessTransport is released BEFORE the caller

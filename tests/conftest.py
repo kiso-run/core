@@ -157,7 +157,7 @@ def _isolated_kiso_dir(tmp_path_factory):
     """Patch ``kiso.brain.KISO_DIR`` to a tmp dir for the whole session.
 
     The dir is intentionally NOT pre-populated with bundled roles.
-    The M1296 lazy self-heal in
+    The lazy self-heal in
     :func:`kiso.brain.prompts._load_system_prompt` copies each
     bundled role into the patched user dir on first access. This
     means:
@@ -325,7 +325,7 @@ async def db_with_session(tmp_path: Path):
     await conn.close()
 
 
-# --- M706: Shared test helper functions (importable, not fixtures) ---
+# --- Shared test helper functions (importable, not fixtures) ---
 
 
 def full_settings(**overrides) -> dict:

@@ -195,7 +195,7 @@ class TestSignalHandling:
         assert not any("kill -INT $$" in l for l in code_lines)
 
     def test_no_interrupted_flag(self):
-        """install.sh must not use _INTERRUPTED flag (removed in M317)."""
+        """install.sh must not use _INTERRUPTED flag (removed in)."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
             content = f.read()
@@ -423,7 +423,7 @@ class TestM769ExternalUrlPortFix:
             source ./install.sh
             EXTERNAL_URL="http://1.2.3.4:8333"
             SERVER_PORT="8334"
-            # Simulate the M769 fix block
+            # Simulate the fix block
             if [[ -n "$EXTERNAL_URL" && "$EXTERNAL_URL" == *":8333" && "$SERVER_PORT" != "8333" ]]; then
                 EXTERNAL_URL="${EXTERNAL_URL%:8333}:${SERVER_PORT}"
             fi
@@ -475,7 +475,7 @@ class TestM820ConfigTomlPatch:
     """config.toml external_url is patched when port changes."""
 
     def test_config_toml_patched_when_port_differs(self, tmp_path):
-        """sed patches config.toml external_url after M769 variable correction."""
+        """sed patches config.toml external_url after variable correction."""
         config = tmp_path / "config.toml"
         config.write_text('external_url                 = "http://1.2.3.4:8333"\n')
         result = _run_bash(f"""

@@ -374,7 +374,7 @@ async def test_idx_messages_user_exists(db: aiosqlite.Connection):
 
 
 async def test_idx_messages_session_user_exists(db: aiosqlite.Connection):
-    """M90: idx_messages_session_user composite index must be present in schema."""
+    """: idx_messages_session_user composite index must be present in schema."""
     cur = await db.execute(
         "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_messages_session_user'"
     )
@@ -734,7 +734,7 @@ async def test_delete_facts_empty_list(db: aiosqlite.Connection):
     assert len(facts) == 1
 
 
-# --- M10: get_untrusted_messages ---
+# --- get_untrusted_messages ---
 
 async def test_get_untrusted_messages(db: aiosqlite.Connection):
     await create_session(db, "sess1")
@@ -764,7 +764,7 @@ async def test_get_untrusted_messages_respects_limit(db: aiosqlite.Connection):
     assert untrusted[1]["content"] == "untrusted-1"
 
 
-# --- M19: update_task_review ---
+# --- update_task_review ---
 
 
 async def test_update_task_review_ok(db: aiosqlite.Connection):
@@ -1101,7 +1101,7 @@ async def test_append_task_llm_call_atomic_no_data_loss(db: aiosqlite.Connection
     assert {c["i"] for c in stored} == set(range(10))
 
 
-# --- M33: retry_count column ---
+# --- retry_count column ---
 
 
 async def test_retry_count_column_exists(db: aiosqlite.Connection):
@@ -1133,7 +1133,7 @@ async def test_update_task_retry_count(db: aiosqlite.Connection):
     assert tasks[0]["retry_count"] == 2
 
 
-# --- M34: facts enriched schema ---
+# --- facts enriched schema ---
 
 
 async def test_facts_have_category_column(db: aiosqlite.Connection):
@@ -1168,7 +1168,7 @@ async def test_facts_archive_table_exists(db: aiosqlite.Connection):
     assert row is not None
 
 
-# --- M34: save_fact with category and confidence ---
+# --- save_fact with category and confidence ---
 
 
 async def test_save_fact_with_category_and_confidence(db: aiosqlite.Connection):
@@ -1189,7 +1189,7 @@ async def test_save_fact_defaults(db: aiosqlite.Connection):
     assert facts[0]["last_used"] is None
 
 
-# --- M34: update_fact_usage ---
+# --- update_fact_usage ---
 
 
 async def test_update_fact_usage(db: aiosqlite.Connection):
@@ -1216,7 +1216,7 @@ async def test_update_fact_usage_empty_list(db: aiosqlite.Connection):
     assert facts[0]["use_count"] == 0
 
 
-# --- M34: decay_facts ---
+# --- decay_facts ---
 
 
 async def test_decay_facts_stale(db: aiosqlite.Connection):
@@ -1270,7 +1270,7 @@ async def test_decay_facts_floor_at_zero(db: aiosqlite.Connection):
     assert facts[0]["confidence"] == 0.0
 
 
-# --- M34: archive_low_confidence_facts ---
+# --- archive_low_confidence_facts ---
 
 
 async def test_archive_moves_low_confidence(db: aiosqlite.Connection):
@@ -1331,11 +1331,11 @@ async def test_categorized_fact_unknown_category_stored(db: aiosqlite.Connection
     assert facts[0]["category"] == "exotic"
 
 
-# --- M43: Session-scoped fact isolation ---
+# --- Session-scoped fact isolation ---
 
 
 async def test_get_facts_user_fact_hidden_from_other_session(db: aiosqlite.Connection):
-    """M43: user-category fact from session A is not returned when querying from session B."""
+    """: user-category fact from session A is not returned when querying from session B."""
     await save_fact(db, "Marco likes concise answers", "curator",
                     session="session-A", category="user")
     await save_fact(db, "Project uses Python 3.12", "curator",
@@ -1352,7 +1352,7 @@ async def test_get_facts_user_fact_hidden_from_other_session(db: aiosqlite.Conne
 
 
 async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connection):
-    """M43: user-category fact is returned when querying the session that created it."""
+    """: user-category fact is returned when querying the session that created it."""
     await save_fact(db, "Prefers dark mode", "curator",
                     session="session-A", category="user")
     facts_a = await get_facts(db, session="session-A")
@@ -1361,7 +1361,7 @@ async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connecti
 
 
 async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connection):
-    """M43: project / wrapper / general facts are returned regardless of session."""
+    """: project / wrapper / general facts are returned regardless of session."""
     await save_fact(db, "Uses FastAPI", "curator", session="session-X", category="project")
     await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="wrapper")
     await save_fact(db, "Async preferred", "curator", session="session-X", category="general")
@@ -1375,7 +1375,7 @@ async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connecti
 
 
 async def test_get_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
-    """M43: admin user receives user-category facts from every session."""
+    """: admin user receives user-category facts from every session."""
     await save_fact(db, "Alice prefers verbose output", "curator",
                     session="session-A", category="user")
     await save_fact(db, "Bob prefers brief output", "curator",
@@ -1388,11 +1388,11 @@ async def test_get_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
 
 
 
-# --- M42: search_facts (FTS5) ---
+# --- search_facts (FTS5) ---
 
 
 async def test_search_facts_returns_relevant_result(db: aiosqlite.Connection):
-    """M42: search_facts returns facts matching the query keywords."""
+    """: search_facts returns facts matching the query keywords."""
     await save_fact(db, "The project uses PostgreSQL 15 as the database", "curator")
     await save_fact(db, "ffmpeg is installed at /usr/bin/ffmpeg", "curator")
     await save_fact(db, "Python 3.12 is the runtime environment", "curator")
@@ -1405,7 +1405,7 @@ async def test_search_facts_returns_relevant_result(db: aiosqlite.Connection):
 
 
 async def test_search_facts_ignores_unrelated_facts(db: aiosqlite.Connection):
-    """M42: FTS search ranks matching facts first, limit caps the result set."""
+    """: FTS search ranks matching facts first, limit caps the result set."""
     await save_fact(db, "The project uses PostgreSQL 15", "curator")
     await save_fact(db, "ffmpeg is at /usr/bin/ffmpeg", "curator")
     await save_fact(db, "Python 3.12 is the runtime", "curator")
@@ -1423,7 +1423,7 @@ async def test_search_facts_ignores_unrelated_facts(db: aiosqlite.Connection):
 
 
 async def test_search_facts_respects_limit(db: aiosqlite.Connection):
-    """M42: search_facts never returns more than limit results."""
+    """: search_facts never returns more than limit results."""
     for i in range(20):
         await save_fact(db, f"Python project fact number {i}", "curator")
 
@@ -1432,7 +1432,7 @@ async def test_search_facts_respects_limit(db: aiosqlite.Connection):
 
 
 async def test_search_facts_session_scoped(db: aiosqlite.Connection):
-    """M42: search_facts applies session scoping to user-category facts."""
+    """: search_facts applies session scoping to user-category facts."""
     await save_fact(db, "Alice prefers dark mode in Python IDE", "curator",
                     session="session-A", category="user")
     await save_fact(db, "Python is the main language", "curator",
@@ -1450,7 +1450,7 @@ async def test_search_facts_session_scoped(db: aiosqlite.Connection):
 
 
 async def test_search_facts_empty_query_falls_back_to_get_facts(db: aiosqlite.Connection):
-    """M42: empty/whitespace query falls back to get_facts (no FTS error)."""
+    """: empty/whitespace query falls back to get_facts (no FTS error)."""
     await save_fact(db, "Some fact about the project", "curator")
     results = await search_facts(db, "")
     assert len(results) == 1
@@ -1460,7 +1460,7 @@ async def test_search_facts_empty_query_falls_back_to_get_facts(db: aiosqlite.Co
 
 
 async def test_search_facts_no_match_falls_back_to_get_facts(db: aiosqlite.Connection):
-    """M42: query with no matching facts falls back to full get_facts result."""
+    """: query with no matching facts falls back to full get_facts result."""
     await save_fact(db, "PostgreSQL is the database", "curator")
     # Query for something completely unrelated
     results = await search_facts(db, "xyzzy quux nonexistent term")
@@ -1469,7 +1469,7 @@ async def test_search_facts_no_match_falls_back_to_get_facts(db: aiosqlite.Conne
 
 
 async def test_search_facts_admin_sees_all_sessions(db: aiosqlite.Connection):
-    """M42: is_admin=True lets search_facts return user-category facts from any session."""
+    """: is_admin=True lets search_facts return user-category facts from any session."""
     await save_fact(db, "Alice prefers verbose output in Python", "curator",
                     session="session-A", category="user")
     await save_fact(db, "Bob prefers brief Python output", "curator",
@@ -1513,7 +1513,7 @@ async def test_search_facts_session_none_no_admin(db: aiosqlite.Connection):
 
 
 async def test_search_facts_unicode_content_and_query(db: aiosqlite.Connection):
-    """M42: facts with non-ASCII content are indexed and retrievable.
+    """: facts with non-ASCII content are indexed and retrievable.
 
     SQLite FTS5 handles UTF-8 text; _fts5_query's \\w+ extracts ASCII word
     tokens from the query, so we search with the transliterated ASCII portion.
@@ -1575,11 +1575,11 @@ async def test_fts5_fallback_on_empty_query_returns_all_facts(db: aiosqlite.Conn
     assert len(results) == 2
 
 
-# --- M1303 Bug A: _fts5_query tokenizer alignment ---
+# -- Bug A: _fts5_query tokenizer alignment ---
 
 
 class TestFts5QueryTokenization:
-    """M1303 Bug A: _fts5_query must split on FTS5 separators (`.`, `/`, `-`).
+    """ Bug A: _fts5_query must split on FTS5 separators (`.`, `/`, `-`).
 
     Background: the default FTS5 unicode61 tokenizer treats `.`, `/`, `-` as
     word boundaries, but the previous regex `[A-Za-z0-9_./-]+` kept those
@@ -1647,7 +1647,7 @@ class TestFts5QueryTokenization:
 
 
 class TestFts5QueryEndToEnd:
-    """M1303 Bug A: end-to-end verification through search_facts on real FTS5.
+    """ Bug A: end-to-end verification through search_facts on real FTS5.
 
     These tests are written to be RED before the fix: they pass enough
     decoy facts that the silent fts5-error fallback to "all facts" can no
@@ -1805,7 +1805,7 @@ async def test_save_learning_case_insensitive_filter(db: aiosqlite.Connection):
     assert len(learnings) == 0
 
 
-# --- M319: learning dedup at save time ---
+# --- learning dedup at save time ---
 
 
 async def test_save_learning_dedup_exact_duplicate(db: aiosqlite.Connection):
@@ -1868,7 +1868,7 @@ async def test_save_learning_dedup_skips_promoted(db: aiosqlite.Connection):
     assert r2 != 0
 
 
-# --- M339: learning dedup stopword normalization ---
+# --- learning dedup stopword normalization ---
 
 
 async def test_word_overlap_stopword_normalization(db: aiosqlite.Connection):
@@ -2311,7 +2311,7 @@ async def test_search_facts_by_tags_ranking(db: aiosqlite.Connection):
 async def test_search_facts_by_tags_session_filter(db: aiosqlite.Connection):
     """Non-admin users only see their session's user facts + global facts.
 
-    M576: uses category-based filter (category != 'user') consistently with
+    uses category-based filter (category != 'user') consistently with
     get_facts/search_facts, replacing the old session IS NULL check.
     """
     await save_fact(db, "Global", "c", category="general", tags=["test"])
@@ -2340,7 +2340,7 @@ async def test_fact_tags_cascade_on_delete(db: aiosqlite.Connection):
     assert (await cur.fetchone())[0] == 0
 
 
-# --- M342: Entity table + store functions ---
+# --- Entity table + store functions ---
 
 
 async def test_find_or_create_entity_new(db: aiosqlite.Connection):
@@ -2444,7 +2444,7 @@ async def test_entities_table_exists(db: aiosqlite.Connection):
     assert await cur.fetchone() is not None
 
 
-# --- M382: backfill_fact_entities ---
+# --- backfill_fact_entities ---
 
 
 async def test_backfill_fact_entities_links_orphans(db: aiosqlite.Connection):
@@ -2497,7 +2497,7 @@ async def test_backfill_fact_entities_already_linked(db: aiosqlite.Connection):
     assert await backfill_fact_entities(db) == 0
 
 
-# --- M393: backfill word-boundary matching ---
+# --- backfill word-boundary matching ---
 
 
 async def test_backfill_word_boundary_java_not_javascript(db: aiosqlite.Connection):
@@ -2537,7 +2537,7 @@ async def test_backfill_word_boundary_exact_match(db: aiosqlite.Connection):
     assert (await cur.fetchone())[0] == eid
 
 
-# --- M345: entity: tag migration ---
+# --- entity: tag migration ---
 
 
 async def test_scored_entity_only(db: aiosqlite.Connection):
