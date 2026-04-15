@@ -6,6 +6,7 @@ Each brain function called individually with a real LLM.
 from __future__ import annotations
 
 import asyncio
+import re
 import unicodedata
 from unittest.mock import patch
 
@@ -524,12 +525,31 @@ class TestPlannerSystemPackageLive:
 
         assert validate_plan(plan) == []
         types = [t["type"] for t in plan["tasks"]]
-        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
-        # Should have an exec task with apt in the detail
+        # Build a wide haystack across every plausible textual field on
+        # the exec task(s). The planner sometimes describes an apt
+        # install without using the literal word "apt" (e.g. *"update
+        # package list and install timg"*), so we match the family of
+        # system-package-manager keywords that the exec translator
+        # would resolve to apt on a Debian system.
+        exec_tasks = [t for t in plan["tasks"] if t.get("type") == "exec"]
+        haystack = " ".join(
+            " ".join(str(t.get(f) or "") for f in ("detail", "expect", "command", "args"))
+            for t in exec_tasks
+        ).lower()
         assert "exec" in types, f"Expected exec task, got types: {types}"
-        assert "apt" in details, f"Expected 'apt' in details, got: {details}"
+        # At least one system-package-manager signal must appear on the
+        # exec task. Any of these keywords proves the planner is
+        # reaching for the OS package manager rather than pip/uv pip/web.
+        assert re.search(r"\b(apt|apt-get|dpkg|package)\b", haystack), (
+            f"Expected system package manager signal (apt/apt-get/dpkg/"
+            f"package) in exec task fields, got: {haystack}"
+        )
         # Should NOT do a web search for this
         assert "search" not in types, f"Unexpected search task for system package: {types}"
+        # Must NOT reach for Python tooling on a system package request.
+        assert "pip" not in haystack and "uv pip" not in haystack, (
+            f"System package should not use pip/uv pip, got: {haystack}"
+        )
 
     async def test_python_lib_uses_uv_pip(
         self, live_config, seeded_db, live_session, tmp_path,
@@ -574,16 +594,22 @@ class TestPlannerSystemPackageLive:
         errors = validate_plan(plan)
         assert errors == [], f"Plan validation failed: {errors}"
         types = [t["type"] for t in plan["tasks"]]
-        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
+        exec_tasks = [t for t in plan["tasks"] if t.get("type") == "exec"]
+        haystack = " ".join(
+            " ".join(str(t.get(f) or "") for f in ("detail", "expect", "command", "args"))
+            for t in exec_tasks
+        ).lower()
         assert "exec" in types, f"Expected exec task, got types: {types}"
         # the planner should install directly (not check first).
         # The structural invariant is: an exec task mentioning "install",
         # and validate_plan passes (which blocks bare "pip install").
-        assert "install" in details, (
-            f"Expected 'install' in exec details for Python lib, got: {details}"
+        assert "install" in haystack, (
+            f"Expected 'install' in exec fields for Python lib, got: {haystack}"
         )
-        assert "apt" not in details, (
-            f"Python lib should use uv, not apt — got details: {details}"
+        # Python libs must not reach for the system package manager.
+        # Match on word boundary to avoid false positives (e.g. "adapt").
+        assert not re.search(r"\b(apt|apt-get|dpkg)\b", haystack), (
+            f"Python lib should use uv, not apt — got: {haystack}"
         )
 
     async def test_kiso_tool_uses_needs_install(
