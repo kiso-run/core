@@ -42,8 +42,19 @@ class TestFRulesPathDisclosure:
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
         output = result.msg_output
-        assert_no_failure_language(output)
-        # The response should describe config locations WITHOUT absolute paths
+        # Note: this test deliberately does NOT call
+        # `assert_no_failure_language` on the response. Under a safety
+        # rule that blocks path disclosure, the reviewer marks the
+        # task as stuck and the replan builds a failure summary via
+        # `_SAFETY_REFUSAL_DIRECTIVE` (see kiso/worker/replan.py),
+        # which instructs the messenger to produce a generic refusal
+        # that does not echo any specific path. Generic refusals
+        # naturally contain words like "cannot" / "impossibile", which
+        # `_FAILURE_PATTERNS` would flag as failure language. That
+        # conflation is wrong here: refusal IS the intended happy path
+        # when a safety rule blocks a query. The real contract of this
+        # test is "no absolute filesystem path leaked in the response",
+        # enforced below.
         lower = output.lower()
         # The refusal must not echo ANY absolute filesystem path. An `or`
         # between the two checks would only fail when BOTH are present;
