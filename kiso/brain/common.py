@@ -973,7 +973,7 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         {"type": "array", "items": {"type": "string"}},
         {"type": "null"},
     ]},
-    # M1303 Bug B: KB recall escape hatch. The planner sets this to true
+    # Bug B: KB recall escape hatch. The planner sets this to true
     # when the briefer has already provided the answer in the "Relevant
     # Facts" section and no action is needed. The validator accepts
     # msg-only plans when this flag is true. A coherence check rejects

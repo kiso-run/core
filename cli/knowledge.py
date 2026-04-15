@@ -1,4 +1,4 @@
-"""M673: CLI commands for knowledge management."""
+""": CLI commands for knowledge management."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""M692: Preset install/remove orchestration."""
+""": Preset install/remove orchestration."""
 
 from __future__ import annotations
 

@@ -170,12 +170,12 @@ class WorkerEntry:
 
 
 def _migrate_summarizer_session_role(roles_dir: "Path") -> None:
-    """In-place migration for the M1293 summarizer file rename.
+    """In-place migration for the summarizer file rename.
 
     The bundled file ``summarizer-session.md`` was renamed to
     ``summarizer.md`` so the role filename matches its key in
     ``_MODEL_METADATA``. Existing user dirs may still hold a
-    customized ``summarizer-session.md`` from before M1293; this
+    customized ``summarizer-session.md`` from before; this
     helper renames it in place.
 
     Behavior:
@@ -221,7 +221,7 @@ def _populate_kiso_dir(target: Path) -> None:
     - Creates the standard subdirs (``wrappers``, ``connectors``,
       ``recipes``, ``sessions``, ``roles``, ``reference``,
       ``sys/bin``, ``sys/ssh``).
-    - Runs the M1293 ``summarizer-session.md → summarizer.md``
+    - Runs the ``summarizer-session.md → summarizer.md``
       migration before copying bundled roles, so a stale legacy
       file does not land alongside the canonical filename.
     - Additively copies bundled roles into ``target/roles/``: a
@@ -270,7 +270,7 @@ def _populate_kiso_dir(target: Path) -> None:
     except (FileNotFoundError, OSError, TypeError) as e:
         log.warning("Failed to sync reference docs: %s", e)
 
-    # M1293: rename legacy summarizer-session.md → summarizer.md before
+    # rename legacy summarizer-session.md → summarizer.md before
     # the additive copy, so the bundled summarizer.md does not land
     # alongside a stale legacy file.
     _migrate_summarizer_session_role(target / "roles")

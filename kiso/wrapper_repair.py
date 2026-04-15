@@ -66,7 +66,7 @@ async def repair_unhealthy_wrappers(wrappers_dir: Path | None = None) -> list[st
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
-                # M1295: own process group so the helper can
+                # own process group so the helper can
                 # killpg the whole tree on timeout.
                 start_new_session=True,
             )
@@ -153,7 +153,7 @@ async def rerun_all_deps(wrappers_dir: Path | None = None) -> list[str]:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_clean_env(),
-                # M1295: own process group so the helper can
+                # own process group so the helper can
                 # killpg the whole tree on timeout.
                 start_new_session=True,
             )

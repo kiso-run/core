@@ -1644,7 +1644,7 @@ async def _execute_plan(
     for task in tasks:
         ctx.task_contracts[task["id"]] = task["contract"]
 
-    # Snapshot workspace for cross-plan summary (M823)
+    # Snapshot workspace for cross-plan summary
     pre_snapshot = _snapshot_workspace(session)
 
     # --- Build execution batches from parallel groups ---
@@ -1882,7 +1882,7 @@ async def _apply_curator_result(
 ) -> None:
     """Apply curator evaluations: promote facts, create pending questions, discard.
 
-    M689: If session has project_id, facts with category in {"project", "behavior"}
+    If session has project_id, facts with category in {"project", "behavior"}
     are scoped to that project. Facts with category in {"general", "wrapper", "system"}
     remain global (project_id=NULL).
     """
@@ -2077,7 +2077,7 @@ async def _handle_loop_cancel(
 ) -> None:
     """Mark plan cancelled, send cancel summary, clear cancel event.
 
-    M307: create the msg task BEFORE changing plan status so the CLI's
+    create the msg task BEFORE changing plan status so the CLI's
     stability window doesn't expire while the messenger is composing.
     """
     cancel_detail = _build_cancel_summary(completed, remaining, goal)
@@ -2123,7 +2123,7 @@ async def _handle_loop_failure(
 ) -> None:
     """Mark plan failed, send failure message, optionally deliver webhook.
 
-    M307: create the msg task BEFORE changing plan status so the CLI's
+    create the msg task BEFORE changing plan status so the CLI's
     stability window doesn't expire while the messenger is composing.
     """
     fail_detail = _build_failure_summary(completed, remaining, goal, reason=reason)

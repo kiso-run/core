@@ -1,4 +1,4 @@
-"""M674: CLI commands for behavior management (convenience wrapper over /knowledge)."""
+""": CLI commands for behavior management (convenience wrapper over /knowledge)."""
 
 from __future__ import annotations
 

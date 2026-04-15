@@ -1,4 +1,4 @@
-"""M687-M688: CLI commands for project management."""
+""": CLI commands for project management."""
 
 from __future__ import annotations
 

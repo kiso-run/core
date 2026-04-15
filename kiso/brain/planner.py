@@ -494,7 +494,7 @@ def _validate_plan_ordering(
 
     # msg-only plans are rejected unless one of the escape flags is set:
     # needs_install (install proposal), knowledge (storage), kb_answer
-    # (M1303: KB recall from briefer context), or allow_msg_only
+    # (: KB recall from briefer context), or allow_msg_only
     # (structural fallback).
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
@@ -827,7 +827,7 @@ def validate_plan(
                 )
             return errors
 
-    # M1303 Bug B coherence check: kb_answer is only valid for msg-only
+    # Bug B coherence check: kb_answer is only valid for msg-only
     # plans answering from briefer-supplied KB context. If the planner
     # sets it together with action tasks, the flag is incoherent — the
     # plan is not actually a recall, it has work to do. Mirrors the
@@ -1164,7 +1164,7 @@ async def build_planner_messages(
         if "planning_rules" not in modules:
             modules.append("planning_rules")
         # wrappers_rules needed when any wrappers are installed — contains
-        # "use directly" rule and args/guide validation.  Broader than M1049
+        # "use directly" rule and args/guide validation.  Broader than
         # (which checked briefing["wrappers"]) because the briefer sometimes
         # skips wrapper selection even when wrappers are relevant.
         if installed and "wrappers_rules" not in modules:
@@ -1444,7 +1444,7 @@ async def run_planner(
 
     max_tasks = max_tasks_override if max_tasks_override is not None else int(config.settings["max_plan_tasks"])
 
-    # Extract registry hint names for install validation (M862).
+    # Extract registry hint names for install validation.
     _sysenv = get_system_env(config)
     _reg_hint_names = _parse_registry_hint_names(_sysenv.get("registry_hints", ""))
     install_route = _classify_install_mode(

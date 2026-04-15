@@ -132,8 +132,8 @@ def sanitize_output(
 ) -> str:
     """Strip known secret values from output (plaintext, base64, URL-encoded, JSON-escaped).
 
-    M506: compile a single regex from all variants for a single-pass replacement.
-    M547: cache compiled pattern — recompile only when secret values change.
+    compile a single regex from all variants for a single-pass replacement.
+    cache compiled pattern — recompile only when secret values change.
     """
     global _sanitize_cache  # noqa: PLW0603
     all_values = frozenset(

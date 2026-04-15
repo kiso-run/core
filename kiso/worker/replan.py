@@ -52,7 +52,7 @@ def _format_plan_outputs_for_msg(
     for result in reversed(_collect_task_results(plan_outputs=plan_outputs)):
         idx = result.task_index
         header = f"[{idx}] {result.task_type}: {result.detail}"
-        # M1327: raw output is ground truth. Always include it verbatim
+        # raw output is ground truth. Always include it verbatim
         # when it fits the budget, even when a reviewer_summary exists.
         # The reviewer_summary is a budget-fallback, not a replacement:
         # downstream consumers (messenger, replan) need the actual values
@@ -412,7 +412,7 @@ def _build_failure_summary(
     return "\n\n".join(parts)
 
 
-# M1328: user-visible replan messages must NOT interpolate reviewer.reason
+# user-visible replan messages must NOT interpolate reviewer.reason
 # or replan_history text. Both are internal metadata produced by LLMs in
 # diagnostic mode and can contain failure language, absolute filesystem
 # paths, command names, and other sensitive details. The reason remains
@@ -440,7 +440,7 @@ def get_replan_message(
 
     Note: *reason* and *tried* are accepted for backward compatibility
     with call sites but are intentionally NOT interpolated into the
-    user-visible output (M1328). They remain available in logs.
+    user-visible output. They remain available in logs.
     """
     template = _REPLAN_TEMPLATES[kind]
     return template.format(depth=depth, max=max_depth)

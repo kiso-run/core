@@ -21,7 +21,7 @@ from .shared import (
 def _fts5_query(text: str) -> str:
     """Tokenize *text* into a valid FTS5 OR-query.
 
-    M1303 Bug A: the regex must mirror what the FTS5 unicode61 tokenizer
+    Bug A: the regex must mirror what the FTS5 unicode61 tokenizer
     actually treats as a word character. The default unicode61 splits on
     `.`, `/`, `-` (and any other non-word, non-underscore character), so
     those characters MUST be excluded from the regex character class. The

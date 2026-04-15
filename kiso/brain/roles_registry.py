@@ -6,7 +6,7 @@ human-readable description, the model key it consumes (looked up in
 prompt filename it loads from ``~/.kiso/roles/``, and the Python entry
 point that invokes it.
 
-It exists to back the ``kiso roles`` CLI surface (M1292) and any
+It exists to back the ``kiso roles`` CLI surface and any
 future docs generation. Adding a new role is a two-line change:
 add the entry to ``_MODEL_METADATA`` in ``kiso/config.py`` and add
 the entry below.

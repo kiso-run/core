@@ -9,7 +9,7 @@ from cli._http import cli_get, cli_post
 
 
 def session_create(args) -> None:
-    """M699: Create a named session."""
+    """: Create a named session."""
     from cli.plugin_ops import require_admin
     require_admin()
     body: dict = {"session": args.name}

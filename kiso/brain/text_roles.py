@@ -356,10 +356,10 @@ _TOOL_CALL_BLOCK_RE = re.compile(
 )
 _TOOL_CALL_TAG_RE = re.compile(r"</?(tool_call|function_call)[^>]*>")
 
-# M1300: deterministic emoji strip for messenger output. The
+# deterministic emoji strip for messenger output. The
 # messenger.md prompt has a CRITICAL no-emoji rule, but smaller
 # models (e.g. gemini-2.5-flash) periodically violate it. The
-# regression history (M384, then again 2026-04-09) shows that
+# regression history (, then again 2026-04-09) shows that
 # prompt-only enforcement is not reliable, so we apply a
 # deterministic strip on every messenger output. The character
 # ranges below are kept in sync with the

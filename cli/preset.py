@@ -1,4 +1,4 @@
-"""M693-M694: CLI commands for preset management."""
+""": CLI commands for preset management."""
 
 from __future__ import annotations
 

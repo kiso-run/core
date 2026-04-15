@@ -310,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--yes", "-y", action="store_true",
                     help="skip confirmation for non-empty existing files")
 
-    # Roles (M1292) — plural form is the canonical surface; singular
+    # Roles — plural form is the canonical surface; singular
     # `kiso role` above is preserved for one cycle as a deprecated alias.
     roles_sub = sub.add_parser(
         "roles", help="discover, inspect, and reset role files",

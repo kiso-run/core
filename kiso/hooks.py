@@ -53,7 +53,7 @@ async def run_pre_exec_hooks(
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                # M1295: own process group so the helper can
+                # own process group so the helper can
                 # killpg the whole tree on timeout (the shell may
                 # have forked children that hold the pipes open).
                 start_new_session=True,
@@ -103,7 +103,7 @@ async def run_post_exec_hooks(
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
-                # M1295: see run_pre_exec_hooks above
+                # see run_pre_exec_hooks above
                 start_new_session=True,
             )
             await communicate_with_timeout(

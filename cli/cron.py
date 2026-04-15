@@ -1,4 +1,4 @@
-"""M681: CLI commands for cron job management."""
+""": CLI commands for cron job management."""
 
 from __future__ import annotations
 

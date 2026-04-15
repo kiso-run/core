@@ -20,7 +20,7 @@ async def communicate_with_timeout(
 ) -> tuple[bytes, bytes]:
     """Bounded ``proc.communicate(...)`` that kills + reaps on timeout.
 
-    M1295 fix. The bare ``asyncio.wait_for(proc.communicate(...),
+     fix. The bare ``asyncio.wait_for(proc.communicate(...),
     timeout=...)`` pattern is dangerous: on timeout, ``wait_for``
     cancels the inner ``communicate()`` coroutine, which leaves
     the StreamReaders for stdout/stderr in a cancelled-suspended
