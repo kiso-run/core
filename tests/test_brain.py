@@ -10335,6 +10335,52 @@ class TestM984NeedsInstallMsgOnly:
         errors = validate_plan(plan)
         assert not any("needs_install is set" in e for e in errors)
 
+    def test_needs_install_with_search_bias_drop_proposal(self):
+        """When the drafted plan contains a `search` task alongside
+        `needs_install`, the validator must emit a dedicated feedback
+        message biasing the retry toward DROPPING `needs_install`
+        (search is a built-in Kiso capability that never requires a
+        wrapper), not toward reducing to msg-only as the legacy
+        feedback would prescribe."""
+        plan = {
+            "goal": "Find Italian restaurants in Berlin",
+            "needs_install": ["browser"],
+            "tasks": [
+                {"type": "search", "detail": "italian restaurants berlin",
+                 "expect": "top-rated list"},
+                {"type": "msg", "detail": "Answer in English. Here you go"},
+            ],
+        }
+        errors = validate_plan(plan)
+        joined = " ".join(errors).lower()
+        # Still surfaces the same constraint class for legacy compat
+        assert any("needs_install is set" in e for e in errors)
+        # Dedicated guidance: mention built-in + drop proposal
+        assert "built-in" in joined
+        assert "drop needs_install" in joined or "remove needs_install" in joined
+        # Must NOT prescribe the reduce-to-msg direction for this combo
+        assert "end the plan with a msg" not in joined
+
+    def test_needs_install_with_exec_keeps_legacy_reduce_to_msg(self):
+        """Guard: exec+needs_install still gets the legacy
+        'reduce to msg' feedback. The new bias only fires when the
+        non-msg tasks are exclusively `search` — other action types
+        may genuinely require install-first ordering."""
+        plan = {
+            "goal": "Install browser and navigate",
+            "needs_install": ["browser"],
+            "tasks": [
+                {"type": "exec", "detail": "apt install chromium",
+                 "expect": "installed"},
+                {"type": "msg", "detail": "Answer in English. Done"},
+            ],
+        }
+        errors = validate_plan(plan)
+        joined = " ".join(errors).lower()
+        assert any("needs_install is set" in e for e in errors)
+        assert "end the plan with a msg" in joined
+        assert "built-in" not in joined
+
 
 class TestArtifactGoalMismatch:
     """reject msg-only plans when goal mentions file creation."""

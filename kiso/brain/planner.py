@@ -803,10 +803,28 @@ def validate_plan(
     if plan.get("needs_install"):
         non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
         if non_msg:
-            errors.append(
-                f"needs_install is set — only msg tasks are allowed "
-                f"(found: {non_msg}). End the plan with a msg asking for approval."
-            )
+            # Dedicated guidance when the only drafted non-msg tasks are
+            # `search`: Kiso's `search` is a built-in capability that
+            # never requires a wrapper install. In that case the right
+            # correction is dropping `needs_install`, not reducing to
+            # msg-only. Biasing the retry toward the semantically
+            # correct direction avoids the failure mode observed in
+            # `TestSearchTaskFlow.test_planner_emits_search_for_web_query`
+            # (2026-04-15 live run).
+            if non_msg and all(t == TASK_TYPE_SEARCH for t in non_msg):
+                errors.append(
+                    f"needs_install is set but the plan uses `search` "
+                    f"(found: {non_msg}). `search` is a built-in Kiso "
+                    f"capability that does not require any wrapper "
+                    f"install. Drop needs_install and keep the search "
+                    f"task(s) — the built-in handles this request "
+                    f"without installing anything."
+                )
+            else:
+                errors.append(
+                    f"needs_install is set — only msg tasks are allowed "
+                    f"(found: {non_msg}). End the plan with a msg asking for approval."
+                )
             return errors
 
     # M1303 Bug B coherence check: kb_answer is only valid for msg-only
