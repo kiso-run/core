@@ -92,10 +92,13 @@ from .common import (
     _retry_llm_with_validation,
     _GIT_URL_RE,
     build_recent_context,
+    format_mcp_catalog,
     run_briefer,
 )
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from kiso.worker.utils import ExecutionState
 
 log = logging.getLogger("kiso.brain")
@@ -1445,6 +1448,7 @@ async def run_planner(
     install_approved: bool = False,
     max_tasks_override: int | None = None,
     investigate: bool = False,
+    mcp_manager: "Any | None" = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
 
@@ -1457,14 +1461,21 @@ async def run_planner(
             before each retry attempt.
         max_tasks_override: override max_plan_tasks (used by replan shrinking
             to reduce the limit at deeper replan depths).
+        mcp_manager: Optional MCPManager-like object. When provided,
+            its cached method catalog is rendered via
+            ``format_mcp_catalog`` and injected into the planner
+            and briefer context, and its structured pool is used
+            for validate_plan's type=mcp validation.
 
     Returns the validated plan dict with keys: goal, secrets, tasks.
     Raises PlanError if all retries exhausted.
     """
+    _mcp_catalog_text = format_mcp_catalog(mcp_manager) if mcp_manager else None
     messages, installed_names, installed_info = await build_planner_messages(
         db, config, session, user_role, new_message, user_wrappers=user_wrappers,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
+        mcp_catalog_text=_mcp_catalog_text,
     )
     if on_context_ready:
         await on_context_ready()

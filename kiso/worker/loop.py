@@ -1951,6 +1951,20 @@ async def run_worker(
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
     slog = SessionLogger(session, base_dir=KISO_DIR)
 
+    # Construct a session-scoped MCPManager so the briefer and planner
+    # can see the available MCP methods (M1373). The manager is lazily
+    # constructed only when the config has MCP servers defined. Its
+    # method cache survives across messages/replans within the session
+    # so format_mcp_catalog() returns real data after the first warm-up.
+    _mcp_manager = None
+    if config.mcp_servers:
+        try:
+            from kiso.mcp.manager import MCPManager
+            _mcp_manager = MCPManager(config.mcp_servers)
+            log.info("MCPManager constructed for %d server(s)", len(config.mcp_servers))
+        except Exception as exc:
+            log.warning("Failed to construct MCPManager: %s", exc)
+
     _pending_knowledge_task: asyncio.Task | None = None
 
     try:
@@ -1990,7 +2004,8 @@ async def run_worker(
                     max_replan_depth, classifier_timeout=classifier_timeout,
                     messenger_timeout=messenger_timeout,
                     slog=slog, set_phase=set_phase,
-                    update_hints=update_hints)
+                    update_hints=update_hints,
+                    mcp_manager=_mcp_manager)
             except Exception:
                 log.exception("Unexpected error processing message in session=%s", session)
                 slog.error("Unexpected error processing message")
@@ -2002,6 +2017,11 @@ async def run_worker(
                 await _pending_knowledge_task
             except Exception:
                 log.exception("Background knowledge task failed during shutdown for session=%s", session)
+        if _mcp_manager is not None:
+            try:
+                await _mcp_manager.shutdown_all()
+            except Exception:
+                log.exception("MCPManager shutdown failed for session=%s", session)
         _notify_phase(set_phase, WORKER_PHASE_IDLE)
         slog.close()
 
@@ -2245,6 +2265,7 @@ async def _run_planning_loop(
     install_approved: bool = False,
     recipe_contracts_text: str = "",
     recipe_runtime_contracts: "list[dict] | None" = None,
+    mcp_manager: "Any | None" = None,
 ) -> int:
     """Execute plan with replan loop. Returns the final plan_id."""
 
@@ -2486,6 +2507,7 @@ async def _run_planning_loop(
                 is_replan=True,
                 max_tasks_override=_effective_max,
                 install_approved=install_approved,
+                mcp_manager=mcp_manager,
             )
         except PlanError as e:
             log.error("Replan failed: %s", e)
@@ -2595,6 +2617,7 @@ async def _process_message(
     slog: SessionLogger | None = None,
     set_phase: Callable[[str], None] | None = None,
     update_hints: list | None = None,
+    mcp_manager: "Any | None" = None,
 ) -> asyncio.Task | None:
     """Process a single message. Returns a background knowledge task (or None)."""
     msg_id: int = msg["id"]
@@ -2729,6 +2752,7 @@ async def _process_message(
             # investigate mode → planner gets the read-only
             # diagnose-first contract injected as a modular section.
             investigate=(msg_class == "investigate"),
+            mcp_manager=mcp_manager,
         )
     except PlanError as e:
         log.error("Planning failed session=%s msg=%d: %s", session, msg_id, e)
@@ -2799,6 +2823,7 @@ async def _process_message(
         install_approved=_install_approved,
         recipe_contracts_text=recipe_contracts_text,
         recipe_runtime_contracts=recipe_runtime_contracts,
+        mcp_manager=mcp_manager,
     )
 
     # --- Store token usage on the final plan ---
