@@ -86,6 +86,7 @@ class MCPStdioClient(MCPClient):
         self._shutdown_grace_s = _SHUTDOWN_GRACE_S
         self._shutting_down = False
         self._stdout_closed = False
+        self._auth_token: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -96,6 +97,11 @@ class MCPStdioClient(MCPClient):
             raise MCPProtocolError("client already initialized")
         if self._proc is not None:
             raise MCPProtocolError("client already has a subprocess")
+
+        # Resolve auth before spawning so the token is available
+        # in _build_env (M1374).
+        from kiso.mcp.auth import resolve_auth
+        self._auth_token = resolve_auth(self._server)
 
         await self._spawn()
 
@@ -308,6 +314,12 @@ class MCPStdioClient(MCPClient):
         # Preserve explicit non-secret KISO_ vars if any exist (none today).
         # Overlay server-specific env (already denied KISO_* at parse time).
         base.update(self._server.env)
+        # Inject resolved OAuth token (M1374) so the MCP server can
+        # read it from env. Convention: OAUTH_TOKEN is not standardized
+        # by the MCP spec but is the most common pattern for stdio
+        # servers that need auth.
+        if self._auth_token:
+            base["OAUTH_TOKEN"] = self._auth_token
         return base
 
     def _open_stderr_log(self) -> None:

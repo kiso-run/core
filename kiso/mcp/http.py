@@ -83,6 +83,7 @@ class MCPStreamableHTTPClient(MCPClient):
         self._http_factory = _http_client_factory or self._default_http_factory
         self._http: httpx.AsyncClient | None = None
         self._server_info: MCPServerInfo | None = None
+        self._auth_token: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -96,6 +97,11 @@ class MCPStreamableHTTPClient(MCPClient):
         if self._initialized:
             raise MCPProtocolError("client already initialized")
         self._shut_down = False
+
+        # Resolve auth before connecting (M1374).
+        from kiso.mcp.auth import resolve_auth
+        self._auth_token = resolve_auth(self._server)
+
         self._http = self._http_factory()
 
         response_body, headers = await self._post_rpc(
@@ -247,6 +253,8 @@ class MCPStreamableHTTPClient(MCPClient):
         }
         for k, v in self._server.headers.items():
             headers[k] = v
+        if self._auth_token:
+            headers["Authorization"] = f"Bearer {self._auth_token}"
         if with_session and self._session_id is not None:
             headers["Mcp-Session-Id"] = self._session_id
         return headers
