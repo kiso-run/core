@@ -454,13 +454,32 @@ def build_exec_translator_messages(
     retry_context: str = "",
     workspace_files: str = "",
     recipe_contracts_text: str = "",
+    selected_skills: "list | None" = None,
 ) -> list[dict]:
-    """Build the message list for the exec translator LLM call."""
+    """Build the message list for the exec translator LLM call.
+
+    M1540: when ``selected_skills`` is provided, their ``## Worker``
+    role sections are injected as a ``## Skills (worker guidance)``
+    block between ``Preceding Task Outputs`` and ``Task``. Skills
+    without a ``## Worker`` section contribute nothing.
+    """
+    from kiso.skill_runtime import instructions_for_worker
+
     system_prompt = _load_system_prompt("worker")
     context_parts: list[str] = [f"## System Environment\n{sys_env_text}"]
     _add_section(context_parts, "Workspace Files", workspace_files)
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
     _add_section(context_parts, "Recipe Contracts", recipe_contracts_text)
+    if selected_skills:
+        skill_blocks: list[str] = []
+        for skill in selected_skills:
+            worker_body = instructions_for_worker(skill).strip()
+            if worker_body:
+                skill_blocks.append(f"### {skill.name}\n{worker_body}")
+        if skill_blocks:
+            context_parts.append(
+                "## Skills (worker guidance)\n\n" + "\n\n".join(skill_blocks)
+            )
     _add_section(context_parts, "Retry Context", retry_context)
     context_parts.append(f"## Task\n{detail}")
     return _build_messages_from_sections(system_prompt, context_parts)

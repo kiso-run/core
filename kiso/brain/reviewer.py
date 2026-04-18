@@ -256,15 +256,38 @@ def build_reviewer_messages(
     success: bool | None = None,
     exit_code: int | None = None,
     safety_rules: list[str] | None = None,
+    selected_skills: "list | None" = None,
 ) -> list[dict]:
-    """Build the message list for the reviewer LLM call."""
+    """Build the message list for the reviewer LLM call.
+
+    M1540: ``selected_skills`` with ``## Reviewer`` sections are
+    injected as ``## Skills (reviewer heuristics)`` AFTER
+    ``## Expected Outcome`` and BEFORE ``## Actual Output``. They
+    supplement but do not replace ``expect`` — the reviewer prompt
+    keeps ``expect`` as the primary pass/fail criterion.
+    """
     modules = _select_reviewer_modules(output, safety_rules)
     system_prompt = _load_modular_prompt("reviewer", modules)
+
+    skills_block = ""
+    if selected_skills:
+        from kiso.skill_runtime import instructions_for_reviewer
+        blocks: list[str] = []
+        for skill in selected_skills:
+            body = instructions_for_reviewer(skill).strip()
+            if body:
+                blocks.append(f"### {skill.name}\n{body}")
+        if blocks:
+            skills_block = (
+                "\n\n## Skills (reviewer heuristics)\n\n"
+                + "\n\n".join(blocks)
+            )
 
     context = (
         f"## Plan Context\n{goal}\n\n"
         f"## Task Detail\n{detail}\n\n"
-        f"## Expected Outcome\n{expect}\n\n"
+        f"## Expected Outcome\n{expect}"
+        f"{skills_block}\n\n"
         f"## Actual Output\n{fence_content(output, 'TASK_OUTPUT')}\n\n"
         f"## Original User Message\n{fence_content(user_message, 'USER_MSG')}"
     )

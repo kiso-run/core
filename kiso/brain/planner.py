@@ -15,7 +15,11 @@ from kiso.config import Config, setting_bool, setting_int
 from kiso.connectors import discover_connectors
 from kiso.registry import get_registry_wrappers
 from kiso.skill_loader import discover_skills
-from kiso.skill_runtime import filter_by_activation_hints, metadata_for_briefer
+from kiso.skill_runtime import (
+    filter_by_activation_hints,
+    instructions_for_planner,
+    metadata_for_briefer,
+)
 from kiso.recipe_loader import (
     build_planner_recipe_list,
     discover_recipes,
@@ -1379,9 +1383,10 @@ async def build_planner_messages(
                 f"## Available Recipes\n{build_planner_recipe_list(raw_recipes)}"
             )
 
-    # Skills section — briefer selects by name; planner prompt gets
-    # name + description only (M1540 enriches with role-scoped bodies).
-    # When the briefer is bypassed / absent, inject all installed skills.
+    # Skills section — M1540: briefer selects by name; planner prompt
+    # gets name + description PLUS the skill's `## Planner` body (or the
+    # whole body when no role headings are present). When the briefer is
+    # bypassed / absent, inject all installed skills.
     if briefing and briefing.get("skills"):
         selected_skills = [
             s for s in installed_skills if s.name in set(briefing["skills"])
@@ -1389,15 +1394,17 @@ async def build_planner_messages(
     else:
         selected_skills = installed_skills
     if selected_skills:
-        skill_md_lines = []
+        skill_blocks = []
         for skill in selected_skills:
             meta = metadata_for_briefer(skill)
-            line = f"- **{meta['name']}** — {meta.get('description', '').strip()}"
+            header = f"### {meta['name']} — {meta.get('description', '').strip()}"
             if meta.get("when_to_use"):
-                line += f" (when: {meta['when_to_use'].strip()})"
-            skill_md_lines.append(line)
+                header += f"\n_When to use: {meta['when_to_use'].strip()}_"
+            body = instructions_for_planner(skill).strip()
+            block = header + ("\n\n" + body if body else "")
+            skill_blocks.append(block)
         context_parts.append(
-            "## Skills\n" + "\n".join(skill_md_lines)
+            "## Skills (planner guidance)\n\n" + "\n\n".join(skill_blocks)
         )
 
     # MCP method catalog (M1370/M1371) — the briefer received this as
