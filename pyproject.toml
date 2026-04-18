@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 kiso = "cli:main"
+kiso-migrate-recipes-to-skills = "kiso.migrate_recipes:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.25", "pytest-xdist>=3.6", "httpx>=0.28", "pytest-cov>=6"]
