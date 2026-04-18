@@ -99,6 +99,7 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     ("briefer_enabled", True),
     ("briefer_wrapper_filter_threshold", 10),
     ("briefer_mcp_method_filter_threshold", 10),
+    ("briefer_skill_filter_threshold", 10),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -234,6 +235,7 @@ fast_path_enabled         = true     # skip planner for conversational messages
 briefer_enabled           = true     # LLM-based context selection for each pipeline stage
 briefer_wrapper_filter_threshold = 10   # only invoke the briefer's wrapper-filtering pass when this many wrappers are available
 briefer_mcp_method_filter_threshold = 10   # only invoke the briefer's MCP method filtering pass when this many methods are exposed across all configured servers
+briefer_skill_filter_threshold = 10     # when the post-activation_hints catalog exceeds this count, delegate final skill selection to the briefer; below, pass all eligible skills through
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

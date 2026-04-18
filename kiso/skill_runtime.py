@@ -96,7 +96,7 @@ def instructions_for_messenger(skill: Skill) -> str:
 
 
 def filter_by_activation_hints(
-    skills: list[Skill], message: str
+    skills: list[Skill], message: str, *, is_replan: bool = False
 ) -> list[Skill]:
     """Deterministically drop skills that don't match the message.
 
@@ -110,7 +110,12 @@ def filter_by_activation_hints(
       match as case-insensitive substrings on a space-normalised copy.
 
     An empty message disables filtering (all skills kept).
+    ``is_replan=True`` bypasses the filter entirely — during replan the
+    original user message may not mention a skill that the planner now
+    needs (e.g. after an install).
     """
+    if is_replan:
+        return list(skills)
     if not skills or not message:
         return list(skills)
 

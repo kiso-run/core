@@ -15,7 +15,7 @@ from kiso.config import Config, setting_bool, setting_int
 from kiso.connectors import discover_connectors
 from kiso.registry import get_registry_wrappers
 from kiso.skill_loader import discover_skills
-from kiso.skill_runtime import metadata_for_briefer
+from kiso.skill_runtime import filter_by_activation_hints, metadata_for_briefer
 from kiso.recipe_loader import (
     build_planner_recipe_list,
     discover_recipes,
@@ -1109,6 +1109,12 @@ async def build_planner_messages(
     # select. Metadata-only (name + description + when_to_use); M1540 wires
     # role-scoped skill bodies into planner/worker/reviewer prompts.
     installed_skills = discover_skills()
+    # M1538: deterministic activation_hints pre-filter narrows the catalog
+    # before the briefer ever sees it. Replan bypasses to avoid filtering
+    # out a skill the new plan needs but the original message didn't hint at.
+    installed_skills = filter_by_activation_hints(
+        installed_skills, new_message, is_replan=is_replan,
+    )
     if installed_skills:
         skill_lines = []
         for skill in installed_skills:

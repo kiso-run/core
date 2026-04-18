@@ -233,3 +233,29 @@ class TestActivationHints:
         )
         # No message to match against → permissive.
         assert filter_by_activation_hints([s], "") == [s]
+
+
+class TestActivationHintsReplanBypass:
+    """M1538: ``is_replan=True`` disables the filter."""
+
+    def test_replan_keeps_non_matching_skill(self):
+        s = _make_skill(
+            name="s",
+            activation_hints={"applies_to": ["python"], "excludes": []},
+        )
+        # Message has no "python" — normally filtered out.
+        assert filter_by_activation_hints([s], "fix rust bug") == []
+        # But replan bypasses the filter entirely.
+        assert (
+            filter_by_activation_hints([s], "fix rust bug", is_replan=True) == [s]
+        )
+
+    def test_replan_keeps_excluded_skill(self):
+        s = _make_skill(
+            name="s",
+            activation_hints={"applies_to": [], "excludes": ["secret"]},
+        )
+        assert filter_by_activation_hints([s], "secret") == []
+        assert (
+            filter_by_activation_hints([s], "secret", is_replan=True) == [s]
+        )
