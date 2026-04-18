@@ -445,6 +445,22 @@ def build_parser() -> argparse.ArgumentParser:
     mcp = sub.add_parser("mcp", help="manage MCP servers (consumer-only)")
     _add_mcp_subcommands(mcp)
 
+    # Init — create ~/.kiso/config.toml from a bundled preset
+    init_p = sub.add_parser(
+        "init",
+        help="bootstrap ~/.kiso/config.toml (optionally from a preset)",
+    )
+    init_p.add_argument(
+        "--preset",
+        default="default",
+        help="preset to apply (default: 'default'; use 'none' for empty mcp block)",
+    )
+    init_p.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing config.toml",
+    )
+
     return parser
 
 
@@ -460,6 +476,10 @@ def main() -> None:
         from cli.mcp import handle as run_mcp_command
 
         sys.exit(run_mcp_command(args))
+    elif args.command == "init":
+        from cli.init import run_init_command
+
+        sys.exit(run_init_command(args))
     elif args.command == "wrapper":
         from cli.wrapper import run_wrapper_command
 

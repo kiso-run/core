@@ -1,0 +1,90 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/specification/main/schema/2025-06-18/schema.json",
+  "$comment": "Kiso default MCP preset (v0.10). Bootstrapped by `kiso init --preset default`. Subject to the Kiso trust rule (four approved command shapes) and single-key invariant (only OPENROUTER_API_KEY mandatory; GITHUB_TOKEN optional).",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem@2026.1.14",
+        "${env:HOME}"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory@2026.1.26"
+      ]
+    },
+    "browser": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.70"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github@2025.4.8"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}"
+      }
+    },
+    "aider": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kiso-run/aider-mcp@v0.1.0",
+        "kiso-aider-mcp"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "${env:OPENROUTER_API_KEY}"
+      }
+    },
+    "search": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kiso-run/search-mcp@v0.1.0",
+        "kiso-search-mcp"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "${env:OPENROUTER_API_KEY}"
+      }
+    },
+    "transcriber": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kiso-run/transcriber-mcp@v0.1.0",
+        "kiso-transcriber-mcp"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "${env:OPENROUTER_API_KEY}"
+      }
+    },
+    "ocr": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kiso-run/ocr-mcp@v0.1.0",
+        "kiso-ocr-mcp"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "${env:OPENROUTER_API_KEY}"
+      }
+    },
+    "docreader": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kiso-run/docreader-mcp@v0.1.0",
+        "kiso-docreader-mcp"
+      ]
+    }
+  }
+}
