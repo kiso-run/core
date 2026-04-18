@@ -96,7 +96,7 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 db,
                 _config(briefer_enabled=True),
                 "sess1",
-                "user",
+                "admin",
                 "read /workspace/foo.txt",
                 mcp_catalog_text=_CATALOG_TEXT,
             )
@@ -119,7 +119,7 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 db,
                 _config(briefer_enabled=False),
                 "sess1",
-                "user",
+                "admin",
                 "read /workspace/foo.txt",
                 mcp_catalog_text=_CATALOG_TEXT,
             )
@@ -143,7 +143,7 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 db,
                 _config(),
                 "sess1",
-                "user",
+                "admin",
                 "what time is it",
                 mcp_catalog_text=None,
             )
@@ -166,7 +166,7 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 db,
                 _config(),
                 "sess1",
-                "user",
+                "admin",
                 "what time is it",
                 mcp_catalog_text="",
             )

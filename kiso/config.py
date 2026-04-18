@@ -254,6 +254,7 @@ class Provider:
 class User:
     role: str  # "admin" | "user"
     wrappers: str | list[str] | None = None  # None for admin, "*" or list for user
+    mcp: str | list[str] | None = None  # None = default (admin: all; user: none), "*" = all, list = allowlist of "server:method"
     aliases: dict[str, str] = field(default_factory=dict)
 
 
@@ -390,6 +391,15 @@ def _build_config(path: Path, on_error) -> Config:
             if wrappers != "*" and not isinstance(wrappers, list):
                 on_error(f"user '{uname}': wrappers must be '*' or a list of wrapper names")
 
+        # M1539: per-user MCP method allowlist (optional). Parallel to
+        # wrappers: "*" = all methods, list = qualified "server:method"
+        # names, absent = default (admin: all, user: none).
+        mcp_allow = udata.get("mcp")
+        if mcp_allow is not None and mcp_allow != "*" and not isinstance(mcp_allow, list):
+            on_error(
+                f"user '{uname}': mcp must be '*', a list of 'server:method' names, or absent"
+            )
+
         # aliases
         aliases_raw = udata.get("aliases", {})
         if not isinstance(aliases_raw, dict):
@@ -405,7 +415,7 @@ def _build_config(path: Path, on_error) -> Config:
             all_aliases[key] = uname
             aliases[connector] = platform_id
 
-        users[uname] = User(role=role, wrappers=wrappers, aliases=aliases)
+        users[uname] = User(role=role, wrappers=wrappers, mcp=mcp_allow, aliases=aliases)
 
     # --- models: all roles required ---
     models_raw = raw.get("models", {})

@@ -1279,6 +1279,54 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+def filter_mcp_catalog_by_user(
+    catalog_text: str,
+    *,
+    user_role: str,
+    user_mcp_allow: str | list[str] | None,
+) -> str:
+    """Apply per-user MCP method allowlist to a rendered catalog (M1539).
+
+    Semantics mirror ``[users.<name>.wrappers]``:
+
+    - ``user_role="admin"`` + ``user_mcp_allow=None`` → all methods pass
+    - ``user_role="user"`` + ``user_mcp_allow=None`` → default deny (empty)
+    - ``"*"`` → all methods pass regardless of role
+    - ``list[str]`` of qualified ``server:method`` names → allowlist
+
+    Allowlist entries that do not appear in the catalog are dropped
+    with a debug log (they may be expected to show up later after a
+    cold start, but for now they contribute nothing).
+    """
+    if not catalog_text:
+        return ""
+    if user_mcp_allow == "*":
+        return catalog_text
+    if user_mcp_allow is None:
+        return catalog_text if user_role == "admin" else ""
+    if not isinstance(user_mcp_allow, list):
+        return catalog_text  # defensive — config validation should prevent this
+
+    allow = {name.strip() for name in user_mcp_allow if isinstance(name, str)}
+    kept_lines: list[str] = []
+    catalog_names: set[str] = set()
+    for line in catalog_text.splitlines():
+        m = _POOL_NAME_RE.match(line)
+        if not m:
+            continue
+        qualified = m.group(1)
+        catalog_names.add(qualified)
+        if qualified in allow:
+            kept_lines.append(line)
+    dropped = allow - catalog_names
+    if dropped:
+        log.debug(
+            "User MCP allowlist entries not in catalog (ignored): %s",
+            sorted(dropped),
+        )
+    return "\n".join(kept_lines)
+
+
 def format_mcp_catalog(manager: "Any") -> str:
     """Render an MCPManager-like object's *cached* catalog as briefer text.
 

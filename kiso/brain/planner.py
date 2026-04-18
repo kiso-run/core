@@ -1058,6 +1058,7 @@ async def build_planner_messages(
     user_role: str,
     new_message: str,
     user_wrappers: str | list[str] | None = None,
+    user_mcp: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
@@ -1131,7 +1132,16 @@ async def build_planner_messages(
     # `format_mcp_catalog(manager)` and passing the result through.
     # When None (no manager in scope), the section is omitted entirely.
     if mcp_catalog_text:
-        context_pool["mcp_methods"] = mcp_catalog_text
+        # M1539: apply per-user MCP method allowlist before the catalog
+        # reaches the briefer + planner prompt.
+        from kiso.brain.common import filter_mcp_catalog_by_user
+        mcp_catalog_text = filter_mcp_catalog_by_user(
+            mcp_catalog_text,
+            user_role=user_role,
+            user_mcp_allow=user_mcp,
+        )
+        if mcp_catalog_text:
+            context_pool["mcp_methods"] = mcp_catalog_text
 
     # Connector discovery — show installed connectors to planner
     connectors = discover_connectors()
