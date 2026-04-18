@@ -219,8 +219,8 @@ def _populate_kiso_dir(target: Path) -> None:
     Behavior:
 
     - Creates the standard subdirs (``wrappers``, ``connectors``,
-      ``recipes``, ``sessions``, ``roles``, ``reference``,
-      ``sys/bin``, ``sys/ssh``).
+      ``recipes``, ``skills``, ``sessions``, ``roles``,
+      ``reference``, ``sys/bin``, ``sys/ssh``).
     - Runs the ``summarizer-session.md → summarizer.md``
       migration before copying bundled roles, so a stale legacy
       file does not land alongside the canonical filename.
@@ -248,6 +248,7 @@ def _populate_kiso_dir(target: Path) -> None:
         (target / "wrappers").mkdir(parents=True, exist_ok=True)
         (target / "connectors").mkdir(parents=True, exist_ok=True)
         (target / "recipes").mkdir(parents=True, exist_ok=True)
+        (target / "skills").mkdir(parents=True, exist_ok=True)
         (target / "sessions").mkdir(parents=True, exist_ok=True)
         (target / "roles").mkdir(parents=True, exist_ok=True)
     except OSError as e:
