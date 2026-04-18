@@ -1250,21 +1250,26 @@ class TestBuildPlannerMessages:
         msgs, _installed, *_ = await build_planner_messages(db, config, "nonexistent", "admin", "hello")
         assert len(msgs) == 2
 
-    # --- M7: wrappers in planner context ---
+    # --- M1502: skills in planner context ---
 
-    async def test_includes_skills_when_present(self, db, config):
+    async def test_includes_skills_when_present(self, db, config, tmp_path):
         await create_session(db, "sess1")
+        from kiso.skill_loader import Skill
         fake_skills = [
-            {"name": "search", "summary": "Web search", "args_schema": {
-                "query": {"type": "string", "required": True, "description": "search query"},
-            }, "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
+            Skill(
+                name="python-debug",
+                description="Diagnose and fix Python exceptions",
+                when_to_use="When a traceback or test failure needs investigation",
+            ),
         ]
-        with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
-            msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "search for X")
+        with patch("kiso.brain.planner.discover_skills", return_value=fake_skills):
+            msgs, _installed, *_ = await build_planner_messages(
+                db, config, "sess1", "admin", "debug the Python code"
+            )
         content = msgs[1]["content"]
-        assert "## Wrappers" in content
-        assert "search — Web search" in content
-        assert "query (string, required): search query" in content
+        assert "## Skills" in content
+        assert "python-debug" in content
+        assert "Diagnose and fix Python exceptions" in content
 
     # --- System environment in planner context ---
 
@@ -1389,10 +1394,10 @@ class TestBuildPlannerMessages:
 
     async def test_no_skills_section_when_empty(self, db, config):
         await create_session(db, "sess1")
-        with patch("kiso.brain.discover_wrappers", return_value=[]):
+        with patch("kiso.brain.planner.discover_skills", return_value=[]):
             msgs, _installed, *_ = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
-        assert "## Wrappers" not in content
+        assert "## Skills" not in content
 
     async def test_safety_facts_injected(self, db, config):
         """safety facts appear in planner messages as ## Safety Rules."""
@@ -1458,9 +1463,8 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Mock briefer to return empty modules (simulates aggressive filtering)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "mcp_methods": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
-                "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
             msgs, *_ = await build_planner_messages(
@@ -1498,7 +1502,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer selects 0 wrappers AND 0 modules — tools_rules still forced
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [],
+                "modules": [], "skills": [], "exclude_recipes": [],
                 "context": "", "output_indices": [], "relevant_tags": [],
                 "relevant_entities": [], "mcp_methods": [],
             }),
@@ -1525,9 +1529,8 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
-                "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git, python3, uv"),
         ):
@@ -1554,7 +1557,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer selects plugin_install → triggers full sysenv
             patch("kiso.brain.run_briefer", return_value={
-                "modules": ["plugin_install"], "wrappers": [],
+                "modules": ["plugin_install"], "skills": [],
                 "context": "", "output_indices": [],
                 "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
             }),
@@ -1601,7 +1604,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
@@ -1645,7 +1648,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
@@ -1689,7 +1692,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
@@ -1724,7 +1727,7 @@ class TestBuildPlannerMessages:
             }),
             patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
@@ -1757,7 +1760,7 @@ class TestBuildPlannerMessages:
             # Empty registry → kiso_native not force-added
             patch("kiso.brain.get_registry_wrappers", return_value=""),
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": ["browser — navigate"],
+                "modules": [], "skills": ["browser — navigate"],
                 "context": "", "output_indices": [],
                 "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
             }),
@@ -1790,10 +1793,9 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Briefer returns zero modules (single-wrapper task)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "wrappers": ["browser — navigate"],
+                "modules": [], "skills": ["browser — navigate"],
                 "context": "User wants a screenshot.",
                 "output_indices": [], "relevant_tags": [],
-                "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
             }),
         ):
             msgs, *_ = await build_planner_messages(
@@ -1807,24 +1809,12 @@ class TestBuildPlannerMessages:
             "planning_rules module missing from planner prompt"
         )
 
+    @pytest.mark.skip(
+        reason="M1502 removed the ## Wrappers section from the planner prompt; "
+               "per-user MCP allowlist replaces this in M1539 + M1517."
+    )
     async def test_user_wrappers_filtered(self, db, config):
-        await create_session(db, "sess1")
-        fake_skills = [
-            {"name": "search", "summary": "Search", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake", "version": "0.1.0", "description": ""},
-            {"name": "aider", "summary": "Code edit", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake2", "version": "0.1.0", "description": ""},
-        ]
-        with patch("kiso.brain.discover_wrappers", return_value=fake_skills):
-            msgs, _installed, *_ = await build_planner_messages(
-                db, config, "sess1", "user", "hello", user_wrappers=["search"],
-            )
-        content = msgs[1]["content"]
-        # Wrappers section should only show search, not aider (restricted user)
-        tools_start = content.find("## Wrappers")
-        skills_section = content[tools_start:tools_start + 500] if tools_start >= 0 else ""
-        assert "search" in skills_section
-        assert "aider" not in skills_section
+        pass
 
     async def test_logs_warning_when_no_skills(self, db, config, caplog):
         """M3: build_planner_messages logs warning when discover_wrappers returns empty."""
@@ -6274,7 +6264,7 @@ class TestBrieferMessages:
             "summary": "User asked about weather",
             "facts": "- Python 3.12 is installed",
             "recent_messages": "[user] marco: ciao",
-            "wrappers": "browser: navigate, screenshot",
+            "skills": "browser: navigate, screenshot",
             "connectors": "telegram: messaging",
             "pending": "- What is your API key?",
             "paraphrased": "External user said hello",
@@ -6288,7 +6278,7 @@ class TestBrieferMessages:
         assert "Session Summary" in content
         assert "Known Facts" in content
         assert "Recent Messages" in content
-        assert "Available Wrappers" in content
+        assert "Available Skills" in content
         assert "Available Connectors" in content
         assert "Pending Questions" in content
         assert "Paraphrased External Messages" in content
@@ -6319,12 +6309,12 @@ class TestBrieferMessages:
         assert "Plan Outputs" in content
 
     def test_empty_pool_values_excluded(self):
-        pool = {"summary": "", "facts": "", "wrappers": "browser: navigate"}
+        pool = {"summary": "", "facts": "", "skills": "browser: navigate"}
         msgs = build_briefer_messages("planner", "do something", pool)
         content = msgs[1]["content"]
         assert "Session Summary" not in content
         assert "Known Facts" not in content
-        assert "Available Wrappers" in content
+        assert "Available Skills" in content
 
     def test_consumer_role_in_message(self):
         for role in ("planner", "messenger", "worker"):
@@ -6389,13 +6379,13 @@ class TestBrieferMessages:
         """briefer prompt says messenger gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("messenger", "tell the user what happened", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and wrappers=[] always" in system
+        assert "For messenger/worker: modules=[] and skills=[] always" in system
 
     def test_worker_no_modules_or_tools_rule(self):
         """briefer prompt says worker gets modules=[] and wrappers=[] always."""
         msgs = build_briefer_messages("worker", "translate command", {})
         system = msgs[0]["content"]
-        assert "For messenger/worker: modules=[] and wrappers=[] always" in system
+        assert "For messenger/worker: modules=[] and skills=[] always" in system
 
 
 class TestValidateBriefing:
@@ -6404,33 +6394,36 @@ class TestValidateBriefing:
     def test_valid_briefing(self):
         briefing = {
             "modules": ["web"],
-            "wrappers": ["browser: navigate, screenshot"],
+            "skills": ["browser: navigate, screenshot"],
+            "mcp_methods": [],
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
             "relevant_tags": ["browser"],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
     def test_empty_briefing(self):
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
     def test_unknown_module(self):
         briefing = {
             "modules": ["web", "nonexistent_module"],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert len(errors) == 1
@@ -6439,11 +6432,12 @@ class TestValidateBriefing:
     def test_invalid_modules_type(self):
         briefing = {
             "modules": "web",
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert any("modules" in e for e in errors)
@@ -6451,11 +6445,12 @@ class TestValidateBriefing:
     def test_invalid_context_type(self):
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": None,
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         errors = validate_briefing(briefing)
         assert any("context" in e for e in errors)
@@ -6463,11 +6458,12 @@ class TestValidateBriefing:
     def test_all_valid_modules(self):
         briefing = {
             "modules": list(BRIEFER_MODULES),
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         assert validate_briefing(briefing) == []
 
@@ -6475,7 +6471,8 @@ class TestValidateBriefing:
         """relevant_tags must be an array."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": "browser",  # should be array
@@ -6487,7 +6484,8 @@ class TestValidateBriefing:
         """missing relevant_tags is an error."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
         }
@@ -6513,17 +6511,18 @@ class TestRunBriefer:
     async def test_success(self, config):
         response = json.dumps({
             "modules": ["web"],
-            "wrappers": ["browser"],
+            "skills": ["browser"],
+            "mcp_methods": [],
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
-        ctx = {"wrappers": "Available wrappers:\n- browser — Navigate, click, fill"}
+        ctx = {"skills": "Available wrappers:\n- browser — Navigate, click, fill"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit a website", ctx)
         assert result["modules"] == ["web"]
-        assert result["wrappers"] == ["browser"]
+        assert result["skills"] == ["browser"]
         assert result["context"] == "User wants to browse"
         assert result["output_indices"] == [1]
         assert result["relevant_tags"] == ["browser"]
@@ -6555,19 +6554,20 @@ class TestRunBriefer:
         # Briefer returns just the name — no description in JSON
         response = json.dumps({
             "modules": [],
-            "wrappers": ["browser"],
+            "skills": ["browser"],
+            "mcp_methods": [],
             "context": "Navigate to guidance.studio and screenshot.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
-        ctx = {"wrappers": real_description}
+        ctx = {"skills": real_description}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "go to guidance.studio", ctx)
         # Briefer output has the name, not the description
-        assert result["wrappers"] == ["browser"]
+        assert result["skills"] == ["browser"]
         # No newlines/quotes in the wrappers field — it's just a name
-        for wrapper in result["wrappers"]:
+        for wrapper in result["skills"]:
             assert "\n" not in wrapper
             assert len(wrapper) < 50  # names are short
 
@@ -6575,16 +6575,17 @@ class TestRunBriefer:
     async def test_empty_briefing(self, config):
         response = json.dumps({
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "what time is it", {})
         assert result["modules"] == []
-        assert result["wrappers"] == []
+        assert result["skills"] == []
 
     @pytest.mark.asyncio
     async def test_llm_error_raises_briefer_error(self, config):
@@ -6605,81 +6606,86 @@ class TestRunBriefer:
         """run_briefer filters wrapper names not matching installed wrappers."""
         response = json.dumps({
             "modules": [],
-            "wrappers": ["browser", "cpu-info"],
+            "skills": ["browser", "cpu-info"],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
-        ctx = {"wrappers": "Available wrappers:\n- browser — navigate, click, fill, screenshot, text"}
+        ctx = {"skills": "Available wrappers:\n- browser — navigate, click, fill, screenshot, text"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "visit example.com", ctx)
         # "browser" matches installed wrappers, "cpu-info" does not
-        assert "browser" in result["wrappers"]
-        assert "cpu-info" not in result["wrappers"]
+        assert "browser" in result["skills"]
+        assert "cpu-info" not in result["skills"]
 
     @pytest.mark.asyncio
     async def test_preserves_valid_skills(self, config):
         """run_briefer preserves wrapper names that match installed wrappers."""
         response = json.dumps({
             "modules": [],
-            "wrappers": ["search"],
+            "skills": ["search"],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
-        ctx = {"wrappers": "Available wrappers:\n- search — web search for queries, max_results option"}
+        ctx = {"skills": "Available wrappers:\n- search — web search for queries, max_results option"}
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "find info", ctx)
-        assert len(result["wrappers"]) == 1
-        assert result["wrappers"][0] == "search"
+        assert len(result["skills"]) == 1
+        assert result["skills"][0] == "search"
 
     @pytest.mark.asyncio
     async def test_clears_skills_when_none_installed(self, config):
         """all briefer wrappers cleared when no wrappers in context pool."""
         response = json.dumps({
             "modules": [],
-            "wrappers": ["browser: navigate", "aider: code refactoring"],
+            "skills": ["browser: navigate", "aider: code refactoring"],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
         # No wrappers installed → all hallucinated wrappers cleared
-        assert result["wrappers"] == []
+        assert result["skills"] == []
 
     @pytest.mark.asyncio
     async def test_clears_skills_with_empty_string_pool(self, config):
         """all briefer wrappers cleared when wrappers key is empty string."""
         response = json.dumps({
             "modules": [],
-            "wrappers": ["browser: navigate"],
+            "skills": ["browser: navigate"],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
-            result = await run_briefer(config, "planner", "task", {"wrappers": ""})
-        assert result["wrappers"] == []
+            result = await run_briefer(config, "planner", "task", {"skills": ""})
+        assert result["skills"] == []
 
     @pytest.mark.asyncio
     async def test_no_skills_returned_passes_through(self, config):
         """when briefer returns no wrappers, nothing to filter."""
         response = json.dumps({
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "planner", "task", {})
-        assert result["wrappers"] == []
+        assert result["skills"] == []
 
 
 class TestBrieferSchema:
@@ -6688,18 +6694,20 @@ class TestBrieferSchema:
     def test_schema_validates_valid_briefing(self):
         valid = {
             "modules": ["web", "replan"],
-            "wrappers": ["browser: navigate"],
+            "skills": ["browser: navigate"],
+            "mcp_methods": [],
             "context": "some context",
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
     def test_schema_rejects_missing_field(self):
         invalid = {
             "modules": ["web"],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             # missing output_indices and relevant_tags
         }
@@ -6709,11 +6717,12 @@ class TestBrieferSchema:
     def test_schema_rejects_wrong_type(self):
         invalid = {
             "modules": "web",  # should be array
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
@@ -6722,11 +6731,12 @@ class TestBrieferSchema:
         """empty relevant_tags is valid."""
         valid = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -6848,11 +6858,12 @@ class TestBrieferPlannerIntegration:
         """When briefer succeeds, planner prompt uses selected modules only."""
         briefing = {
             "modules": ["web"],
-            "wrappers": ["browser"],
+            "skills": ["browser"],
+            "mcp_methods": [],
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6888,9 +6899,9 @@ class TestBrieferPlannerIntegration:
         assert "extend_replan" not in system
         # Briefer's synthesized context used
         assert "## Context\nUser wants to browse a website." in user_content
-        # build_planner_wrapper_list rebuilds full descriptions from installed wrappers
-        assert "browser" in user_content
-        assert "Navigate, click, fill, screenshot, text" in user_content
+        # M1502: the `## Wrappers` section is gone; wrapper/browser visibility
+        # moves to the MCP path in phase β. The briefer-driven module
+        # selection (web) is what this test now guards.
         # System Environment always included — planner needs registry_hints
         assert "## System Environment" in user_content
 
@@ -6967,11 +6978,12 @@ class TestBrieferPlannerIntegration:
         """With briefer, raw summary/facts/recent are replaced by synthesized context."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "Synthesized context from briefer.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6998,11 +7010,12 @@ class TestBrieferPlannerIntegration:
         """Keyword-based appendices are still injected even when briefer is active."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User wants to install a wrapper.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7060,11 +7073,12 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User asks about infrastructure.",
             "output_indices": [],
             "relevant_tags": ["infra", "cache"],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7092,11 +7106,12 @@ class TestBrieferTagRetrieval:
 
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User asks about Python.",
             "output_indices": [],
             "relevant_tags": ["tech-stack"],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7120,11 +7135,12 @@ class TestBrieferTagRetrieval:
         """empty relevant_tags produces no additional facts section."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "Simple question.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7154,9 +7170,8 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "{}"
 
@@ -7181,9 +7196,8 @@ class TestBrieferTagRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "{}"
 
@@ -7234,7 +7248,7 @@ class TestBrieferEntityRetrieval:
         await save_fact(db, "Python version 3.12 deployed", "test", category="project")
 
         briefing = {
-            "modules": [], "wrappers": [], "exclude_recipes": [],
+            "modules": [], "skills": [], "exclude_recipes": [],
             "context": "User asks about their company.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["acmecorp"], "mcp_methods": [],
@@ -7264,7 +7278,7 @@ class TestBrieferEntityRetrieval:
         await save_fact(db, "Flask web framework version 3.0", "curator", entity_id=eid)
 
         briefing = {
-            "modules": [], "wrappers": [], "exclude_recipes": [], "context": "About Flask.",
+            "modules": [], "skills": [], "exclude_recipes": [], "context": "About Flask.",
             "output_indices": [], "relevant_tags": [],
             "relevant_entities": ["flask"], "mcp_methods": [],
         }
@@ -7296,9 +7310,8 @@ class TestBrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "{}"
 
@@ -7325,9 +7338,8 @@ class TestBrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "{}"
 
@@ -7353,9 +7365,8 @@ class TestBrieferEntityRetrieval:
             if role == "briefer":
                 captured_messages.extend(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [], "context": "",
+                    "modules": [], "skills": [], "exclude_recipes": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "{}"
 
@@ -7372,9 +7383,8 @@ class TestBrieferEntityRetrieval:
     async def test_empty_relevant_entities_no_section(self, db):
         """empty relevant_entities produces no entity-matched section."""
         briefing = {
-            "modules": [], "wrappers": [], "exclude_recipes": [], "context": "Simple.",
+            "modules": [], "skills": [], "exclude_recipes": [], "context": "Simple.",
             "output_indices": [], "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7423,11 +7433,12 @@ class TestSysEnvAndGapFiltering:
         """System Environment always included — planner needs registry_hints."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7466,11 +7477,12 @@ class TestSysEnvAndGapFiltering:
                 captured_messages.extend(messages)
                 return json.dumps({
                     "modules": [],
-                    "wrappers": [],
+                    "skills": [],
+                    "mcp_methods": [],
                     "context": "Simple request.",
                     "output_indices": [],
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+                    "relevant_entities": [],
                 })
             return "{}"
 
@@ -7518,11 +7530,12 @@ class TestBrowserAvailability:
         """Briefer selects web module, browser not installed → warning present."""
         briefing = {
             "modules": ["web"],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7545,11 +7558,12 @@ class TestBrowserAvailability:
         """Briefer selects web module, browser IS installed → no warning."""
         briefing = {
             "modules": ["web"],
-            "wrappers": ["browser — navigate pages"],
+            "skills": ["browser — navigate pages"],
+            "mcp_methods": [],
             "context": "User wants to visit guidance.studio.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         fake_skill = {
@@ -7576,11 +7590,12 @@ class TestBrowserAvailability:
         """Briefer does NOT select web module → no warning regardless."""
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7837,11 +7852,12 @@ class TestBrieferModuleCoverage:
         """Run build_planner_messages with a briefer that returns given modules."""
         briefing = {
             "modules": modules,
-            "wrappers": [],
+            "skills": [],
+            "mcp_methods": [],
             "context": "Briefer context.",
             "output_indices": [],
             "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "relevant_entities": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -7925,11 +7941,11 @@ class TestMessengerContextReduction:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [],
+                    "modules": [], "skills": [], "mcp_methods": [],
                     "context": "User asked about weather in Rome.",
                     "output_indices": [4, 5],
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+                    "relevant_entities": [],
                 })
             captured_messages.extend(messages)
             return "The weather in Rome is sunny."
@@ -8263,7 +8279,7 @@ class TestReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "wrappers": [], "context": "ctx",
+            return {"modules": ["core"], "skills": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -8289,7 +8305,7 @@ class TestReplanContextDedup:
 
         async def _mock_briefer(cfg, role, msg, pool, **kw):
             captured_pool.append(dict(pool))
-            return {"modules": ["core"], "wrappers": [], "context": "ctx",
+            return {"modules": ["core"], "skills": [], "context": "ctx",
                     "output_indices": [], "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": []}
 
         with patch("kiso.brain.run_briefer", side_effect=_mock_briefer), \
@@ -8344,7 +8360,7 @@ class TestBrieferSimpleConsumers:
 
     def _pool(self):
         return {
-            "wrappers": "browser: navigate websites",
+            "skills": "browser: navigate websites",
             "system_env": "OS: Linux\nArch: x86_64",
             "connectors": "slack: send messages",
             "summary": "User asked about guidance.studio",
@@ -8357,7 +8373,7 @@ class TestBrieferSimpleConsumers:
         msgs = build_briefer_messages("planner", "plan the task", self._pool())
         content = msgs[1]["content"]
         assert "Available Modules" in content
-        assert "Available Wrappers" in content
+        assert "Available Skills" in content
         assert "System Environment" in content
 
     def test_messenger_omits_modules_and_irrelevant_sections(self):
@@ -8969,8 +8985,7 @@ class TestBrieferModuleValidationSkip:
         """Default: unknown modules are rejected."""
         briefing = {
             "modules": ["nonexistent"],
-            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "context": "", "output_indices": [], "relevant_tags": [],
         }
         errors = validate_briefing(briefing, check_modules=True)
         assert any("nonexistent" in e for e in errors)
@@ -8979,8 +8994,8 @@ class TestBrieferModuleValidationSkip:
         """With check_modules=False, any module names pass validation."""
         briefing = {
             "modules": ["hallucinated_module", "another_fake"],
-            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [], "context": "",
+            "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
         assert errors == []
@@ -8989,8 +9004,8 @@ class TestBrieferModuleValidationSkip:
         """Even with check_modules=False, modules must be an array."""
         briefing = {
             "modules": "not_a_list",
-            "wrappers": [], "context": "", "output_indices": [], "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [], "context": "",
+            "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
         assert any("modules must be an array" in e for e in errors)
@@ -8999,13 +9014,13 @@ class TestBrieferModuleValidationSkip:
         """check_modules=False doesn't skip validation of other fields."""
         briefing = {
             "modules": ["whatever"],
-            "wrappers": "not_a_list",  # invalid
+            "skills": "not_a_list",  # invalid
+            "mcp_methods": [],
             "context": None,  # invalid
-            "output_indices": [], "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
-        assert any("wrappers" in e for e in errors)
+        assert any("skills" in e for e in errors)
         assert any("context" in e for e in errors)
 
 
@@ -9028,9 +9043,9 @@ class TestRunBrieferSimpleConsumers:
         """Messenger briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["install_skill", "navigate_and_summarize"],
-            "wrappers": [], "context": "About to install browser", "output_indices": [],
-            "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [],
+            "context": "About to install browser", "output_indices": [],
+            "relevant_tags": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "messenger", "tell user", {})
@@ -9042,9 +9057,9 @@ class TestRunBrieferSimpleConsumers:
         """Worker briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["BrowserSkill"],
-            "wrappers": [], "context": "", "output_indices": [],
-            "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [],
+            "context": "", "output_indices": [],
+            "relevant_tags": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             result = await run_briefer(config, "worker", "translate cmd", {})
@@ -9054,9 +9069,9 @@ class TestRunBrieferSimpleConsumers:
         """Planner briefer still rejects unknown module names."""
         response = json.dumps({
             "modules": ["nonexistent_module"],
-            "wrappers": [], "context": "", "output_indices": [],
-            "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [],
+            "context": "", "output_indices": [],
+            "relevant_tags": [], "relevant_entities": [],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=response):
             with pytest.raises(BrieferError):
@@ -9066,9 +9081,9 @@ class TestRunBrieferSimpleConsumers:
         """Messenger briefer with hallucinated modules uses exactly 1 LLM call."""
         response = json.dumps({
             "modules": ["fake_module"],
-            "wrappers": [], "context": "test", "output_indices": [],
-            "relevant_tags": [],
-            "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+            "skills": [], "mcp_methods": [],
+            "context": "test", "output_indices": [],
+            "relevant_tags": [], "relevant_entities": [],
         })
         mock_llm = AsyncMock(return_value=response)
         with patch("kiso.brain.call_llm", mock_llm):
@@ -10513,7 +10528,7 @@ class TestBuildStrictSchema:
         from kiso.brain import BRIEFER_SCHEMA
         schema = BRIEFER_SCHEMA["json_schema"]["schema"]
         assert set(schema["required"]) == {
-            "modules", "wrappers", "mcp_methods", "exclude_recipes",
+            "modules", "skills", "mcp_methods",
             "context", "output_indices", "relevant_tags", "relevant_entities",
         }
 

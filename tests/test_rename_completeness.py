@@ -42,9 +42,10 @@ class TestWrapperRenameRuntimeInvariants:
             CLI / "tool.py",
             SRC / "skills.py",
             SRC / "skill_repair.py",
-            SRC / "skill_loader.py",
             SRC / "worker" / "skill.py",
-            CLI / "skill.py",
+            # skill_loader.py, skill_runtime.py: v0.10 re-introduces these
+            # as first-class modules (M1500/M1501). `cli/skill.py` is
+            # expected to arrive with M1506.
         ]
         for path in legacy_paths:
             assert not path.exists(), f"legacy file still present: {path.relative_to(ROOT)}"
@@ -98,7 +99,11 @@ class TestWrapperRenameRuntimeInvariants:
 
 
 class TestNoStrayToolSkillReferences:
-    """: source must not contain stray tool/skill refs as kiso concepts.
+    """: source must not contain stray **tool** refs as kiso concepts.
+
+    v0.10 reintroduced "skill" as a first-class concept (skill_loader,
+    skill_runtime, BRIEFER_SCHEMA.skills), so this check now only
+    policies "tool" — the v0.9 rename target.
 
     Allowed exceptions:
     - [tool.uv], [tool.pytest], [tool.hatch] TOML sections (Python ecosystem)
@@ -110,7 +115,9 @@ class TestNoStrayToolSkillReferences:
 
     def _scan(self, paths: list[Path]) -> list[tuple[Path, int, str]]:
         hits: list[tuple[Path, int, str]] = []
-        word = re.compile(r"\b(tool|skill|Tool|Skill|TOOL|SKILL)\b")
+        # v0.10: `skill` is a core concept — don't flag it. Only `tool` is
+        # a v0.9 legacy word that should not reappear in source.
+        word = re.compile(r"\b(tool|Tool|TOOL)\b")
         for base in paths:
             if not base.exists():
                 continue

@@ -558,7 +558,7 @@ class TestMsgTask:
         # Briefer returns mixed-case entity name
         briefing = {
             "modules": [],
-            "wrappers": [],
+            "skills": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": ["website"],
@@ -8216,9 +8216,8 @@ class TestAppendCallsRobustness:
             if role == "briefer":
                 call_order.append("briefer")
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             call_order.append("messenger")
             return "Hi"
@@ -11158,11 +11157,12 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 return json.dumps({
                     "modules": [],
-                    "wrappers": [],
+                    "skills": [],
+                    "mcp_methods": [],
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+                    "relevant_entities": [],
                 })
             # messenger
             captured_outputs_text.append(messages[1]["content"])
@@ -11262,10 +11262,9 @@ class TestMsgTaskBrieferIntegration:
             if role == "briefer":
                 call_roles.append(role)
                 return json.dumps({
-                    "modules": [], "wrappers": [],
+                    "modules": [], "skills": [],
                     "context": "Filtered context.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             call_roles.append(role)
             return "response"
@@ -11307,7 +11306,7 @@ class TestMsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [],
+                    "modules": [], "skills": [], "exclude_recipes": [],
                     "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
                     "relevant_entities": ["self"], "mcp_methods": [],
@@ -11333,9 +11332,8 @@ class TestMsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "No relevant context.",
+                    "modules": [], "skills": [], "context": "No relevant context.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             messenger_msgs.append(messages)
             return "I don't know"
@@ -11353,9 +11351,8 @@ class TestMsgTaskEntityEnrichment:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Response"
 
@@ -11382,9 +11379,8 @@ class TestMsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11410,9 +11406,8 @@ class TestMsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11433,9 +11428,8 @@ class TestMsgTaskEntityEnrichment:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "ok"
 
@@ -11482,10 +11476,10 @@ class TestExecTaskBrieferIntegration:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [1],  # only first exec output relevant
                     "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
+                    "relevant_entities": [],
                 })
             return "ok"
 

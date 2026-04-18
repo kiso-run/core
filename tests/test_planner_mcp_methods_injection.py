@@ -47,9 +47,8 @@ def _config(briefer_enabled: bool = True) -> Config:
 def _briefing(**overrides) -> dict:
     base = {
         "modules": [],
-        "wrappers": [],
+        "skills": [],
         "mcp_methods": [],
-        "exclude_recipes": [],
         "context": "",
         "output_indices": [],
         "relevant_tags": [],

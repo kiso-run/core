@@ -1022,14 +1022,13 @@ REVIEW_SCHEMA: dict = _build_strict_schema("review", {
 
 BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
-    "wrappers": {"type": "array", "items": {"type": "string"}},
+    "skills": {"type": "array", "items": {"type": "string"}},
     "mcp_methods": {"type": "array", "items": {"type": "string"}},
-    "exclude_recipes": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "wrappers", "mcp_methods", "exclude_recipes", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "skills", "mcp_methods", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1261,7 +1260,7 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("wrappers", "Available Wrappers"),
+    ("skills", "Available Skills"),
     ("recipes", "Available Recipes"),
     ("mcp_methods", "Available MCP Methods"),
     ("connectors", "Available Connectors"),
@@ -1396,12 +1395,10 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         for m in briefing["modules"]:
             if m not in BRIEFER_MODULES:
                 errors.append(f"unknown module: {m!r}")
-    if not isinstance(briefing.get("wrappers"), list):
-        errors.append("wrappers must be an array")
+    if not isinstance(briefing.get("skills"), list):
+        errors.append("skills must be an array")
     if not isinstance(briefing.get("mcp_methods"), list):
         errors.append("mcp_methods must be an array")
-    if not isinstance(briefing.get("exclude_recipes"), list):
-        errors.append("exclude_recipes must be an array")
     if not isinstance(briefing.get("context"), str):
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
@@ -1472,21 +1469,16 @@ async def run_briefer(
         session=session,
     )
 
-    # force modules/exclude_recipes=[] for simple consumers (defensive cleanup)
+    # force modules/skills=[] for simple consumers (defensive cleanup —
+    # messenger/worker never use the skill catalog)
     if _simple:
         briefing["modules"] = []
-        briefing["exclude_recipes"] = []
+        briefing["skills"] = []
 
-    # post-validation filtering — remove hallucinated names
-    briefing["wrappers"] = _filter_briefer_names(
-        briefing.get("wrappers", []), context_pool.get("wrappers"), "wrapper")
-    briefing["exclude_recipes"] = _filter_briefer_names(
-        briefing.get("exclude_recipes", []), context_pool.get("recipes"), "recipe")
-    # mcp_methods: filter against the same `mcp_methods` text the briefer
-    # saw in the prompt (set into context_pool by build_planner_messages
-    # via format_mcp_catalog). Empty pool keeps the list as-is — the
-    # post-filter only kicks in when there is an authoritative catalog
-    # to compare against.
+    # post-validation filtering — drop hallucinated names against the
+    # authoritative context_pool sections that fed the briefer prompt.
+    briefing["skills"] = _filter_briefer_names(
+        briefing.get("skills", []), context_pool.get("skills"), "skill")
     if context_pool.get("mcp_methods"):
         briefing["mcp_methods"] = _filter_briefer_names(
             briefing.get("mcp_methods", []),
@@ -1495,13 +1487,12 @@ async def run_briefer(
         )
 
     log.info(
-        "Briefer for %s: %d modules, %d wrappers, %d mcp_methods, "
-        "%d exclude_recipes, %d output_indices, %d tags",
+        "Briefer for %s: %d modules, %d skills, %d mcp_methods, "
+        "%d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
-        len(briefing["wrappers"]),
+        len(briefing["skills"]),
         len(briefing.get("mcp_methods", [])),
-        len(briefing.get("exclude_recipes", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
     )

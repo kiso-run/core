@@ -65,7 +65,7 @@ class TestChatKBEntityFlow:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "exclude_recipes": [],
+                    "modules": [], "skills": [], "exclude_recipes": [],
                     "context": "User asks about SSH key.",
                     "output_indices": [], "relevant_tags": ["ssh"],
                     "relevant_entities": ["self"], "mcp_methods": [],
@@ -89,10 +89,9 @@ class TestChatKBEntityFlow:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [],
-                    "context": "General chat.",
+                    "modules": [], "skills": [],
+                    "mcp_methods": [], "context": "General chat.",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Hello! How can I help?"
 
@@ -110,9 +109,8 @@ class TestChatKBEntityFlow:
             roles_called.append(role)
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "wrappers": [], "context": "",
+                    "modules": [], "skills": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
-                    "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [],
                 })
             return "Hi there"
 

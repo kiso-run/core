@@ -55,9 +55,8 @@ def _briefing(
 ) -> dict:
     return {
         "modules": modules or [],
-        "wrappers": wrappers or [],
+        "skills": wrappers or [],
         "mcp_methods": mcp_methods or [],
-        "exclude_recipes": exclude_recipes or [],
         "context": context,
         "output_indices": output_indices or [],
         "relevant_tags": relevant_tags or [],
@@ -131,13 +130,10 @@ class TestBrieferScenarios:
             )
 
         system = msgs[0]["content"]
-        user_content = msgs[1]["content"]
-        # Web module injected
+        # Web module injected — M1502 dropped the `## Wrappers` section
+        # from the planner prompt, so we no longer assert wrapper text;
+        # the web module selection is the behavior under test here.
         assert "Web interaction:" in system
-        # Browser wrapper present
-        # build_planner_wrapper_list rebuilds full descriptions from installed wrappers
-        assert "browser" in user_content
-        assert "Navigate, click, fill, screenshot" in user_content
         # Other modules absent
         assert "extend_replan" not in system
         assert "Scripting:" not in system
@@ -393,7 +389,7 @@ class TestBrieferPromptBudget:
             "recent_messages": "\n".join(
                 f"[user] marco: message {i}" for i in range(5)
             ),
-            "wrappers": "\n".join(f"tool_{i}: does thing {i}" for i in range(10)),
+            "skills": "\n".join(f"tool_{i}: does thing {i}" for i in range(10)),
             "pending": "- Question about API key\n- Question about deployment",
             "plan_outputs": "\n".join(
                 f"[{i}] exec: task {i} → output {i}" for i in range(5)
@@ -411,7 +407,7 @@ class TestBrieferPromptBudget:
             BRIEFER_SCHEMA["json_schema"]["schema"]["required"]
         )
         expected = {
-            "modules", "wrappers", "mcp_methods", "exclude_recipes",
+            "modules", "skills", "mcp_methods",
             "context", "output_indices", "relevant_tags", "relevant_entities",
         }
         assert schema_required == expected
@@ -501,156 +497,6 @@ class TestRecipesInBriefer:
 
         user_content = msgs[1]["content"]
         assert "pandas" in user_content
-
-
-# ---------------------------------------------------------------------------
-# — Wrapper injection: skip briefer filtering when few wrappers installed
-# ---------------------------------------------------------------------------
-
-
-class TestToolFilterThreshold:
-    """briefer wrapper filter is skipped when installed wrappers <= threshold."""
-
-    async def test_few_tools_injects_all(self, db):
-        """5 wrappers installed with threshold=10 → planner sees all 5."""
-        # Briefer selects only 'browser' — but overrides
-        briefing = _briefing(
-            modules=["web"],
-            wrappers=["browser"],
-            context="User wants to read a screenshot.",
-        )
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(briefing)
-            return "{}"
-
-        fake_tools = [
-            {"name": n, "summary": f"{n} wrapper", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake",
-             "version": "0.1.0", "description": ""}
-            for n in ["browser", "ocr", "aider", "docreader", "transcriber"]
-        ]
-
-        cfg = Config(
-            tokens={"cli": "tok"},
-            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            users={},
-            models=full_models(),
-            settings=full_settings(
-                briefer_enabled=True,
-                briefer_wrapper_filter_threshold=10,
-            ),
-            raw={},
-        )
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
-            msgs, _, _ = await build_planner_messages(
-                db, cfg, "sess1", "admin", "read the screenshot",
-            )
-
-        user_content = msgs[1]["content"]
-        # All 5 wrappers should be present, not just briefer's selection
-        for name in ["browser", "ocr", "aider", "docreader", "transcriber"]:
-            assert name in user_content, f"Wrapper '{name}' missing from planner context"
-
-    async def test_many_tools_uses_briefer_filter(self, db):
-        """15 wrappers with threshold=10 → only briefer-selected wrappers appear."""
-        briefing = _briefing(
-            modules=["web"],
-            wrappers=["browser"],
-            context="User wants to browse.",
-        )
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(briefing)
-            return "{}"
-
-        fake_tools = [
-            {"name": f"wrapper{i}", "summary": f"wrapper{i} desc", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake",
-             "version": "0.1.0", "description": ""}
-            for i in range(15)
-        ]
-        # Add browser so briefer selection works
-        fake_tools.append(
-            {"name": "browser", "summary": "Navigate pages", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake",
-             "version": "0.1.0", "description": ""}
-        )
-
-        cfg = Config(
-            tokens={"cli": "tok"},
-            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            users={},
-            models=full_models(),
-            settings=full_settings(
-                briefer_enabled=True,
-                briefer_wrapper_filter_threshold=10,
-            ),
-            raw={},
-        )
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
-            msgs, _, _ = await build_planner_messages(
-                db, cfg, "sess1", "admin", "browse example.com",
-            )
-
-        user_content = msgs[1]["content"]
-        # Only browser selected by briefer (16 wrappers > threshold 10)
-        assert "browser" in user_content
-        assert "Navigate pages" in user_content
-        # Other wrappers should NOT be present
-        assert "tool0 desc" not in user_content
-
-    async def test_threshold_zero_always_filters(self, db):
-        """threshold=0 → briefer filtering applies even with 1 wrapper."""
-        # Briefer selects only 'browser' out of 2 wrappers
-        briefing = _briefing(
-            modules=["web"],
-            wrappers=["browser"],
-            context="User wants to browse.",
-        )
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(briefing)
-            return "{}"
-
-        fake_tools = [
-            {"name": "browser", "summary": "Navigate pages", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake",
-             "version": "0.1.0", "description": ""},
-            {"name": "ocr", "summary": "Extract text from images", "args_schema": {},
-             "env": {}, "session_secrets": [], "path": "/fake",
-             "version": "0.1.0", "description": ""},
-        ]
-
-        cfg = Config(
-            tokens={"cli": "tok"},
-            providers={"openrouter": Provider(base_url="https://api.example.com/v1")},
-            users={},
-            models=full_models(),
-            settings=full_settings(
-                briefer_enabled=True,
-                briefer_wrapper_filter_threshold=0,
-            ),
-            raw={},
-        )
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=fake_tools):
-            msgs, _, _ = await build_planner_messages(
-                db, cfg, "sess1", "admin", "browse example.com",
-            )
-
-        user_content = msgs[1]["content"]
-        # threshold=0 → briefer filtering applies: only browser, not ocr
-        assert "Navigate pages" in user_content
-        assert "Extract text from images" not in user_content
 
 
 # ---------------------------------------------------------------------------

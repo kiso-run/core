@@ -14,6 +14,8 @@ import aiosqlite
 from kiso.config import Config, setting_bool, setting_int
 from kiso.connectors import discover_connectors
 from kiso.registry import get_registry_wrappers
+from kiso.skill_loader import discover_skills
+from kiso.skill_runtime import metadata_for_briefer
 from kiso.recipe_loader import (
     build_planner_recipe_list,
     discover_recipes,
@@ -1103,6 +1105,20 @@ async def build_planner_messages(
     if full_wrapper_list:
         context_pool["wrappers"] = full_wrapper_list
 
+    # Skill discovery — populate context_pool["skills"] so the briefer can
+    # select. Metadata-only (name + description + when_to_use); M1540 wires
+    # role-scoped skill bodies into planner/worker/reviewer prompts.
+    installed_skills = discover_skills()
+    if installed_skills:
+        skill_lines = []
+        for skill in installed_skills:
+            meta = metadata_for_briefer(skill)
+            line = f"- {meta['name']} — {meta.get('description', '').strip()}"
+            if meta.get("when_to_use"):
+                line += f" (when: {meta['when_to_use'].strip()})"
+            skill_lines.append(line)
+        context_pool["skills"] = "\n".join(skill_lines)
+
     # MCP method catalog — fed to the briefer as a first-class category
     # so the briefer can SELECT MCP methods, not just validate them
     # post-hoc. Caller is responsible for formatting via
@@ -1185,8 +1201,8 @@ async def build_planner_messages(
             modules.append("planning_rules")
         # wrappers_rules needed when any wrappers are installed — contains
         # "use directly" rule and args/guide validation.  Broader than
-        # (which checked briefing["wrappers"]) because the briefer sometimes
-        # skips wrapper selection even when wrappers are relevant.
+        # briefing-driven selection because the briefer sometimes skips
+        # wrapper selection even when wrappers are relevant.
         if installed and "wrappers_rules" not in modules:
             modules.append("wrappers_rules")
         # investigate mode injects the read-only diagnose-first
@@ -1337,40 +1353,36 @@ async def build_planner_messages(
                 f"{fence_content(context_pool['paraphrased'], 'PARAPHRASED')}"
             )
 
-    # Recipes section — exclusion model: inject all minus briefer-excluded.
+    # Recipes section — M1502 dropped the briefer-driven exclusion model.
+    # Recipes are injected verbatim and stay in-prompt until M1541 migrates
+    # them to skills. Activation-hints filtering (M1538) will then take over.
     if context_pool.get("recipes"):
         raw_recipes = context_pool.get("_raw_recipes", [])
-        if briefing:
-            excluded = {n.lower() for n in briefing.get("exclude_recipes", [])}
-            kept = [r for r in raw_recipes if r["name"].lower() not in excluded]
-        else:
-            kept = raw_recipes
-        if kept:
-            context_parts.append(f"## Available Recipes\n{build_planner_recipe_list(kept)}")
+        if raw_recipes:
+            context_parts.append(
+                f"## Available Recipes\n{build_planner_recipe_list(raw_recipes)}"
+            )
 
-    # Tools section — briefer selects by name, code injects full descriptions.
-    # skip briefer wrapper filtering when few wrappers installed — marginal
-    # token saving vs catastrophic risk of excluding the right wrapper.
-    tool_filter_threshold = setting_int(
-        config.settings, "briefer_wrapper_filter_threshold", lo=0,
-    )
-    if briefing and briefing["wrappers"]:
-        if len(installed) <= tool_filter_threshold:
-            # Few wrappers — inject all but with guides only for selected wrappers
-            log.debug("Skipping briefer wrapper filter: %d wrappers <= threshold %d",
-                      len(installed), tool_filter_threshold)
-            _selected = set(briefing["wrappers"])
-            tiered_list = build_planner_wrapper_list(installed, user_role, user_wrappers, selected_names=_selected)
-            if tiered_list:
-                context_parts.append(f"## Wrappers\n{tiered_list}")
-        else:
-            selected_names = set(briefing["wrappers"])
-            selected_tools = [t for t in installed if t["name"] in selected_names]
-            selected_tool_text = build_planner_wrapper_list(selected_tools, user_role, user_wrappers)
-            if selected_tool_text:
-                context_parts.append(f"## Wrappers\n{selected_tool_text}")
-    elif full_wrapper_list:
-        context_parts.append(f"## Wrappers\n{full_wrapper_list}")
+    # Skills section — briefer selects by name; planner prompt gets
+    # name + description only (M1540 enriches with role-scoped bodies).
+    # When the briefer is bypassed / absent, inject all installed skills.
+    if briefing and briefing.get("skills"):
+        selected_skills = [
+            s for s in installed_skills if s.name in set(briefing["skills"])
+        ]
+    else:
+        selected_skills = installed_skills
+    if selected_skills:
+        skill_md_lines = []
+        for skill in selected_skills:
+            meta = metadata_for_briefer(skill)
+            line = f"- **{meta['name']}** — {meta.get('description', '').strip()}"
+            if meta.get("when_to_use"):
+                line += f" (when: {meta['when_to_use'].strip()})"
+            skill_md_lines.append(line)
+        context_parts.append(
+            "## Skills\n" + "\n".join(skill_md_lines)
+        )
 
     # MCP method catalog (M1370/M1371) — the briefer received this as
     # selectable input; the planner LLM also needs to see the catalog
