@@ -1,26 +1,5 @@
 {
-  "wrappers": [
-    {
-      "name": "aider",
-      "description": "Code editing, refactoring, bug fixes, and codebase Q&A using aider's architect/editor pattern"
-    },
-    {
-      "name": "browser",
-      "description": "Headless WebKit browser automation — navigate pages, snapshot interactive elements, click, fill forms, take screenshots"
-    },
-    {
-      "name": "docreader",
-      "description": "Document reader — extract text from PDF, DOCX, CSV, XLSX files for analysis and search"
-    },
-    {
-      "name": "transcriber",
-      "description": "Audio transcription — convert voice messages and recordings to text via Gemini multimodal"
-    },
-    {
-      "name": "ocr",
-      "description": "Image OCR — extract text from photos, screenshots, receipts, whiteboards via Gemini vision"
-    }
-  ],
+  "wrappers": [],
   "recipes": [],
   "connectors": [
     {
@@ -31,7 +10,7 @@
   "presets": [
     {
       "name": "default",
-      "description": "Default preset — all general-purpose wrappers for a complete assistant"
+      "description": "Default preset — bundled MCP server set for a general-purpose assistant"
     }
   ]
 }
