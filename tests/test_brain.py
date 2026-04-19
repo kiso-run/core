@@ -86,7 +86,6 @@ from kiso.brain import (
     FAILURE_CLASS_BLOCKED_POLICY,
     FAILURE_CLASS_DELIVERY_SPLIT,
     FAILURE_CLASS_PLAN_SHAPE,
-    FAILURE_CLASS_SEMANTIC_WRAPPER,
     FAILURE_CLASS_TASK_SHAPE,
     FAILURE_CLASS_WORKSPACE_ROUTING,
 )
@@ -3874,10 +3873,10 @@ class TestClassifierPromptContent:
         assert "chat_kb" in CLASSIFIER_CATEGORIES
 
     def test_classifier_prompt_covers_ecosystem_management(self):
-        """plan category includes wrapper/connector/plugin management."""
+        """plan category includes skill/MCP/connector management."""
         prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "wrappers" in prompt or "wrapper" in prompt
-        assert "connectors" in prompt or "connector" in prompt
+        assert "skill" in prompt or "mcp" in prompt
+        assert "connector" in prompt
 
     def test_classifier_prompt_supports_non_latin_languages(self):
         """classifier prompt includes non-Latin language examples."""
@@ -3885,7 +3884,6 @@ class TestClassifierPromptContent:
         assert "Russian" in prompt
         assert "Chinese" in prompt
         assert "ALWAYS include the language name" in prompt
-        assert "plugin" in prompt
 
 
 class TestClassifierContext:
@@ -4039,10 +4037,6 @@ class TestRolePromptContent:
             (["hint"], None),
             (["ABSOLUTE priority"], "exact"),
         ]),
-        # worker wrapper path awareness
-        ("worker", [
-            (["Wrapper binaries", "wrapper venv PATH"], "any_exact"),
-        ]),
     ], ids=[
         "M234-atomic-ops", "M234-atomic-pkg-mgrs",
         "M275-usage-guide", "M275-usage-mandatory",
@@ -4053,7 +4047,7 @@ class TestRolePromptContent:
         "M6-substance-format", "M6-regardless",
         "M106d-no-find-root", "M106d-command-v",
         "M48-sudo-present", "M48-sudo-explicit", "M48-sudo-no-add",
-        "M47-hint-priority", "M284-wrapper-path",
+        "M47-hint-priority",
     ])
     def test_prompt_contains_required_text(self, role, assertions):
         prompt = (_ROLES_DIR / f"{role}.md").read_text()
@@ -5170,11 +5164,6 @@ class TestValidationRetryClassification:
         assert classify_failure_class(
             ["Task 2: msg task must have expect = null"]
         ) == FAILURE_CLASS_TASK_SHAPE
-
-    def test_failure_classifies_semantic_tool_validation(self):
-        assert classify_failure_class(
-            ["Wrapper args validation failed: files must contain file paths only"]
-        ) == FAILURE_CLASS_SEMANTIC_WRAPPER
 
     def test_failure_classifies_workspace_routing(self):
         assert classify_failure_class(

@@ -6,14 +6,10 @@ of install proposals (replaces keyword heuristic). broadens
 detection for msg-only plans on fresh instances.
 """
 
-import json
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from kiso.brain import (
     _load_modular_prompt,
-    _retry_llm_with_validation,
     validate_plan,
 )
 
@@ -289,98 +285,6 @@ class TestInstallProposalEdgeCases:
 
 
 from tests.conftest import make_config
-
-
-@pytest.mark.asyncio
-class TestRetryLoopUninstalledToolFlag:
-    """_retry_llm_with_validation propagates _saw_uninstalled_wrapper."""
-
-    async def test_flag_set_when_validation_sees_uninstalled_tool(self):
-        """If validation produces 'is not installed' error then valid plan,
-        result has _saw_uninstalled_wrapper=True."""
-        # First call: LLM returns a plan that fails validation with an
-        # "is not installed" message.
-        bad_plan = json.dumps({
-            "goal": "Navigate", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "exec", "wrapper": None,
-                        "detail": "browser go", "args": None, "expect": "page"}],
-        })
-        # Second call: LLM returns valid msg-only plan
-        good_plan = json.dumps({
-            "goal": "Ask install", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "wrapper": None,
-                        "detail": "Answer in English. Install browser?",
-                        "args": None, "expect": None}],
-        })
-        mock_llm = AsyncMock(side_effect=[bad_plan, good_plan])
-        config = make_config()
-        call_count = 0
-
-        def validate(plan):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return ["Task 1: wrapper 'browser' is not installed. Available wrappers: none."]
-            return []
-
-        with patch("kiso.brain.call_llm", mock_llm):
-            result = await _retry_llm_with_validation(
-                config, "planner", [{"role": "user", "content": "test"}],
-                {"type": "json_object"}, validate, Exception, "Plan",
-            )
-        assert result["_saw_uninstalled_wrapper"] is True
-
-    async def test_flag_false_when_no_uninstalled_tool_errors(self):
-        """Normal validation (no wrapper errors) → _saw_uninstalled_wrapper=False."""
-        good_plan = json.dumps({
-            "goal": "Say hello", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "wrapper": None,
-                        "detail": "Answer in English. Hello!",
-                        "args": None, "expect": None}],
-        })
-        mock_llm = AsyncMock(return_value=good_plan)
-        config = make_config()
-
-        with patch("kiso.brain.call_llm", mock_llm):
-            result = await _retry_llm_with_validation(
-                config, "planner", [{"role": "user", "content": "test"}],
-                {"type": "json_object"}, lambda p: [], Exception, "Plan",
-            )
-        assert result["_saw_uninstalled_wrapper"] is False
-
-    async def test_flag_set_even_with_multiple_error_types(self):
-        """If uninstalled-wrapper error mixed with other errors, flag still set."""
-        bad = json.dumps({
-            "goal": "X", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "exec", "wrapper": None,
-                        "detail": "browser go", "args": None, "expect": "page"}],
-        })
-        good = json.dumps({
-            "goal": "Ask", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "msg", "wrapper": None,
-                        "detail": "Answer in English. Install?",
-                        "args": None, "expect": None}],
-        })
-        mock_llm = AsyncMock(side_effect=[bad, good])
-        config = make_config()
-        call_count = 0
-
-        def validate(plan):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return [
-                    "Task 1: msg ordering wrong",
-                    "Task 2: wrapper 'browser' is not installed. Available: none.",
-                ]
-            return []
-
-        with patch("kiso.brain.call_llm", mock_llm):
-            result = await _retry_llm_with_validation(
-                config, "planner", [{"role": "user", "content": "test"}],
-                {"type": "json_object"}, validate, Exception, "Plan",
-            )
-        assert result["_saw_uninstalled_wrapper"] is True
 
 
 # --- msg-only plan on fresh instance → install_proposal ---

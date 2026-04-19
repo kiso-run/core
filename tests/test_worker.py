@@ -10886,11 +10886,11 @@ class TestFailTaskAndAudit:
              patch("kiso.worker.loop.audit"), \
              patch("kiso.worker.loop._save_large_output", side_effect=lambda s, i, o: o):
             result = await _fail_task_and_audit(
-                ctx, 42, "wrapper", "d", "Wrapper args validation failed: missing required arg: url", 1,
-                replan_reason="Wrapper args validation failed: missing required arg: url",
+                ctx, 42, "mcp", "d", "mcp args invalid: missing required arg: url", 1,
+                replan_reason="mcp args invalid: missing required arg: url",
             )
-        assert result.stop_replan == "Wrapper args validation failed: missing required arg: url"
-        assert result.plan_output["failure_class"] == "semantic_tool_validation"
+        assert result.stop_replan == "mcp args invalid: missing required arg: url"
+        assert result.plan_output["failure_class"] == "task_shape_validation"
 
     @pytest.mark.asyncio
     async def test_custom_output_and_stderr(self, ctx):

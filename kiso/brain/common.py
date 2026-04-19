@@ -127,8 +127,6 @@ _APPROVAL_KEYWORDS = frozenset({
     "installa", "install",
 })
 _INSTALL_MODE_NONE = "none"
-_INSTALL_MODE_KISO_WRAPPER = "kiso_wrapper"
-_INSTALL_MODE_UNKNOWN_KISO_WRAPPER = "unknown_kiso_wrapper"
 _INSTALL_MODE_PYTHON_LIB = "python_lib"
 _INSTALL_MODE_SYSTEM_PKG = "system_pkg"
 _INSTALL_MODE_NODE_CLI = "node_cli"
@@ -157,11 +155,6 @@ _PYTHON_INSTALL_HINT_RE = re.compile(
 )
 _NODE_INSTALL_HINT_RE = re.compile(
     r"\b(?:npm|npx|nodejs|node\s+package|node\s+library|node\s+module|pacchetto\s+node|libreria\s+node|modulo\s+node)\b",
-    re.IGNORECASE,
-)
-# M1320-allow: regex alternatives keep matching "tool"
-_KISO_WRAPPER_SIGNAL_RE = re.compile(
-    r"\b(?:kiso\s+wrapper|kiso\s+plugin|plugin|connector|wrapper|tool|registry)\b",  # noqa: M1320-allow
     re.IGNORECASE,
 )
 _COMMON_PYTHON_PACKAGES = frozenset({
@@ -226,17 +219,6 @@ def _compress_install_turns(lines: list[str]) -> list[str]:
     return result
 
 
-def _parse_registry_hint_names(registry_hints: str) -> frozenset[str]:
-    """Extract wrapper names from sysenv registry_hints text."""
-    if not registry_hints:
-        return frozenset()
-    return frozenset(
-        part.split("(")[0].strip().lower()
-        for part in registry_hints.split(";")
-        if part.strip()
-    )
-
-
 def _extract_install_target(message: str) -> str | None:
     """Best-effort package/wrapper target extraction from install requests."""
     named_match = _NAMED_TOOL_TARGET_RE.search(message)
@@ -252,17 +234,6 @@ def _extract_install_target(message: str) -> str | None:
     if target in _GENERIC_INSTALL_TARGETS:
         return None
     return target
-
-
-def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
-    """Return True when the user explicitly frames *target* as a named wrapper/plugin."""
-    if not target:
-        return False
-    if _KISO_WRAPPER_SIGNAL_RE.search(message):
-        return True
-    escaped = re.escape(target)
-    # M1320-allow: regex matches user natural language ("tool" or "wrapper")
-    return bool(re.search(rf"\b(?:wrapper|tool)\s+['\"`]?{escaped}['\"`]?\b", message, re.IGNORECASE))  # noqa: M1320-allow
 
 
 def _classify_install_mode(
@@ -499,12 +470,6 @@ _NPM_GLOBAL_RE = re.compile(
 # to _UV_PIP_RE: when the same exec detail also references npx,
 # the global-install warning is suppressed.
 _NPX_RE = re.compile(r"\bnpx\b", re.IGNORECASE)
-# marker substring in validation errors for uninstalled-wrapper detection.
-# Used both when generating the error (validate_plan) and detecting it
-# (_retry_llm_with_validation).  Keep in sync.
-_WRAPPER_NOT_INSTALLED_MARKER = "is not installed"
-_WRAPPER_UNAVAILABLE_MARKER = "not available — not installed and not in the registry"
-
 _ABS_PATH_RE = re.compile(r"(/[a-zA-Z0-9_./-]+)")
 
 
@@ -578,7 +543,6 @@ _ACTION_TO_USER_RE = re.compile(
 )
 
 FAILURE_CLASS_TASK_SHAPE = "task_shape_validation"
-FAILURE_CLASS_SEMANTIC_WRAPPER = "semantic_tool_validation"
 FAILURE_CLASS_WORKSPACE_ROUTING = "workspace_file_routing"
 FAILURE_CLASS_BLOCKED_POLICY = "blocked_command_policy"
 FAILURE_CLASS_EXTERNAL_DEP = "external_dependency"
@@ -586,7 +550,6 @@ FAILURE_CLASS_PLAN_SHAPE = "plan_shape_error"
 FAILURE_CLASS_DELIVERY_SPLIT = "final_delivery_split"
 FAILURE_CLASSES: frozenset[str] = frozenset({
     FAILURE_CLASS_TASK_SHAPE,
-    FAILURE_CLASS_SEMANTIC_WRAPPER,
     FAILURE_CLASS_WORKSPACE_ROUTING,
     FAILURE_CLASS_BLOCKED_POLICY,
     FAILURE_CLASS_EXTERNAL_DEP,
@@ -607,15 +570,6 @@ def classify_failure_class(errors_or_reason: list[str] | str | None) -> str:
     else:
         text = str(errors_or_reason or "").lower()
 
-    if (
-        "wrapper args validation failed" in text
-        or "wrapper args invalid" in text
-        or "wrapper args is not valid json" in text
-        or "wrapper args must be a json object" in text
-        or "missing required arg:" in text
-        or "files must contain file paths only" in text
-    ):
-        return FAILURE_CLASS_SEMANTIC_WRAPPER
     if (
         "workspace file" in text
         or "module not found" in text
@@ -658,7 +612,7 @@ def _classify_validation_errors(errors: list[str]) -> str:
     if any(pattern in joined for pattern in _APPROACH_RESET_ERROR_PATTERNS):
         return VALIDATION_RETRY_APPROACH_RESET
     failure_class = classify_failure_class(errors)
-    if failure_class in {FAILURE_CLASS_TASK_SHAPE, FAILURE_CLASS_SEMANTIC_WRAPPER}:
+    if failure_class == FAILURE_CLASS_TASK_SHAPE:
         return VALIDATION_RETRY_TASK_REPAIR
     if failure_class in {FAILURE_CLASS_PLAN_SHAPE, FAILURE_CLASS_DELIVERY_SPLIT}:
         return VALIDATION_RETRY_PLAN_REWRITE
@@ -776,7 +730,6 @@ async def _retry_llm_with_validation(
     validation_errors = 0
     attempt = 0
     active_model: str | None = None  # None means use default from config
-    saw_uninstalled_wrapper = False  # track uninstalled-wrapper validation errors
 
     while attempt < max_total:
         attempt += 1
@@ -873,8 +826,6 @@ async def _retry_llm_with_validation(
         errors = validate_fn(result)
         if not errors:
             log.info("%s accepted (attempt %d)", error_noun, attempt)
-            # propagate uninstalled-wrapper signal on the result dict
-            result["_saw_uninstalled_wrapper"] = saw_uninstalled_wrapper
             return result
 
         validation_errors += 1
@@ -886,10 +837,6 @@ async def _retry_llm_with_validation(
             )
             exc.last_errors = errors
             raise exc
-
-        # detect uninstalled-wrapper errors for install-proposal detection
-        if not saw_uninstalled_wrapper and any(_WRAPPER_NOT_INSTALLED_MARKER in e for e in errors):
-            saw_uninstalled_wrapper = True
 
         # track consecutive identical errors for escalation
         error_set = frozenset(errors)
@@ -1679,8 +1626,6 @@ __brain_exports__ = [
     "_MAX_MESSENGER_FACTS",
     "_MESSENGER_RETRY_BACKOFF",
     "_MIN_PROMOTED_FACT_LEN",
-    "_WRAPPER_UNAVAILABLE_MARKER",
-    "_WRAPPER_NOT_INSTALLED_MARKER",
     "_VALID_FACT_CATEGORIES",
     "_build_strict_schema",
     "_build_validation_feedback",
@@ -1698,12 +1643,10 @@ __brain_exports__ = [
     "_filter_briefer_names",
     "_format_message_history",
     "_format_pending_items",
-    "_is_explicit_named_wrapper_request",
     "_join_or_empty",
     "_load_modular_prompt",
     "_load_system_prompt",
     "_merge_context_sections",
-    "_parse_registry_hint_names",
     "_prefilter_context_pool",
     "_repair_json",
     "_require_memory_pack_role",
@@ -1720,7 +1663,6 @@ __brain_exports__ = [
     "FAILURE_CLASS_BLOCKED_POLICY",
     "FAILURE_CLASS_DELIVERY_SPLIT",
     "FAILURE_CLASS_PLAN_SHAPE",
-    "FAILURE_CLASS_SEMANTIC_WRAPPER",
     "FAILURE_CLASS_TASK_SHAPE",
     "FAILURE_CLASS_WORKSPACE_ROUTING",
     "invalidate_prompt_cache",

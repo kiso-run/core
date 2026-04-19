@@ -106,3 +106,107 @@ class TestBrainReExportsGone:
     def test_wrapper_error_not_re_exported(self):
         import kiso.brain as brain
         assert not hasattr(brain, "WrapperError")
+
+
+# ---------------------------------------------------------------------------
+# Install-mode constants: kiso_wrapper modes gone, pip/apt/npm modes retained
+# ---------------------------------------------------------------------------
+
+
+class TestInstallModeConstantsAudit:
+
+    def test_install_mode_kiso_wrapper_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_INSTALL_MODE_KISO_WRAPPER")
+
+    def test_install_mode_unknown_kiso_wrapper_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_INSTALL_MODE_UNKNOWN_KISO_WRAPPER")
+
+    def test_install_mode_python_lib_retained(self):
+        import kiso.brain.common as common
+        assert common._INSTALL_MODE_PYTHON_LIB == "python_lib"
+
+    def test_install_mode_system_pkg_retained(self):
+        import kiso.brain.common as common
+        assert common._INSTALL_MODE_SYSTEM_PKG == "system_pkg"
+
+    def test_install_mode_node_cli_retained(self):
+        import kiso.brain.common as common
+        assert common._INSTALL_MODE_NODE_CLI == "node_cli"
+
+
+# ---------------------------------------------------------------------------
+# Wrapper-specific regexes, helpers, and markers gone
+# ---------------------------------------------------------------------------
+
+
+class TestWrapperRegexAndHelpersGone:
+
+    def test_kiso_wrapper_signal_re_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_KISO_WRAPPER_SIGNAL_RE")
+
+    def test_is_explicit_named_wrapper_request_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_is_explicit_named_wrapper_request")
+
+    def test_parse_registry_hint_names_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_parse_registry_hint_names")
+
+    def test_wrapper_not_installed_marker_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_WRAPPER_NOT_INSTALLED_MARKER")
+
+    def test_wrapper_unavailable_marker_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "_WRAPPER_UNAVAILABLE_MARKER")
+
+
+# ---------------------------------------------------------------------------
+# FAILURE_CLASS_SEMANTIC_WRAPPER retired: wrapper-arg validation is gone,
+# so the semantic_tool_validation classification has no producer and no
+# consumer.
+# ---------------------------------------------------------------------------
+
+
+class TestFailureClassSemanticWrapperGone:
+
+    def test_failure_class_constant_removed(self):
+        import kiso.brain.common as common
+        assert not hasattr(common, "FAILURE_CLASS_SEMANTIC_WRAPPER")
+
+    def test_failure_classes_frozenset_has_no_semantic_wrapper(self):
+        from kiso.brain.common import FAILURE_CLASSES
+        assert "semantic_tool_validation" not in FAILURE_CLASSES
+
+    def test_classify_failure_class_does_not_return_semantic_wrapper(self):
+        from kiso.brain.common import classify_failure_class
+        result = classify_failure_class(
+            ["Wrapper args validation failed: files must contain file paths only"]
+        )
+        assert result != "semantic_tool_validation"
+
+
+# ---------------------------------------------------------------------------
+# Role prompts: retired CLI (`kiso wrapper …`) and install-flow refs purged
+# ---------------------------------------------------------------------------
+
+
+class TestRolePromptsWrapperPurged:
+
+    def _read(self, name: str) -> str:
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        return (root / "kiso" / "roles" / name).read_text()
+
+    def test_worker_prompt_no_retired_wrapper_cli(self):
+        text = self._read("worker.md")
+        assert "kiso wrapper install" not in text
+        assert "wrapper venv" not in text.lower()
+        assert "wrapper/connector names" not in text.lower()
+
+    def test_classifier_prompt_no_wrapper_mentions(self):
+        text = self._read("classifier.md").lower()
+        assert "wrapper" not in text
