@@ -165,19 +165,21 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 CMD ["uv", "run", "uvicorn", "kiso.main:app", "--host", "0.0.0.0", "--port", "8333"]
 ```
 
-## Pre-installing wrappers and connectors
+## Pre-installing MCP servers and connectors
 
 **Build time** (baked into image): immutable, updates require rebuild.
 
 ```dockerfile
 FROM kiso:latest
-RUN kiso wrapper install search
+RUN kiso mcp install --from-url \
+    uvx --from git+https://github.com/kiso-run/search-mcp@v0.1.0 kiso-search-mcp
 ```
 
 **Runtime** (in volume): mutable, updatable without rebuild.
 
 ```bash
-kiso wrapper install search
+kiso mcp install --from-url \
+    uvx --from git+https://github.com/kiso-run/search-mcp@v0.1.0 kiso-search-mcp
 ```
 
 Volume contents take precedence over build-time installs (Docker mount behavior).
@@ -203,4 +205,4 @@ Tasks in `store.db` (volume) survive container crashes. In-flight tasks are mark
 
 `deps.sh` runs inside the container as root (isolated, no sudo needed, idempotent). System packages installed at runtime live in the container filesystem — lost on container recreation. Python packages (`uv sync` into `.venv`) persist in the volume.
 
-See [wrappers.md — deps.sh](wrappers.md#depssh).
+Used by connectors (see [connectors.md — deps.sh](connectors.md#depssh)) to install system-level dependencies at install time.

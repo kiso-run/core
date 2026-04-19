@@ -393,56 +393,22 @@ kiso config list
 
 Changes are written to `config.toml` and hot-reloaded automatically. Admin access required for all write operations.
 
-## Wrapper Management
+## MCP Server Management
 
-Only admins can install, update, and remove wrappers.
-
-```bash
-kiso wrapper search [query]                       # search official wrappers from registry
-kiso wrapper install <name>                       # official: resolves from kiso-run org
-kiso wrapper install <git-url>                    # unofficial: clone from any git URL
-kiso wrapper install <git-url> --name foo         # unofficial with custom name
-kiso wrapper install <git-url> --no-deps          # skip deps.sh execution
-kiso wrapper update <name>                        # git pull + deps.sh + uv sync
-kiso wrapper update all                           # update all installed wrappers
-kiso wrapper remove <name>
-kiso wrapper list                                 # list installed wrappers
-```
-
-### Search
-
-Searches the official registry (`registry.json` in the core repo). Matches by name first, then by description:
+Capabilities (code editing, browser, OCR, search, transcription,
+etc.) ship as MCP servers in v0.10. See `docs/mcp.md` for the full
+install and runtime guide.
 
 ```bash
-$ kiso wrapper search
-  search  — Web search with multiple backends (Brave, Serper)
-  aider   — Code editing, refactoring, bug fixes using aider
-
-$ kiso wrapper search code
-  aider   — Code editing, refactoring, bug fixes using aider
+kiso mcp list                                                       # list installed servers
+kiso mcp install --from-url <uvx-or-npx-command>                    # install from URL
+kiso mcp remove <name>
 ```
 
-If no results match but the other plugin type has matches, a cross-type hint is shown:
-
-```
-$ kiso connector search browser
-No connectors found.
-Did you mean `kiso wrapper search browser`? Found in wrappers: browser
-```
-
-### Install Flow
-
-See [wrappers.md — Install Flow](wrappers.md#install-flow) for the full 10-step sequence (includes `.installing` marker to prevent discovery during install).
-
-### Naming
-
-| Source | Installed as |
-|---|---|
-| `kiso wrapper install search` | `~/.kiso/instances/{instance}/wrappers/search/` |
-| `kiso wrapper install git@github.com:foo/bar.git` | `~/.kiso/instances/{instance}/wrappers/github-com_foo_bar/` |
-| `kiso wrapper install <url> --name custom` | `~/.kiso/instances/{instance}/wrappers/custom/` |
-
-URL to name: see [wrappers.md — Naming Convention](wrappers.md#naming-convention) for the full algorithm.
+No Kiso-maintained wrapper registry exists. Servers install from
+concrete URLs (`uvx --from git+https://…`, `npx -y @org/…`) and
+live in `~/.kiso/mcp/<name>.json` with optional
+`~/.kiso/mcp/<name>.env` for secrets.
 
 ## Connector Management
 
@@ -519,7 +485,7 @@ Four levels, from lightest to heaviest:
 
 - SQLite WAL mode handles concurrent access safely
 - The server may not be running when you want to reset
-- Same pattern as `kiso env` (direct file) and `kiso wrapper` (direct filesystem)
+- Same pattern as `kiso env` (direct file access)
 
 After `kiso reset factory`, the host wrapper automatically restarts the container so the server reinitializes with a fresh database.
 
@@ -698,8 +664,8 @@ The wrapper (`kiso-host.sh`) fetches the completion script from inside a running
 - All top-level commands including `stats`, `completion`, `instance`, etc.
 - `kiso stats --session` and `kiso reset session` → tab-complete session names from the active instance's DB
 - `kiso instance explore SESSION` → tab-complete session names
-- `kiso wrapper search` and `kiso connector search` → tab-complete from locally installed plugin names
-- `kiso wrapper update`, `kiso wrapper remove`, `kiso connector update`, `kiso connector remove|run|stop|status` → tab-complete from locally installed names
+- `kiso connector search` → tab-complete from locally installed plugin names
+- `kiso connector update`, `kiso connector remove|run|stop|status` → tab-complete from locally installed names
 - `kiso --instance NAME` → detected from command line; completion automatically queries that instance's DB
 - When multiple instances exist and no `--instance` is specified, session completion is silently skipped
 
@@ -739,11 +705,10 @@ cli/
 ├── __init__.py    ← entry point, argument parsing, REPL loop, /verbose commands
 ├── connector.py   ← kiso connector subcommands (install, update, remove, run, stop, status)
 ├── env.py         ← kiso env subcommands (set, get, list, delete, reload)
-├── plugin_ops.py  ← shared utilities for wrapper and connector management
+├── plugin_ops.py  ← shared utilities for connector management
 ├── render.py      ← terminal renderer (task display, markdown, spinner, colors)
 ├── reset.py       ← kiso reset subcommands (session, knowledge, all, factory)
 ├── session.py     ← kiso sessions subcommand
-├── wrapper.py        ← kiso wrapper subcommands (install, update, remove, list, search)
 └── user.py        ← kiso user subcommands (list, add, remove, alias)
 ```
 

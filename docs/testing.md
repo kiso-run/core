@@ -310,11 +310,11 @@ Functional and live tests that install wrappers/connectors download binaries and
 
 | Cache dir | What | Impact |
 |-----------|------|--------|
-| `~/.cache/uv/` | Python package downloads (all wrappers) | `uv sync`: ~30s → ~2s |
-| `~/.cache/ms-playwright/` | WebKit binary (browser wrapper) | `playwright install`: ~300s → ~1s |
+| `~/.cache/uv/` | Python package downloads | `uv sync`: ~30s → ~2s |
+| `~/.cache/ms-playwright/` | WebKit binary (Playwright MCP) | `playwright install`: ~300s → ~1s |
 | `~/.cache/pip/` | pip packages (if used by deps.sh) | Varies |
 
-The test flow is **identical** to a fresh install — `kiso wrapper install <name>` still runs fully (git clone → uv sync → deps.sh). Cached downloads just resolve instantly instead of hitting the network. This works for **all** wrappers and connectors, not just the browser.
+The test flow is **identical** to a fresh install — connector installs and MCP `uvx` launches still run fully (clone or fetch → uv sync → deps.sh). Cached downloads just resolve instantly instead of hitting the network.
 
 ```bash
 # Reset cache if you need a truly clean first-run experience

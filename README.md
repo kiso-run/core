@@ -277,7 +277,8 @@ reason about what actually happened, not just what a previous prompt said.
 - [architecture.md](docs/architecture.md) — What Kiso is, why the architecture works, and how the core pieces fit together
 - [flow.md](docs/flow.md) — Full message lifecycle and runtime sequencing
 - [config.md](docs/config.md) — Configuration, providers, models, tokens
-- [wrappers.md](docs/wrappers.md) — Wrapper system and packaging
+- [extensibility.md](docs/extensibility.md) — Extension surfaces: MCP servers, skills, connectors
+- [mcp.md](docs/mcp.md) — MCP server install and runtime
 - [connectors.md](docs/connectors.md) — Platform bridges and connector model
 - [api.md](docs/api.md) — HTTP API
 - [cli.md](docs/cli.md) — Terminal client and management commands

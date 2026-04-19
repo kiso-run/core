@@ -44,7 +44,7 @@ python = ">=3.11"
 
 ### Env Var Naming
 
-Same convention as wrappers: `KISO_CONNECTOR_{NAME}_{KEY}`. See [wrappers.md — Env Var Naming](wrappers.md#env-var-naming). These are deploy secrets — always in env vars, never in config files.
+Deploy secrets live in env vars named `KISO_CONNECTOR_{NAME}_{KEY}` — never in config files.
 
 ## config.toml
 
@@ -91,7 +91,7 @@ No upload API exists yet — write directly to the filesystem (connectors run in
 
 ## deps.sh
 
-Same as wrappers: optional, idempotent, installs system-level deps inside the container. See [wrappers.md — deps.sh](wrappers.md#depssh).
+Optional, idempotent shell script that installs system-level dependencies inside the container. Runs after `git clone`, before `uv sync`. Non-zero exit aborts the install.
 
 ## Installation
 
@@ -120,11 +120,21 @@ Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` t
 
 ### Naming Convention
 
-Same as wrappers. See [wrappers.md — Naming Convention](wrappers.md#naming-convention).
+- `kiso connector install <name>` → resolves to `git@github.com:kiso-run/<name>-connector.git` (or the equivalent public URL) and installs to `~/.kiso/instances/{instance}/connectors/<name>/`.
+- `kiso connector install <git-url>` → installs to `~/.kiso/instances/{instance}/connectors/<sanitized-url>/`.
+- `kiso connector install <git-url> --name custom` → installs to `~/.kiso/instances/{instance}/connectors/custom/`.
 
 ### Install Flow
 
-Same as [wrappers.md — Install Flow](wrappers.md#install-flow) (with `.installing` marker, validation, deps, uv sync). One additional step: if `config.example.toml` exists and `config.toml` doesn't, copy it.
+1. Validate target directory doesn't exist (or is a stale `.installing` marker).
+2. `git clone <url> <target>.installing`.
+3. Validate the repo has a `kiso.toml` with a `[kiso]` table and a plausible connector entry point.
+4. Run `deps.sh` if present.
+5. `uv sync` inside the target.
+6. If `config.example.toml` exists and `config.toml` does not, copy it.
+7. Rename `<target>.installing` → `<target>`.
+
+Failures at any step abort and clean up the `.installing` directory.
 
 ### Via the Agent (manual install)
 
@@ -139,9 +149,7 @@ kiso connector update discord          # git pull + deps.sh + uv sync
 kiso connector update all
 kiso connector remove discord
 kiso connector list
-kiso connector search [query]
-# → fetches https://raw.githubusercontent.com/kiso-run/core/main/registry.json
-# → matches by name first, then by description
+kiso connector search [query]              # local search across installed connectors
 ```
 
 ## Running

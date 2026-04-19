@@ -41,18 +41,18 @@ Kiso never installs wrappers, connectors, or OS packages without explicit user a
 
 ### How it works
 
-1. **First plan**: if a wrapper/connector is needed but not installed, the planner produces a single `msg` task asking the user whether to install it, offers alternatives (e.g. `search` instead of `browser` for read-only content), and ends the plan there.
+1. **First plan**: if a capability is needed but not installed, the planner produces a single `msg` task asking the user whether to install it, offers alternatives (e.g. a different MCP server or skill), and ends the plan there.
 2. **User replies**: the user's response triggers a new planning cycle (replan).
-3. **Replan**: only in a replan (`is_replan=True`) is the planner allowed to include `exec "kiso wrapper install ..."` tasks.
+3. **Replan**: only in a replan (`is_replan=True`) is the planner allowed to include `exec` tasks that run install verbs (`kiso mcp install`, `kiso skill install`, `kiso connector install`, `apt-get install`, `uv pip install`, `npm install`, …).
 
 ### Enforcement layers
 
 | Layer | What it does |
 |-------|-------------|
 | **Planner prompt** | `kiso_native`, `tools_rules`, `web`, `plugin_install` modules all instruct: ask first, end plan with msg |
-| **Capability gap injection** | When a needed wrapper is missing, injects text telling the planner to ask the user |
-| **validate_plan** | Rejects any `exec` task containing `kiso wrapper install` or `kiso connector install` when `is_replan=False` |
-| **Wrapper-not-installed error** | When a `wrapper` task references an uninstalled wrapper, the error message guides the LLM to plan a single msg task |
+| **Capability gap injection** | When a needed MCP server / skill / connector is missing, injects text telling the planner to ask the user |
+| **validate_plan** | Rejects any `exec` task containing an install verb (`kiso mcp install`, `kiso skill install`, `kiso connector install`, `apt-get install`, `uv pip install`, `npm install`, …) when `is_replan=False` |
+| **Capability-missing error** | When a plan references an uninstalled MCP method or skill, the error message guides the LLM to plan a single msg task |
 
 ### Code
 

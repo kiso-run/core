@@ -5,92 +5,99 @@ extension actually does.
 
 ## Decision tree
 
-### 1. Wrapper
+### 1. MCP server
 
-Use a wrapper **only when all three** of the following are true:
+Use an MCP server when your extension provides **tools, resources,
+or prompts** that the assistant should be able to call at runtime.
 
-- Your extension installs software on the host machine (binaries,
-  models, system packages)
-- You need to manage its lifecycle — install, upgrade, uninstall,
-  deps check
-- You want deep integration with the session workspace (read and
-  write local files, publish artifacts via the `Published files:`
-  pipeline)
+MCP (Model Context Protocol) is the primary integration surface
+for capabilities in v0.10. Anything that used to be a "wrapper" —
+code editing, browser automation, OCR, transcription, document
+reading, search — is an MCP server in v0.10. Kiso is a consumer of
+the MCP ecosystem: it does not ship its own servers as Kiso-only
+artefacts and does not maintain a curated registry.
 
-Good examples shipped with Kiso:
+Good examples shipped with the default preset:
 
-- `aider` — installs the aider binary via `uv`, operates on repo
-  files, publishes diffs
-- `browser` — installs Playwright + Chromium, takes screenshots,
-  publishes them
-- `ocr` — installs Tesseract + language packs, reads image files,
-  emits text
-- `transcriber` — installs whisper models, reads audio files, emits
-  text
-- `docreader` — installs parsing libs, reads PDF/docx files, emits
-  text
+- `@playwright/mcp` — headless browser automation
+- `kiso-run/aider-mcp` — code editing / refactor via the
+  aider architect+editor pattern
+- `kiso-run/search-mcp` — Perplexity Sonar search
+- `kiso-run/ocr-mcp` — image OCR via Gemini vision
+- `kiso-run/transcriber-mcp` — audio transcription via Gemini
+- `kiso-run/docreader-mcp` — PDF / DOCX / CSV text extraction
 
-Wrappers live in separate repos under `kiso-run/` (e.g.
-`kiso-run/wrapper-aider`). See `docs/wrapper-dev.md` for the
-authoring guide.
+Install an MCP server from a concrete URL:
 
-### 2. MCP server
+```
+kiso mcp install --from-url \
+    uvx --from git+https://github.com/kiso-run/aider-mcp@v0.1.0 kiso-aider-mcp
+```
 
-Use an MCP server (or point users at one that already exists) when
-your extension is a **remote-API proxy** with:
+Or bring your own from the community — pulsemcp.com, mcp.so,
+`modelcontextprotocol/servers`, npm, PyPI, GitHub. Kiso never
+guesses a URL: if you ask it to install "a search MCP" without a
+URL, it asks you for one.
 
-- An external service (GitHub, GitLab, Slack, Google APIs,
-  Anthropic…) — auth via tokens or OAuth setup handled by the
-  server itself
-- No local-install lifecycle beyond a thin client package (npm,
-  PyPI) or a subprocess launched from a cloned repo
-- No session workspace integration (or only at the consumer end,
-  via standard MCP resource types)
+See `docs/mcp.md` for the full install / auth / session-scoped env
+guide.
 
-**Kiso is a consumer of the MCP ecosystem**, not a publisher. We
-don't ship our own MCP servers and we don't maintain a curated
-registry of them. Users bring their own from the wider ecosystem
-(pulsemcp.com, mcp.so, `modelcontextprotocol/servers`, npm, PyPI,
-GitHub). When you ask Kiso to install an MCP server without a
-concrete URL, Kiso asks for the URL — it will not guess.
+### 2. Skill
 
-See `docs/mcp.md` for the full user guide including three concrete
-example configurations and the auth setup patterns.
+Use a skill when your extension is **role-scoped prompt guidance**
+for the LLM — no new code, no new dependencies. Skills live in
+`~/.kiso/skills/<name>/SKILL.md` and are projected into the
+planner / worker / reviewer / messenger / curator / briefer
+prompts according to their front-matter.
 
-### 3. Recipe
+A `SKILL.md` has YAML front-matter declaring `name`, `summary`,
+optional `activation_hints`, and role-scoped sections
+(`## Planner`, `## Worker`, `## Reviewer`, …) that are pulled into
+the matching role's system prompt.
 
-Use a recipe when your extension is **just a set of reusable
-planner instructions** — no new code, no new dependencies, no new
-runtime surface. Recipes live in `~/.kiso/recipes/*.md` and are
-loaded into the planner context at plan time.
+Install a skill from a URL:
 
-See `docs/recipes.md` for the recipe format and examples.
+```
+kiso skill install --from-url https://github.com/org/my-skill
+```
+
+See `docs/skills.md` for the SKILL.md format (docs/skills.md will
+be filled in during the pre-release docs sweep).
+
+### 3. Connector
+
+Use a connector when your extension is a **messaging channel** —
+Discord, Slack, Matrix, WhatsApp, a webhook. Connectors bridge an
+external chat surface to a Kiso session.
+
+Connectors are installable plugins under `~/.kiso/connectors/`
+today. See `docs/connectors.md` for the current authoring model;
+the model moves to a standalone-package supervisor-config shape
+later in v0.10 (see the active devplan).
 
 ## The boundary rule
 
-The single question that decides between wrapper and MCP:
-
-> Does the extension install software on the host machine and
-> require lifecycle management?
-
-- **Yes** → wrapper
-- **No** (it just proxies a remote API) → MCP server
-
-This is why v0.9 retired three wrappers that violated the rule.
-`gworkspace`, `websearch`, and `moltbook` each made `httpx` calls
-to a remote API and installed nothing locally. Each is now
-represented in the ecosystem as an MCP server that users can
-configure explicitly (see `docs/mcp.md` for recommended community
-examples).
+- Need to call out to an external API or local tool at runtime?
+  → **MCP server**.
+- Need to push prompt guidance into a specific role without
+  shipping code? → **Skill**.
+- Need to bridge a chat surface (Discord, Slack, …) to Kiso?
+  → **Connector**.
 
 ## Summary
 
-| Surface | Install software? | Remote API? | Workspace files? | Typical source |
-|---|---|---|---|---|
-| Wrapper | yes | optional | yes | `kiso-run/wrapper-*` repo |
-| MCP server | no (client is thin) | yes | via MCP resources | community registry |
-| Recipe | no | no | no | local markdown file |
+| Surface    | Shape                          | Config location                         | Install                                    |
+|------------|--------------------------------|-----------------------------------------|--------------------------------------------|
+| MCP server | stdio / HTTP process           | `~/.kiso/mcp/<name>.json` + `.env`      | `kiso mcp install --from-url <url>`        |
+| Skill      | `SKILL.md` with role sections  | `~/.kiso/skills/<name>/`                | `kiso skill install --from-url <url>`      |
+| Connector  | installable Python package     | `~/.kiso/connectors/<name>/`            | `kiso connector install <url-or-name>`     |
 
-When in doubt, start with MCP: it's the lowest-commitment surface
-that still gives you real capability. Only reach for a wrapper
-when you genuinely need install + manage semantics on the host.
+When in doubt, start with an MCP server: it is the lowest-
+commitment surface that still gives the assistant real capability,
+and the widest community ecosystem.
+
+See also:
+
+- `docs/mcp.md` — MCP install and runtime
+- `docs/connectors.md` — connector authoring and deployment
+- `docs/standards.md` — trust tiers and install-from-URL safety
