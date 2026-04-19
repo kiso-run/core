@@ -153,27 +153,6 @@ def _save_readline_history() -> None:
         pass
 
 
-def _add_wrapper_subcommands(parent_parser: argparse.ArgumentParser) -> None:
-    """Add wrapper subcommands."""
-    s = parent_parser.add_subparsers(dest="wrapper_command")
-    s.add_parser("list", help="list installed tools")
-    sp = s.add_parser("search", help="search official tools on GitHub")
-    sp.add_argument("query", nargs="?", default="", help="search filter")
-    ip = s.add_parser("install", help="install a wrapper")
-    ip.add_argument("target", help="wrapper name or git URL")
-    ip.add_argument("--name", default=None, help="custom install name")
-    ip.add_argument("--no-deps", action="store_true", help="skip deps.sh")
-    ip.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
-    ip.add_argument("--force", action="store_true",
-                    help="force re-run deps.sh even if health_check passes")
-    up = s.add_parser("update", help="update a wrapper")
-    up.add_argument("target", help="wrapper name or 'all'")
-    rp = s.add_parser("remove", help="remove a wrapper")
-    rp.add_argument("name", help="wrapper name")
-    tp = s.add_parser("test", help="run a wrapper's test suite")
-    tp.add_argument("name", help="wrapper name")
-
-
 def _add_connector_parser(sub) -> None:
     s = sub.add_parser("connector", help="manage connectors").add_subparsers(dest="connector_command")
     s.add_parser("list", help="list installed connectors")
@@ -293,8 +272,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("msg", help="send a message and print the response").add_argument("message", help="message text")
 
-    _add_wrapper_subcommands(sub.add_parser("wrapper", help="manage wrappers"))
-
     # Role
     role_sub = sub.add_parser(
         "role", help="manage role files in ~/.kiso/roles/",
@@ -327,14 +304,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help="reset every package role")
     p.add_argument("--yes", "-y", action="store_true",
                    help="skip confirmation for non-empty existing files")
-
-    # Recipe
-    rs = sub.add_parser("recipe", help="manage recipes (planner instructions)").add_subparsers(dest="recipe_command")
-    rs.add_parser("list", help="list installed recipes")
-    p = rs.add_parser("install", help="install a recipe from a .md file")
-    p.add_argument("source", help="path to .md recipe file")
-    p = rs.add_parser("remove", help="remove a recipe")
-    p.add_argument("name", help="recipe name")
 
     # Plugin umbrella
     ps = sub.add_parser("plugin", help="unified plugin view").add_subparsers(dest="plugin_command")
@@ -480,14 +449,6 @@ def main() -> None:
         from cli.init import run_init_command
 
         sys.exit(run_init_command(args))
-    elif args.command == "wrapper":
-        from cli.wrapper import run_wrapper_command
-
-        run_wrapper_command(args)
-    elif args.command == "recipe":
-        from cli.recipe import run_recipe_command
-
-        run_recipe_command(args)
     elif args.command == "role":
         from cli.role import run_role_command
 

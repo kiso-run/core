@@ -22,13 +22,16 @@ class TestWrapperRenameRuntimeInvariants:
     """Verify that runtime entry points use the post-rename module layout."""
 
     def test_current_wrapper_modules_import(self):
+        # M1504 retired cli.wrapper and cli.recipe. The underlying
+        # kiso/wrappers.py, kiso/wrapper_repair.py, kiso/worker/wrapper.py,
+        # kiso/recipe_loader.py modules still import cleanly during the
+        # v0.10 transition — a follow-up milestone deletes the source
+        # files entirely. The CLI surface is already gone.
         modules = {
             "kiso.wrappers": "discover_wrappers",
             "kiso.wrapper_repair": "repair_unhealthy_wrappers",
             "kiso.worker.wrapper": "_wrapper_task",
-            "cli.wrapper": "run_wrapper_command",
             "kiso.recipe_loader": "discover_recipes",
-            "cli.recipe": "run_recipe_command",
         }
         for module_name, attr in modules.items():
             module = importlib.import_module(module_name)

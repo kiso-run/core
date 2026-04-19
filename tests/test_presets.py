@@ -556,55 +556,30 @@ class TestDefaultPresetInRegistry:
 
 
 class TestAutoInstallTools:
-    """install_preset auto-installs wrappers from manifest."""
+    """install_preset behavior for legacy preset-manifest wrappers.
 
-    def test_auto_install_calls_wrapper_install(self, tmp_path):
-        """install_preset calls _auto_install_tools for manifest.wrappers."""
+    M1504 retired the `kiso wrapper` CLI; wrapper entries in a legacy
+    preset manifest now result in a warning and no-op install. Older
+    tests covering `_auto_install_plugins(..., _wrapper_install)` are
+    dropped — the behavior they exercised no longer exists.
+    """
+
+    def test_wrapper_entries_in_manifest_warn_and_skip(self, capsys):
         from cli.preset_ops import install_preset
 
         manifest = PresetManifest(
-            name="test-auto", version="1.0.0", description="test",
-            wrappers=["websearch", "browser"], behaviors=["Always search before answering — never guess."],
-        )
-        args = MagicMock()
-        installed = []
-
-        def fake_wrapper_install(fake_args):
-            installed.append(fake_args.target)
-
-        with patch("cli.preset_ops._auto_install_plugins") as mock_auto, \
-             patch("cli._http.cli_post") as mock_post, \
-             patch("cli.preset_ops._load_installed", return_value=None), \
-             patch("cli.preset_ops._save_installed"):
-            mock_post.return_value = MagicMock(json=lambda: {"id": 1})
-            mock_auto.return_value = ["websearch", "browser"]
-            install_preset(args, manifest)
-
-        mock_auto.assert_called_once()
-
-    def test_tracking_includes_installed_wrappers(self):
-        """Tracking JSON includes installed_wrappers list."""
-        from cli.preset_ops import install_preset
-
-        manifest = PresetManifest(
-            name="test-track", version="1.0.0", description="test",
-            wrappers=["websearch", "browser"],
+            name="legacy", version="1.0.0", description="test",
+            wrappers=["browser"],
             behaviors=["Always search before answering — never guess."],
         )
         args = MagicMock()
-        saved_data = {}
-
-        def capture_save(name, data):
-            saved_data.update(data)
-
-        with patch("cli.preset_ops._auto_install_plugins", return_value=["websearch"]), \
-             patch("cli._http.cli_post") as mock_post, \
+        with patch("cli._http.cli_post") as mock_post, \
              patch("cli.preset_ops._load_installed", return_value=None), \
-             patch("cli.preset_ops._save_installed", side_effect=capture_save):
+             patch("cli.preset_ops._save_installed"):
             mock_post.return_value = MagicMock(json=lambda: {"id": 1})
             install_preset(args, manifest)
-
-        assert saved_data["installed_wrappers"] == ["websearch"]
+        err = capsys.readouterr().err
+        assert "retired in v0.10" in err
 
 
 # --- Preset validation in CI ---

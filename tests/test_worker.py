@@ -8670,57 +8670,27 @@ class TestTaskHandlers:
         assert result.stop_success is False
         assert "approval required" in (result.stop_replan or "")
 
+    @pytest.mark.skip(
+        reason="M1504 retired `kiso wrapper` CLI; install-approval flow "
+               "is being rewritten against `kiso mcp install` + "
+               "`kiso skill install` in M1516."
+    )
     async def test_handle_exec_install_allowed_user_initiated(self, db, plan_id, tmp_path):
-        """install allowed when plan has no needs_install (user asked directly)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
-        ctx = _make_ctx(db)
-        ctx.plan_has_needs_install = False
-        assert ctx.install_approved is False
-        with patch(
-            "kiso.worker.loop.run_worker_role",
-            new_callable=AsyncMock,
-            return_value="kiso wrapper install ocr",
-        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                 return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+        pass
 
-        # User-initiated: no needs_install → allowed
-        assert result.completed_row is not None
-
+    @pytest.mark.skip(
+        reason="M1504 retired `kiso wrapper` CLI; install-approval flow "
+               "is being rewritten against MCP/skill CLIs in M1516."
+    )
     async def test_handle_exec_install_allowed_with_approval(self, db, plan_id, tmp_path):
-        """exec install command allowed when install_approved=True."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
-        ctx = _make_ctx(db)
-        ctx.install_approved = True
-        with patch(
-            "kiso.worker.loop.run_worker_role",
-            new_callable=AsyncMock,
-            return_value="kiso wrapper install ocr",
-        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                 return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
+        pass
 
-        # Should NOT be blocked — runs through to review
-        assert result.completed_row is not None
-
+    @pytest.mark.skip(
+        reason="M1504 retired `kiso wrapper` CLI; `kiso wrapper list` is no "
+               "longer a valid shell command."
+    )
     async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
-        """kiso wrapper list is not blocked (not an install command)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "List installed wrappers")
-        ctx = _make_ctx(db)
-        assert ctx.install_approved is False
-        with patch(
-            "kiso.worker.loop.run_worker_role",
-            new_callable=AsyncMock,
-            return_value="kiso wrapper list",
-        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                 return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
-
-        # wrapper list should pass through — not an install command
-        assert result.completed_row is not None
+        pass
 
     # --- _handle_search_task ---
 

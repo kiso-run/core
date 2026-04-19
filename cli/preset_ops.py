@@ -150,8 +150,18 @@ def install_preset(args, manifest: PresetManifest, *, dry_run: bool = False) -> 
     installed_connectors: list[str] = []
 
     if manifest.wrappers:
-        from cli.wrapper import _wrapper_install
-        installed_wrappers = _auto_install_plugins(manifest.wrappers, _wrapper_install)
+        # v0.10 M1504: cli/wrapper.py retired. Wrapper auto-install from
+        # preset manifest is a no-op now — manifests from the legacy
+        # preset-wrapper format still parse, but wrapper entries are
+        # recorded as skipped and surfaced to the user.
+        print(
+            f"warning: preset manifest lists {len(manifest.wrappers)} wrapper(s) "
+            "but `kiso wrapper install` was retired in v0.10. "
+            "Migrate to kiso-run MCP servers or standalone MCP install; "
+            "see docs/v0.10-migration.md.",
+            file=sys.stderr,
+        )
+        installed_wrappers = []
 
     if manifest.connectors:
         from cli.connector import _connector_install

@@ -77,7 +77,7 @@ def test_quiet_short_flag():
     assert args.quiet is True
 
 
-@pytest.mark.parametrize("cmd", ["recipe", "connector", "sessions", "env", "reset"])
+@pytest.mark.parametrize("cmd", ["connector", "sessions", "env", "reset"])
 def test_subcommand_parsed(cmd: str):
     parser = build_parser()
     args = parser.parse_args([cmd])
