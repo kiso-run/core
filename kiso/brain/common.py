@@ -55,12 +55,11 @@ log = logging.getLogger(__name__)
 TASK_TYPE_EXEC = "exec"
 TASK_TYPE_MSG = "msg"
 TASK_TYPE_WRAPPER = "wrapper"
-TASK_TYPE_SEARCH = "search"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPE_MCP = "mcp"
 TASK_TYPES: frozenset[str] = frozenset({
     TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_WRAPPER,
-    TASK_TYPE_SEARCH, TASK_TYPE_REPLAN, TASK_TYPE_MCP,
+    TASK_TYPE_REPLAN, TASK_TYPE_MCP,
 })
 
 # Review status constants
@@ -575,13 +574,6 @@ def check_safety_rules(detail: str, safety_facts: list[dict]) -> str | None:
     return None
 
 
-# M1320-allow: regex alternatives keep matching "tool" — natural language
-_PLUGIN_DISCOVERY_RE = re.compile(
-    r"(?:tool|wrapper|connector|plugin).*(?:registr|install|discover|find|search|browse|cercar)"  # noqa: M1320-allow
-    r"|(?:registr|kiso).*(?:tool|wrapper|connector|plugin)",  # noqa: M1320-allow
-    re.IGNORECASE,
-)
-
 VALIDATION_RETRY_TASK_REPAIR = "task_repair"
 VALIDATION_RETRY_PLAN_REWRITE = "plan_rewrite"
 VALIDATION_RETRY_APPROACH_RESET = "approach_reset"
@@ -642,11 +634,6 @@ FAILURE_CLASSES: frozenset[str] = frozenset({
     FAILURE_CLASS_PLAN_SHAPE,
     FAILURE_CLASS_DELIVERY_SPLIT,
 })
-
-
-def _is_plugin_discovery_search(detail: str) -> bool:
-    """Return True if detail looks like a plugin discovery search query."""
-    return bool(_PLUGIN_DISCOVERY_RE.search(detail))
 
 
 def _mentions_user_delivery(detail: str) -> bool:
@@ -1727,7 +1714,6 @@ __brain_exports__ = [
     "TASK_TYPE_MCP",
     "TASK_TYPE_MSG",
     "TASK_TYPE_REPLAN",
-    "TASK_TYPE_SEARCH",
     "TASK_TYPE_WRAPPER",
     "TASK_TYPES",
     "WORKER_PHASE_CLASSIFYING",
@@ -1760,7 +1746,6 @@ __brain_exports__ = [
     "_filter_briefer_names",
     "_format_message_history",
     "_format_pending_items",
-    "_is_plugin_discovery_search",
     "_is_explicit_named_wrapper_request",
     "_join_or_empty",
     "_load_modular_prompt",

@@ -35,7 +35,6 @@ from kiso.brain import (
     TASK_TYPE_MCP,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
-    TASK_TYPE_SEARCH,
     TASK_TYPE_WRAPPER,
     WORKER_PHASE_CLASSIFYING,
     WORKER_PHASE_EXECUTING,
@@ -108,7 +107,6 @@ from kiso.worker.message_flow import (
     _spawn_knowledge_task_impl,
 )
 from kiso.worker.review_flow import _review_task_impl, _store_step_usage_impl
-from kiso.worker.search import SearcherError, _search_task
 from kiso.store import (
     archive_low_confidence_facts,
     create_plan,
@@ -1441,98 +1439,6 @@ async def _handle_exec_task(
     return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
 
 
-async def _handle_search_task(
-    ctx: _PlanCtx, task_row: dict, i: int, is_final: bool, usage_idx_before: int,
-) -> _TaskHandlerResult:
-    """Handle a search task (searcher LLM + reviewer)."""
-    task_id = task_row["id"]
-    _ensure_task_contract(ctx, task_row, i + 1)
-    detail = task_row["detail"]
-    search_retries = 0
-    search_extra_context = ""
-    local_plan_output: "dict | None" = None
-    t0_total = time.perf_counter()
-    dependencies = _infer_task_dependencies(task_row, ctx.plan_outputs)
-    if dependencies:
-        task_row["contract"]["dependencies"] = dependencies
-        ctx.task_contracts[task_id] = task_row["contract"]
-
-    while True:
-        t0 = time.perf_counter()
-        await update_task_substatus(ctx.db, task_id, _SUBSTATUS_SEARCHING)
-        idx_search = get_usage_index()
-        try:
-            _search_outputs = ctx.plan_outputs + ([local_plan_output] if local_plan_output else [])
-            outputs_text = _format_plan_outputs_for_msg(_search_outputs)
-            full_context = outputs_text
-            if search_extra_context:
-                full_context = (full_context + "\n\n" + search_extra_context).strip()
-            search_result = await _search_task(
-                ctx.config, detail, task_row.get("args"),
-                context=full_context,
-                session=ctx.session,
-                task_id=task_id,
-            )
-        except SearcherError as e:
-            task_duration_ms = int((time.perf_counter() - t0) * 1000)
-            error_output = f"Search failed: {e}"
-            log.error("Search failed for task %d: %s", task_id, e)
-            await update_task(ctx.db, task_id, "failed", output=error_output, duration_ms=task_duration_ms)
-            _audit_task(ctx, task_id, "search", detail, "failed", task_duration_ms)
-            plan_output = _make_plan_output(
-                i + 1, "search", detail, error_output, "failed", session=ctx.session,
-                contract=task_row.get("contract"),
-            )
-            return _TaskHandlerResult(
-                stop=True, stop_success=False,
-                stop_replan=error_output,
-                plan_output=plan_output,
-            )
-
-        # Keep local state updated; DB write deferred until reviewer approves
-        task_row = {**task_row, "output": search_result, "status": "done"}
-        local_plan_output = _make_plan_output(
-            i + 1,
-            "search",
-            detail,
-            search_result,
-            "done",
-            session=ctx.session,
-            contract=task_row.get("contract"),
-        )
-
-        await _append_calls(ctx.db, task_id, idx_search)
-
-        review, review_error = await _run_review_step(ctx, task_row)
-        if review_error is not None:
-            await update_task(ctx.db, task_id, "done", output=search_result)
-            return await _handle_review_error(ctx, task_id, review_error, local_plan_output, usage_idx_before)
-
-        if review["status"] == REVIEW_STATUS_STUCK:
-            await update_task(ctx.db, task_id, "done", output=search_result)
-            return await _review_stop_stuck(ctx, task_id, review, local_plan_output, usage_idx_before)
-
-        if review["status"] == REVIEW_STATUS_REPLAN:
-            if await _should_retry_task(ctx, task_id, review, search_retries, "search"):
-                search_retries += 1
-                search_extra_context += (
-                    f"\n\n[Retry {search_retries}] Previous search was insufficient. "
-                    f"Hint: {review.get('retry_hint')}"
-                )
-                continue
-            await update_task(ctx.db, task_id, "done", output=search_result)
-            return await _review_stop_replan(ctx, task_id, review, local_plan_output, usage_idx_before, search_retries)
-
-        # review ok → write final status and break out of retry loop
-        break
-
-    task_duration_ms = int((time.perf_counter() - t0_total) * 1000)
-    await update_task(ctx.db, task_id, "done", output=search_result, duration_ms=task_duration_ms)
-    _audit_task(ctx, task_id, "search", detail, "done", task_duration_ms, len(search_result))
-    _log_task_done(ctx, task_id, "search", "done", task_duration_ms)
-    return await _review_finalize_ok(ctx, task_id, task_row, review, local_plan_output, usage_idx_before)
-
-
 from kiso.worker.mcp import _handle_mcp_task
 
 
@@ -1540,7 +1446,6 @@ _TASK_HANDLERS: dict = {
     TASK_TYPE_EXEC: _handle_exec_task,
     TASK_TYPE_MSG: _handle_msg_task,
     TASK_TYPE_WRAPPER: _handle_wrapper_task,
-    TASK_TYPE_SEARCH: _handle_search_task,
     TASK_TYPE_REPLAN: _handle_replan_task,
     TASK_TYPE_MCP: _handle_mcp_task,
 }

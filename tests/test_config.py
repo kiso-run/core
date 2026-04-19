@@ -40,7 +40,6 @@ worker      = "deepseek/deepseek-v3.2"
 summarizer  = "deepseek/deepseek-v3.2"
 paraphraser = "deepseek/deepseek-v3.2"
 messenger   = "deepseek/deepseek-v3.2"
-searcher    = "perplexity/sonar"
 consolidator = "google/gemini-2.5-flash-lite"
 
 [settings]

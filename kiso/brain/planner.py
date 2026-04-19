@@ -64,7 +64,6 @@ from .common import (
     TASK_TYPE_MCP,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
-    TASK_TYPE_SEARCH,
     TASK_TYPE_WRAPPER,
     TASK_TYPES,
     _INSTALL_CMD_RE,
@@ -88,7 +87,6 @@ from .common import (
     _build_planner_memory_pack,
     _classify_install_mode,
     _format_pending_items,
-    _is_plugin_discovery_search,
     _join_or_empty,
     _load_modular_prompt,
     _merge_context_sections,
@@ -213,7 +211,7 @@ def _validate_plan_tasks(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH, TASK_TYPE_MCP) and task.get("expect") is None:
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_MCP) and task.get("expect") is None:
             errors.append(
                 f"Task {i}: {t} task must have expect describing WHAT RESULT you need "
                 f"(e.g., 'list of search results', 'file created successfully')"
@@ -256,7 +254,7 @@ def _validate_plan_tasks(
                 f"Global npm installs pollute the runtime; npx -y runs ephemerally "
                 f"and is the right default for one-shot tools and MCP servers."
             )
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_SEARCH) and _mentions_user_delivery(detail):
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) and _mentions_user_delivery(detail):
             errors.append(
                 f"Task {i}: action task detail includes user-delivery wording. "
                 f"Action tasks should do the work only; use a final msg task "
@@ -289,20 +287,6 @@ def _validate_plan_tasks(
                     f"Task {i}: msg detail is empty or too short — "
                     f"must contain WHAT to tell the user"
                 )
-        if t == TASK_TYPE_SEARCH:
-            if _is_plugin_discovery_search(task.get("detail", "")):
-                errors.append(
-                    f"Task {i}: search cannot be used for kiso plugin discovery. "
-                    "If the wrapper name appears in registry_hints or "
-                    "'Available Tools (not installed)', it is a kiso wrapper — "
-                    "use the kiso_native install flow (set needs_install, "
-                    "msg for approval). If it does NOT appear there, it is "
-                    "not a kiso plugin — for system packages use the package "
-                    "manager (e.g. apt-get install), for Python libraries "
-                    "use uv pip install."
-                )
-            if task.get("wrapper") is not None:
-                errors.append(f"Task {i}: search task must have wrapper = null")
         if t == TASK_TYPE_REPLAN:
             replan_count += 1
             if task.get("expect") is not None:
@@ -513,7 +497,7 @@ def _validate_plan_ordering(
     # needs_install (install proposal), knowledge (storage), kb_answer
     # (: KB recall from briefer context), or allow_msg_only
     # (structural fallback).
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
         if (
@@ -524,7 +508,7 @@ def _validate_plan_ordering(
         ):
             errors.append(
                 "Plan has only msg tasks — include at least one "
-                "exec/wrapper/search task for action requests. "
+                "exec/wrapper/mcp task for action requests. "
                 "Msg-only is valid only for kiso wrapper install proposals "
                 "(set needs_install), knowledge storage, or KB recall "
                 "(set kb_answer when answering from briefer context)."
@@ -685,7 +669,7 @@ def _validate_install_route_consistency(
 
 
 # Types that can participate in parallel groups.
-_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_SEARCH, TASK_TYPE_WRAPPER})
+_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_WRAPPER})
 
 
 def _validate_plan_groups(tasks: list[dict]) -> list[str]:
@@ -705,7 +689,7 @@ def _validate_plan_groups(tasks: list[dict]) -> list[str]:
             continue
         if t.get("type") not in _GROUPABLE_TYPES:
             errors.append(
-                f"Task {i + 1}: group is only allowed on exec/search/wrapper tasks, "
+                f"Task {i + 1}: group is only allowed on exec/wrapper tasks, "
                 f"not '{t.get('type')}'. Remove the group field."
             )
             continue
@@ -823,25 +807,10 @@ def validate_plan(
     if plan.get("needs_install"):
         non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
         if non_msg:
-            # When the only drafted non-msg tasks are `search`, bias
-            # the retry toward dropping `needs_install` instead of
-            # reducing to msg-only: `search` is a built-in Kiso
-            # capability that never requires a wrapper install, so
-            # proposing an install alongside it is semantically wrong.
-            if non_msg and all(t == TASK_TYPE_SEARCH for t in non_msg):
-                errors.append(
-                    f"needs_install is set but the plan uses `search` "
-                    f"(found: {non_msg}). `search` is a built-in Kiso "
-                    f"capability that does not require any wrapper "
-                    f"install. Drop needs_install and keep the search "
-                    f"task(s) — the built-in handles this request "
-                    f"without installing anything."
-                )
-            else:
-                errors.append(
-                    f"needs_install is set — only msg tasks are allowed "
-                    f"(found: {non_msg}). End the plan with a msg asking for approval."
-                )
+            errors.append(
+                f"needs_install is set — only msg tasks are allowed "
+                f"(found: {non_msg}). End the plan with a msg asking for approval."
+            )
             return errors
 
     # Bug B coherence check: kb_answer is only valid for msg-only

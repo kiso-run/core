@@ -132,15 +132,6 @@ _ROLES: tuple[RoleMeta, ...] = (
         python_entry="kiso.brain.reviewer.run_reviewer",
     ),
     RoleMeta(
-        name="searcher",
-        description=(
-            "Web search role: synthesizes results with source citations."
-        ),
-        model_key="searcher",
-        prompt_filename="searcher.md",
-        python_entry="kiso.brain.text_roles.run_searcher",
-    ),
-    RoleMeta(
         name="summarizer",
         description=(
             "Compresses conversation history into structured summaries."

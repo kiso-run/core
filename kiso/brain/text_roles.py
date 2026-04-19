@@ -391,58 +391,6 @@ def _sanitize_messenger_output(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Searcher
-# ---------------------------------------------------------------------------
-
-
-class SearcherError(Exception):
-    """Searcher generation failure."""
-
-
-def build_searcher_messages(
-    query: str,
-    context: str = "",
-    max_results: int | None = None,
-    lang: str | None = None,
-    country: str | None = None,
-) -> list[dict]:
-    """Build the message list for the searcher LLM call."""
-    system_prompt = _load_system_prompt("searcher")
-    parts = [f"## Search Query\n{query}"]
-    params: list[str] = []
-    if max_results is not None:
-        params.append(f"max_results: {max_results}")
-    if lang:
-        params.append(f"lang: {lang}")
-    if country:
-        params.append(f"country: {country}")
-    if params:
-        parts.append("## Search Parameters\n" + "\n".join(params))
-    _add_section(parts, "Context", context)
-    return _build_messages_from_sections(system_prompt, parts)
-
-
-async def run_searcher(
-    config: Config,
-    query: str,
-    context: str = "",
-    max_results: int | None = None,
-    lang: str | None = None,
-    country: str | None = None,
-    session: str = "",
-) -> str:
-    """Run the searcher: web search via an online-capable model.
-
-    Returns the raw search results text (not parsed).
-    Raises SearcherError on failure.
-    """
-    messages = build_searcher_messages(
-        query, context, max_results=max_results, lang=lang, country=country,
-    )
-    return await _call_role(config, "searcher", messages, SearcherError, session)
-
-
-# ---------------------------------------------------------------------------
 # Exec translator  (planner = architect, worker/translator = editor)
 # ---------------------------------------------------------------------------
 

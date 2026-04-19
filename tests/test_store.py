@@ -1027,13 +1027,13 @@ async def test_append_task_llm_call_first(db: aiosqlite.Connection):
     task_id = tasks[0]["id"]
     assert tasks[0]["llm_calls"] is None
 
-    call = {"role": "searcher", "model": "gemini-flash", "input_tokens": 100, "output_tokens": 50}
+    call = {"role": "briefer", "model": "gemini-flash", "input_tokens": 100, "output_tokens": 50}
     await append_task_llm_call(db, task_id, call)
 
     tasks = await get_tasks_for_plan(db, plan_id)
     stored = json.loads(tasks[0]["llm_calls"])
     assert len(stored) == 1
-    assert stored[0]["role"] == "searcher"
+    assert stored[0]["role"] == "briefer"
     assert stored[0]["input_tokens"] == 100
 
 
@@ -1046,7 +1046,7 @@ async def test_append_task_llm_call_existing(db: aiosqlite.Connection):
     tasks = await get_tasks_for_plan(db, plan_id)
     task_id = tasks[0]["id"]
 
-    call1 = {"role": "searcher", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
+    call1 = {"role": "briefer", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
     call2 = {"role": "reviewer", "model": "deepseek", "input_tokens": 200, "output_tokens": 60}
     await append_task_llm_call(db, task_id, call1)
     await append_task_llm_call(db, task_id, call2)
@@ -1054,7 +1054,7 @@ async def test_append_task_llm_call_existing(db: aiosqlite.Connection):
     tasks = await get_tasks_for_plan(db, plan_id)
     stored = json.loads(tasks[0]["llm_calls"])
     assert len(stored) == 2
-    assert stored[0]["role"] == "searcher"
+    assert stored[0]["role"] == "briefer"
     assert stored[1]["role"] == "reviewer"
 
 
@@ -1071,13 +1071,13 @@ async def test_append_task_llm_call_corrupted_json(db: aiosqlite.Connection):
     await db.execute("UPDATE tasks SET llm_calls = 'NOT_JSON' WHERE id = ?", (task_id,))
     await db.commit()
 
-    call = {"role": "searcher", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
+    call = {"role": "briefer", "model": "gemini", "input_tokens": 100, "output_tokens": 50}
     await append_task_llm_call(db, task_id, call)
 
     tasks = await get_tasks_for_plan(db, plan_id)
     stored = json.loads(tasks[0]["llm_calls"])
     assert len(stored) == 1
-    assert stored[0]["role"] == "searcher"
+    assert stored[0]["role"] == "briefer"
 
 
 async def test_append_task_llm_call_atomic_no_data_loss(db: aiosqlite.Connection):

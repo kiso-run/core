@@ -61,7 +61,6 @@ worker      = "test-worker"
 summarizer  = "test-summarizer"
 paraphraser = "test-paraphraser"
 messenger   = "test-messenger"
-searcher    = "test-searcher"
 consolidator = "test-consolidator"
 
 [settings]

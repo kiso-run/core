@@ -18,7 +18,6 @@ _MINIMAL_CONFIG = {
     "models": {
         "classifier": "m", "planner": "m", "reviewer": "m", "curator": "m",
         "worker": "m", "summarizer": "m", "paraphraser": "m", "messenger": "m",
-        "searcher": "m",
     },
     "settings": {},
 }

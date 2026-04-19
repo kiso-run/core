@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiso.brain import ClassifierError, CuratorError, ExecTranslatorError, MessengerError, ParaphraserError, PlanError, ReviewError, SearcherError, SummarizerError
+from kiso.brain import ClassifierError, CuratorError, ExecTranslatorError, MessengerError, ParaphraserError, PlanError, ReviewError, SummarizerError
 from kiso.config import Config, ConfigError, Provider, User, KISO_DIR
 from kiso.llm import LLMBudgetExceeded, LLMError
 from kiso.store import (
@@ -52,7 +52,6 @@ from kiso.worker.loop import (
     _handle_plan_error,
     _handle_replan_task,
     _run_review_step,
-    _handle_search_task,
     _handle_wrapper_task,
     _make_plan_output,
     _msg_task,
@@ -2800,7 +2799,7 @@ class TestFormatPlanOutputsForMsg:
         outputs = [
             {"index": 1, "type": "exec", "detail": "step 1", "output": "raw1", "status": "done"},
             {
-                "index": 2, "type": "search", "detail": "search",
+                "index": 2, "type": "exec", "detail": "fetch data",
                 "output": "raw search output", "status": "done",
                 "reviewer_summary": "Found: X, Y, Z",
             },
@@ -2817,7 +2816,7 @@ class TestFormatPlanOutputsForMsg:
         big_raw = "x" * 20000
         outputs = [
             {
-                "index": 1, "type": "search", "detail": "search HTML",
+                "index": 1, "type": "exec", "detail": "fetch HTML",
                 "output": big_raw, "status": "done",
                 "reviewer_summary": "Top headlines: A, B, C",
             },
@@ -6948,15 +6947,6 @@ class TestAutoPublishToolFiles:
 
 
 class TestBuildReplanContextSearchLimit:
-    def test_search_output_uses_2000_limit(self):
-        """Search task output uses 2000 char limit in replan context."""
-        long_output = "x" * 5000
-        completed = [
-            {"type": "search", "detail": "find info", "status": "done", "output": long_output},
-        ]
-        context = _build_replan_context(completed, [], "replan reason", [])
-        assert "chars truncated" in context
-
     def test_exec_output_truncated_at_limit(self):
         """Exec task output uses _REPLAN_OUTPUT_LIMIT (1000) char limit in replan context."""
         long_output = "x" * 5000
@@ -6989,473 +6979,6 @@ class TestSessionWorkspacePubDir:
             workspace = _session_workspace("test-session")
             pub_dir = workspace / "pub"
             assert pub_dir.is_dir()
-
-
-# --- M31b: search task execution ---
-
-
-class TestExecutePlanSearch:
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_search_calls_searcher(self, db, tmp_path):
-        """Search task calls run_searcher with detail as query."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="best pizza in Rome", expect="restaurant list")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value='{"results": [{"title": "Pizza Place"}]}')
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        mock_searcher.assert_called_once()
-        call_args = mock_searcher.call_args
-        assert call_args.args[1] == "best pizza in Rome"  # query = detail
-
-    async def test_search_with_params(self, db, tmp_path):
-        """Search task parses args JSON and passes params to searcher."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(
-            db, plan_id, "sess1", type="search",
-            detail="agenzie SEO Milano",
-            args='{"max_results": 10, "lang": "it", "country": "IT"}',
-            expect="agency list",
-        )
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value="results here")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        call_kwargs = mock_searcher.call_args
-        assert call_kwargs.kwargs.get("max_results") == 10
-        assert call_kwargs.kwargs.get("lang") == "it"
-        assert call_kwargs.kwargs.get("country") == "IT"
-
-    async def test_search_malformed_args(self, db, tmp_path):
-        """Malformed JSON in args logs a warning and uses defaults."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(
-            db, plan_id, "sess1", type="search",
-            detail="query", args="NOT_JSON", expect="results",
-        )
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        call_kwargs = mock_searcher.call_args
-        assert call_kwargs.kwargs.get("max_results") is None
-        assert call_kwargs.kwargs.get("lang") is None
-        assert call_kwargs.kwargs.get("country") is None
-
-    async def test_search_malformed_args_emits_warning(self, db, tmp_path, caplog):
-        """: malformed search args emit a warning log."""
-        import logging
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(
-            db, plan_id, "sess1", type="search",
-            detail="query", args="NOT_JSON", expect="results",
-        )
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             caplog.at_level(logging.WARNING, logger="kiso.worker.loop"), \
-             _patch_kiso_dir(tmp_path):
-            await _execute_plan(db, config, "sess1", plan_id, "Test", "user msg", 5)
-
-        assert any("malformed args" in r.message for r in caplog.records)
-
-    async def test_search_params_invalid_types(self, db, tmp_path):
-        """Invalid types in search params are coerced or set to None."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(
-            db, plan_id, "sess1", type="search",
-            detail="query",
-            args='{"max_results": "not_int", "lang": 123, "country": ["US"]}',
-            expect="results",
-        )
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value="results")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        call_kwargs = mock_searcher.call_args
-        # "not_int" can't be cast to int → None
-        assert call_kwargs.kwargs.get("max_results") is None
-        # 123 is not a string → None
-        assert call_kwargs.kwargs.get("lang") is None
-        # list is not a string → None
-        assert call_kwargs.kwargs.get("country") is None
-
-    async def test_search_searcher_error_triggers_replan(self, db, tmp_path):
-        """SearcherError triggers replan with error message."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, side_effect=SearcherError("LLM down")), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is False
-        assert reason is not None
-        assert "Search failed" in reason
-        assert len(remaining) == 1  # msg task
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = [t for t in tasks if t["type"] == "search"][0]
-        assert search_task["status"] == "failed"
-        assert len(_po) == 1
-        assert "Search failed" in _po[0]["output"]
-
-    async def test_search_result_in_plan_outputs(self, db, tmp_path):
-        """Search output flows to plan_outputs for subsequent msg task."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="find info", expect="info found")
-        await create_task(db, plan_id, "sess1", type="msg", detail="report findings")
-
-        search_output = "Found 3 results: A, B, C"
-        mock_messenger = AsyncMock(return_value="Here are the results")
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value=search_output), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        # Messenger should have received the search output in its context
-        messenger_call = mock_messenger.call_args
-        # plan_outputs are passed to _format_plan_outputs_for_msg then to _msg_task
-        # Check that messenger was called (it received the search output via plan_outputs)
-        assert mock_messenger.called
-
-    async def test_search_review_ok(self, db, tmp_path):
-        """Search with review ok completes the task successfully."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="search results"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        assert len(completed) == 2
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = [t for t in tasks if t["type"] == "search"][0]
-        assert search_task["status"] == "done"
-        assert search_task["output"] == "search results"
-
-    async def test_search_status_not_done_during_retry(self, db, tmp_path):
-        """M93c: search task must NOT be written as 'done' in the DB before reviewer approves.
-        During a retry, the task stays 'running' (not 'done')."""
-        config = make_config(settings={"max_worker_retries": 1})
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        status_snapshots: list[str] = []
-        call_count = 0
-        async def _reviewer_that_captures(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            # On first call: capture current DB status then request retry
-            if call_count == 1:
-                cur = await db.execute("SELECT status FROM tasks WHERE type = 'search'")
-                row = await cur.fetchone()
-                status_snapshots.append(row["status"] if row else "missing")
-                return REVIEW_REPLAN_WITH_HINT
-            return REVIEW_OK
-
-        mock_searcher = AsyncMock(return_value="some results")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_that_captures), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        # Status during first review (before retry) must NOT be "done"
-        assert status_snapshots[0] != "done", (
-            f"Task was prematurely marked 'done' before reviewer approved; got {status_snapshots[0]!r}"
-        )
-        # After retry + review ok the task must end up "done"
-        assert success is True
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = next(t for t in tasks if t["type"] == "search")
-        assert search_task["status"] == "done"
-
-    async def test_search_status_done_after_reviewer_ok(self, db, tmp_path):
-        """M93c: task is 'done' in DB after reviewer returns ok (no retry needed)."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        status_during_review: list[str] = []
-
-        async def _reviewer_ok(*args, **kwargs):
-            cur = await db.execute("SELECT status FROM tasks WHERE type = 'search'")
-            row = await cur.fetchone()
-            status_during_review.append(row["status"] if row else "missing")
-            return REVIEW_OK
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
-             patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer_ok), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        # During review the task is NOT yet "done"
-        assert status_during_review[0] != "done"
-        # After review ok it IS "done"
-        assert success is True
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = next(t for t in tasks if t["type"] == "search")
-        assert search_task["status"] == "done"
-
-    async def test_search_audit_duration_spans_retries(self, db, tmp_path):
-        """Simplify fix: audit.log_task duration covers total time across all retries,
-        not just the last iteration (regression guard for t0_total fix)."""
-        config = make_config(settings={"max_worker_retries": 1})
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        # perf_counter calls inside _handle_search_task for a 1-retry success:
-        #   call 1: t0_total (before while loop)
-        #   call 2: t0       (iteration 1 start)
-        #   call 3: t0       (iteration 2 start, after retry)
-        #   call 4: final    (after break: int((perf_counter() - t0_total) * 1000))
-        # Other task handlers (e.g. msg) also call perf_counter; give them a
-        # fallback value so the iterator never raises StopIteration in a coroutine.
-        perf_sequence = [0.0, 0.5, 1.0, 2.0]
-        _perf_idx = 0
-
-        def _fake_perf_counter():
-            nonlocal _perf_idx
-            v = perf_sequence[_perf_idx] if _perf_idx < len(perf_sequence) else 99.0
-            _perf_idx += 1
-            return v
-
-        call_count = 0
-
-        async def _retry_then_ok(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return REVIEW_REPLAN_WITH_HINT if call_count == 1 else REVIEW_OK
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
-             patch("kiso.worker.loop.run_reviewer", side_effect=_retry_then_ok), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.time") as mock_time, \
-             patch("kiso.worker.loop.audit") as mock_audit, \
-             _patch_kiso_dir(tmp_path):
-            mock_time.perf_counter.side_effect = _fake_perf_counter
-            await _execute_plan(db, config, "sess1", plan_id, "Test", "user msg", 5)
-
-        search_log = next(
-            c for c in mock_audit.log_task.call_args_list if c[0][2] == "search"
-        )
-        duration_ms = search_log[0][5]
-        # Before fix: int((2.0 - 1.0) * 1000) = 1000 (last iteration only)
-        # After fix:  int((2.0 - 0.0) * 1000) = 2000 (total span)
-        assert duration_ms == 2000
-
-    async def test_search_review_replan(self, db, tmp_path):
-        """Review returns replan after search → plan returns replan reason."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="bad results"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is False
-        assert reason == "Task failed"
-        assert len(remaining) == 1  # msg task
-
-    async def test_search_review_error_triggers_replan(self, db, tmp_path):
-        """ReviewError during search review triggers replan with output preserved."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("LLM down")), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is False
-        assert reason is not None
-        assert "Review failed" in reason
-        assert len(remaining) == 1
-        assert len(_po) == 1  # task output preserved
-
-    async def test_search_substatus_transitions(self, db, tmp_path):
-        """Search task updates substatus: searching → reviewing."""
-        from kiso.store import update_task_substatus
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        substatus_calls = []
-        original_update = update_task_substatus
-
-        async def capture_substatus(db, task_id, substatus):
-            substatus_calls.append(substatus)
-            await original_update(db, task_id, substatus)
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.update_task_substatus", side_effect=capture_substatus), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        # Search task should have gone through "searching" then "reviewing"
-        # msg task should have "composing"
-        assert "searching" in substatus_calls
-        assert "reviewing" in substatus_calls
-        assert "composing" in substatus_calls
-
-    async def test_search_empty_result(self, db, tmp_path):
-        """Empty string from searcher is stored and reviewed normally."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="obscure query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value=""), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="nothing found"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = [t for t in tasks if t["type"] == "search"][0]
-        assert search_task["status"] == "done"
-        assert search_task["output"] == ""
-
-    async def test_search_empty_detail(self, db, tmp_path):
-        """Search task with empty string detail still calls run_searcher."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_searcher = AsyncMock(return_value="some results")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        mock_searcher.assert_called_once()
-        call_args = mock_searcher.call_args
-        assert call_args.args[1] == ""  # detail is empty string
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = [t for t in tasks if t["type"] == "search"][0]
-        assert search_task["status"] == "done"
-
-    async def test_search_multiple_sequential(self, db, tmp_path):
-        """Two search tasks followed by msg: both complete and feed into messenger."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="first query", expect="results")
-        await create_task(db, plan_id, "sess1", type="search", detail="second query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="summarise both")
-
-        mock_searcher = AsyncMock(side_effect=["result1", "result2"])
-        mock_messenger = AsyncMock(return_value="combined summary")
-        with patch("kiso.worker.search.run_searcher", mock_searcher), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "user msg", 5,
-            )
-
-        assert success is True
-        assert mock_searcher.call_count == 2
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_tasks = [t for t in tasks if t["type"] == "search"]
-        assert len(search_tasks) == 2
-        assert search_tasks[0]["status"] == "done"
-        assert search_tasks[0]["output"] == "result1"
-        assert search_tasks[1]["status"] == "done"
-        assert search_tasks[1]["output"] == "result2"
-        assert mock_messenger.called
 
 
 # --- Fast path (_fast_path_chat) ---
@@ -7944,40 +7467,6 @@ class TestWorkerRetry:
         assert "use /opt/app not /app" in translator_calls[1]
         assert "Attempt 1 failed" in translator_calls[1]
 
-    async def test_search_retry_on_hint(self, db, tmp_path):
-        """Search task: first review returns hint → retry → second ok."""
-        config = make_config(settings={
-            **make_config().settings,
-            "max_worker_retries": 1,
-        })
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="find info", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        review_calls = [0]
-
-        async def _mock_reviewer(*args, **kw):
-            review_calls[0] += 1
-            if review_calls[0] == 1:
-                return {"status": "replan", "reason": "No results", "learn": None, "retry_hint": "try broader terms", "summary": None}
-            return REVIEW_OK
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=_mock_reviewer), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="search results"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is True
-        assert review_calls[0] == 2
-
-        # Verify retry_count persisted
-        tasks = await get_tasks_for_plan(db, plan_id)
-        search_task = [t for t in tasks if t["type"] == "search"][0]
-        assert search_task["retry_count"] == 1
-
     async def test_max_worker_retries_zero_disables(self, db, tmp_path):
         """max_worker_retries=0 → hint is ignored, immediate replan."""
         config = make_config(settings={
@@ -8082,27 +7571,6 @@ class TestIncrementalLLMCalls:
 
         assert success is True
         assert mock_append.call_count == 2
-
-    async def test_search_task_appends_calls_after_searcher_and_reviewer(self, db, tmp_path):
-        """search task: _append_calls called twice — after searcher + after reviewer."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="query", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_append = AsyncMock()
-        with patch("kiso.worker.loop._append_calls", mock_append), \
-             patch("kiso.worker.search.run_searcher", new_callable=AsyncMock, return_value="results"), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, completed, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is True
-        # search: 2 calls (searcher + reviewer), msg: 2 calls ( briefer + messenger) = 4 total
-        assert mock_append.call_count >= 2
 
     async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
         """fast path: _append_calls called twice — briefer flush + messenger."""
@@ -8472,7 +7940,7 @@ class TestTaskHandlers:
     async def test_task_handlers_dict_has_all_types(self):
         """_TASK_HANDLERS covers all task types."""
         assert set(_TASK_HANDLERS.keys()) == {
-            "exec", "msg", "wrapper", "search", "replan", "mcp",
+            "exec", "msg", "wrapper", "replan", "mcp",
         }
 
     # --- _handle_replan_task ---
@@ -8691,45 +8159,6 @@ class TestTaskHandlers:
     )
     async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
         pass
-
-    # --- _handle_search_task ---
-
-    async def test_handle_search_task_success(self, db, plan_id, tmp_path):
-        """search handler runs search, reviews, and returns completed_row."""
-        task_row = await _make_task_row(db, plan_id, "search", "find Python docs")
-        ctx = _make_ctx(db)
-        with patch(
-            "kiso.worker.loop._search_task",
-            new_callable=AsyncMock,
-            return_value="Found: https://docs.python.org",
-        ), patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                 return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            result = await _handle_search_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is False
-        assert result.completed_row is not None
-        assert result.completed_row["status"] == "done"
-        assert result.plan_output is not None
-        assert result.plan_output["type"] == "search"
-
-    async def test_handle_search_task_error_triggers_replan(self, db, plan_id, tmp_path):
-        """search handler returns stop_replan on SearcherError."""
-        from kiso.worker.search import SearcherError
-        task_row = await _make_task_row(db, plan_id, "search", "find something")
-        ctx = _make_ctx(db)
-        with patch(
-            "kiso.worker.loop._search_task",
-            new_callable=AsyncMock,
-            side_effect=SearcherError("Search API down"),
-        ), _patch_kiso_dir(tmp_path):
-            result = await _handle_search_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is True
-        assert result.stop_replan is not None
-        assert "Search failed" in result.stop_replan
-        assert result.plan_output is not None
-        assert result.completed_row is None
 
     async def test_handle_wrapper_task_success_returns_plan_output(self, db, plan_id, tmp_path):
         """wrapper handler returns plan_output with correct fields on success."""
@@ -9811,7 +9240,7 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "search", "detail": "find a completely different thing", "wrapper": None, "args": None, "expect": "results"},
+                {"type": "exec", "detail": "try another approach with curl", "wrapper": None, "args": None, "expect": "results"},
                 {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
             ],
         }
@@ -9857,8 +9286,6 @@ class TestCircularReplanDetection:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Failed"), \
              patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
-             patch("kiso.worker.search.run_searcher", new_callable=AsyncMock,
-                   return_value="search results"), \
              patch("kiso.worker.loop.save_message", side_effect=_save_msg), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
@@ -10570,26 +9997,6 @@ class TestRetryHintCarryForward:
         assert len(exec_outputs) == 1
         assert exec_outputs[0].get("retry_hint") == "use /opt/app not /app"
 
-    async def test_search_replan_carries_retry_hint_in_plan_outputs(self, db, tmp_path):
-        """When search task escalates to replan, plan_outputs contain retry_hint."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="search", detail="find stuff", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN_WITH_HINT), \
-             patch("kiso.worker.loop._search_task", new_callable=AsyncMock, return_value="some results"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, plan_outputs = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        search_outputs = [po for po in plan_outputs if po["type"] == "search"]
-        assert len(search_outputs) == 1
-        assert search_outputs[0].get("retry_hint") == "use /opt/app not /app"
-
-
 class TestRetryHintInReplanContext:
     """retry hints surface in _build_replan_context output."""
 
@@ -10884,13 +10291,16 @@ class TestE2EWebScenario:
             processed=False,
         )
 
-        # Plan 1: search + registry check + replan
+        # Plan 1: fetch + registry check + replan (was search + registry check + replan
+        # before the v0.10 search retirement — kept structurally identical, just swapped
+        # the first step from type=search to type=exec so the multi-plan flow remains
+        # a faithful regression guard for the replan chaining under test).
         plan1 = {
             "goal": "Get site info and prepare screenshot",
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "search", "detail": "visit example.com and describe the company",
+                {"type": "exec", "detail": "curl -sL example.com to describe the company",
                  "wrapper": None, "args": None, "expect": "description of the company"},
                 {"type": "exec", "detail": "check kiso registry for browser wrapper",
                  "wrapper": None, "args": None, "expect": "registry JSON"},
@@ -10928,10 +10338,6 @@ class TestE2EWebScenario:
         async def _planner(db, config, session, role, content, **kwargs):
             return next(plan_iter)
 
-        # Searcher returns synthesis
-        async def _searcher(*a, **kw):
-            return "Example.com is a domain reserved for documentation purposes by IANA."
-
         # Reviewer approves everything except self-directed replans
         async def _reviewer(*a, **kw):
             return {
@@ -10951,7 +10357,6 @@ class TestE2EWebScenario:
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock,
                    return_value="Example.com is a documentation domain. Screenshot attached."), \
              patch("kiso.worker.loop.run_reviewer", side_effect=_reviewer), \
-             patch("kiso.worker.search.run_searcher", side_effect=_searcher), \
              _patch_translator(), \
              _patch_kiso_dir(tmp_path):
             await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=15)
@@ -11112,7 +10517,7 @@ class TestMsgTaskBrieferIntegration:
     def _plan_outputs(self):
         return [
             {"index": 1, "type": "exec", "detail": "install browser", "output": "installed ok", "status": "done"},
-            {"index": 2, "type": "search", "detail": "search gazzetta.it", "output": "news headlines here", "status": "done"},
+            {"index": 2, "type": "exec", "detail": "curl -s gazzetta.it", "output": "news headlines here", "status": "done"},
             {"index": 3, "type": "exec", "detail": "cleanup temp files", "output": "cleaned", "status": "done"},
         ]
 
@@ -12624,9 +12029,9 @@ _FORMAT_TASK_LIST_CASES = [
         ["Done (2):\n", "- [exec] run foo", "- [msg] tell user"],
     ),
     (
-        [{"type": "search", "detail": "find X"}],
+        [{"type": "exec", "detail": "find X"}],
         "Remaining",
-        ["Remaining (1):", "- [search] find X"],
+        ["Remaining (1):", "- [exec] find X"],
     ),
 ]
 
@@ -12653,7 +12058,7 @@ class TestBuildExecutionBatches:
     def test_no_groups_all_sequential(self):
         from kiso.worker.loop import _build_execution_batches
         tasks = [
-            {"type": "search", "detail": "A"},
+            {"type": "exec", "detail": "A"},
             {"type": "exec", "detail": "B"},
             {"type": "msg", "detail": "C"},
         ]
@@ -12664,8 +12069,8 @@ class TestBuildExecutionBatches:
     def test_single_parallel_group(self):
         from kiso.worker.loop import _build_execution_batches
         tasks = [
-            {"type": "search", "detail": "A", "parallel_group": 1},
-            {"type": "search", "detail": "B", "parallel_group": 1},
+            {"type": "exec", "detail": "A", "parallel_group": 1},
+            {"type": "exec", "detail": "B", "parallel_group": 1},
             {"type": "msg", "detail": "C"},
         ]
         batches = _build_execution_batches(tasks)
@@ -12676,8 +12081,8 @@ class TestBuildExecutionBatches:
     def test_two_groups_with_sequential_between(self):
         from kiso.worker.loop import _build_execution_batches
         tasks = [
-            {"type": "search", "detail": "A", "parallel_group": 1},
-            {"type": "search", "detail": "B", "parallel_group": 1},
+            {"type": "exec", "detail": "A", "parallel_group": 1},
+            {"type": "exec", "detail": "B", "parallel_group": 1},
             {"type": "exec", "detail": "merge"},
             {"type": "exec", "detail": "X", "parallel_group": 2},
             {"type": "exec", "detail": "Y", "parallel_group": 2},
@@ -12693,9 +12098,9 @@ class TestBuildExecutionBatches:
     def test_preserves_task_indices(self):
         from kiso.worker.loop import _build_execution_batches
         tasks = [
-            {"type": "search", "detail": "A", "parallel_group": 1},
-            {"type": "search", "detail": "B", "parallel_group": 1},
-            {"type": "search", "detail": "C", "parallel_group": 1},
+            {"type": "exec", "detail": "A", "parallel_group": 1},
+            {"type": "exec", "detail": "B", "parallel_group": 1},
+            {"type": "exec", "detail": "C", "parallel_group": 1},
             {"type": "msg", "detail": "D"},
         ]
         batches = _build_execution_batches(tasks)
@@ -12709,8 +12114,8 @@ class TestBuildExecutionBatches:
     def test_null_group_treated_as_sequential(self):
         from kiso.worker.loop import _build_execution_batches
         tasks = [
-            {"type": "search", "detail": "A", "parallel_group": None},
-            {"type": "search", "detail": "B", "parallel_group": None},
+            {"type": "exec", "detail": "A", "parallel_group": None},
+            {"type": "exec", "detail": "B", "parallel_group": None},
         ]
         batches = _build_execution_batches(tasks)
         # None != None for grouping purposes → each is its own batch
@@ -12728,8 +12133,8 @@ class TestPersistPlanTasksGroup:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Test")
         plan_tasks = [
-            {"type": "search", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
             {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
         ]
@@ -12755,8 +12160,8 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Parallel test")
         plan_tasks = [
-            {"type": "search", "detail": "search alpha", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "search beta", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "exec alpha", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "exec beta", "wrapper": None, "args": None, "expect": "info", "group": 1},
             {"type": "msg", "detail": "Answer in English. summarize results", "wrapper": None, "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
@@ -12772,8 +12177,8 @@ class TestParallelGroupFromDB:
         assert len(batches[1]) == 1  # sequential msg
         # Verify content of grouped batch
         details = {task_dicts[idx]["detail"] for idx, _ in batches[0]}
-        assert "search alpha" in details
-        assert "search beta" in details
+        assert "exec alpha" in details
+        assert "exec beta" in details
         await db.close()
 
     async def test_db_tasks_three_groups_interleaved(self, tmp_path):
@@ -12784,11 +12189,11 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Multi-group test")
         plan_tasks = [
-            {"type": "search", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "search", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
             {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
-            {"type": "search", "detail": "C", "wrapper": None, "args": None, "expect": "info", "group": 2},
-            {"type": "search", "detail": "D", "wrapper": None, "args": None, "expect": "info", "group": 2},
+            {"type": "exec", "detail": "C", "wrapper": None, "args": None, "expect": "info", "group": 2},
+            {"type": "exec", "detail": "D", "wrapper": None, "args": None, "expect": "info", "group": 2},
             {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)

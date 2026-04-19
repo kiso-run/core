@@ -120,7 +120,6 @@ _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("summarizer",   "google/gemini-2.5-flash-lite", "compresses conversation history"),
     ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
     ("messenger",    "deepseek/deepseek-v3.2",       "writes human-readable responses"),
-    ("searcher",     "perplexity/sonar",             "web search (native search)"),
     ("consolidator", "google/gemini-2.5-flash-lite", "periodic knowledge quality review"),
 )
 
@@ -176,7 +175,6 @@ worker      = "deepseek/deepseek-v3.2"        # command translation (strict outp
 summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
 messenger   = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
-searcher    = "perplexity/sonar"              # web search (native search API)
 consolidator = "google/gemini-2.5-flash-lite" # periodic knowledge quality review (async, cheap)
 
 [settings]
@@ -419,6 +417,16 @@ def _build_config(path: Path, on_error) -> Config:
 
     # --- models: all roles required ---
     models_raw = raw.get("models", {})
+
+    # Explicit rejection for roles retired in v0.10. Silently ignoring them
+    # would leave users with stale config and confusing behaviour; the
+    # validator flags the legacy line so the upgrade path is obvious.
+    if "searcher" in models_raw:
+        on_error(
+            "models.searcher was removed in v0.10 — delete this line. "
+            "Web search now goes through the kiso-run/search-mcp server "
+            "(included in the default preset)."
+        )
 
     # Fill any missing model roles from defaults (so old configs automatically
     # gain new roles like 'consolidator' without manual edits).

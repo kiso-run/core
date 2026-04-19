@@ -33,7 +33,6 @@ from kiso.brain import (
     _strip_fences,
     _repair_json,
     _extract_json_object,
-    _is_plugin_discovery_search,
     build_briefer_messages,
     build_classifier_messages,
     build_curator_messages,
@@ -545,16 +544,6 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("msg task must come after" in e for e in errors)
 
-    def test_msg_before_search_rejected(self):
-        """[msg, search, msg] — msg first is rejected."""
-        plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. let me check", "expect": None, "wrapper": None, "args": None},
-            {"type": "search", "detail": "query", "expect": "results"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("msg task must come after" in e for e in errors)
-
     def test_msg_after_all_exec_valid(self):
         """msg after all exec/search tasks is valid."""
         plan = {"tasks": [
@@ -743,66 +732,6 @@ class TestValidatePlan:
         ]}
         errors = validate_plan(plan)
         assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
-
-    # --- search task type ---
-
-    def test_search_task_valid(self):
-        """search + expect, wrapper=null → valid."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "best restaurants in Milan", "expect": "list of restaurants", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. present results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        assert validate_plan(plan) == []
-
-    def test_search_task_with_args(self):
-        """search + structured args object → valid."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "best SEO agencies", "expect": "list of agencies", "wrapper": None, "args": {"max_results": 10, "lang": "it", "country": "IT"}},
-            {"type": "msg", "detail": "Answer in English. present results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        assert validate_plan(plan) == []
-
-    def test_search_task_missing_expect(self):
-        """search without expect → error."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "find info", "expect": None, "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("search task must have expect describing WHAT RESULT" in e for e in errors)
-
-    def test_search_task_with_skill(self):
-        """search with wrapper set → error."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "find info", "expect": "results", "wrapper": "search", "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("search task must have wrapper = null" in e for e in errors)
-
-    def test_search_task_not_last(self):
-        """Plan ending with search → error (last must be msg or replan)."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "find info", "expect": "results", "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("Last task must be type 'msg' or 'replan'" in e for e in errors)
-
-    def test_plan_search_then_msg(self):
-        """search + msg → valid."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "find info", "expect": "results", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. present results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        assert validate_plan(plan) == []
-
-    def test_plan_search_then_replan(self):
-        """search + replan → valid (investigation pattern)."""
-        plan = {"tasks": [
-            {"type": "search", "detail": "find info", "expect": "results", "wrapper": None, "args": None},
-            {"type": "replan", "detail": "plan next steps", "expect": None, "wrapper": None, "args": None},
-        ]}
-        assert validate_plan(plan) == []
 
     # --- install only allowed in replan ---
 
@@ -5386,70 +5315,6 @@ class TestGroupFactsByCategory:
         assert "…" not in text
 
 
-# --- M105a: _is_plugin_discovery_search ---
-
-
-class TestIsPluginDiscoverySearch:
-    """Unit tests for _is_plugin_discovery_search helper."""
-
-    @pytest.mark.parametrize("detail", [
-        "find browser wrapper in kiso registry",
-        "cercare wrapper nel registro kiso",
-        "search connector install",
-        "kiso plugin discovery",
-        "wrapper registry browse",
-        "discover connector in registry",
-        "search for available plugins in the registry",
-        "find wrapper to install from kiso",
-    ])
-    def test_positive_matches(self, detail):
-        assert _is_plugin_discovery_search(detail) is True
-
-    @pytest.mark.parametrize("detail", [
-        "latest python release",
-        "browser automation tutorial",
-        "how to install docker",
-        "wrapper development best practices",
-        "what is the weather today",
-    ])
-    def test_negative_matches(self, detail):
-        assert _is_plugin_discovery_search(detail) is False
-
-
-# --- M105a: validate_plan search-for-plugins ---
-
-
-class TestValidatePlanPluginDiscovery:
-    """M105a: search tasks for plugin discovery must be rejected."""
-
-    def test_search_plugin_discovery_rejected(self):
-        plan = {"tasks": [
-            {"type": "search", "detail": "find browser wrapper in kiso registry",
-             "expect": "wrapper info", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("search cannot be used for kiso plugin discovery" in e for e in errors)
-
-    def test_search_general_web_accepted(self):
-        plan = {"tasks": [
-            {"type": "search", "detail": "latest python release",
-             "expect": "version info", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert not any("plugin discovery" in e for e in errors)
-
-    def test_search_plugin_install_rejected(self):
-        plan = {"tasks": [
-            {"type": "search", "detail": "cercare wrapper browser nel registro",
-             "expect": "info", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("search cannot be used for kiso plugin discovery" in e for e in errors)
-
-
 # --- M105b: exec translator passes max_tokens ---
 
 
@@ -6162,27 +6027,6 @@ class TestPlannerSemanticToolValidation:
         )
 
         assert not any("file paths only" in error for error in errors)
-
-
-class TestSearcherPrompt:
-    """searcher prompt quality and language rules."""
-
-    def test_searcher_prompt_exists(self):
-        prompt = (_ROLES_DIR / "searcher.md").read_text()
-        assert len(prompt) > 0
-
-    def test_searcher_lang_matching(self):
-        prompt = (_ROLES_DIR / "searcher.md").read_text()
-        assert "query language controls output language" in prompt
-
-    def test_searcher_source_quality(self):
-        prompt = (_ROLES_DIR / "searcher.md").read_text()
-        assert "primary sources" in prompt.lower()
-        assert "official documentation" in prompt.lower()
-
-    def test_searcher_domain_focus(self):
-        prompt = (_ROLES_DIR / "searcher.md").read_text()
-        assert "specific URL or domain" in prompt
 
 
 class TestNoSilentAutoCorrect:
@@ -9684,8 +9528,8 @@ class TestValidatePlanGroups:
     def test_valid_parallel_group(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A", "group": 1},
-            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "exec", "detail": "fetch A", "group": 1},
+            {"type": "exec", "detail": "fetch B", "group": 1},
             {"type": "exec", "detail": "merge results", "group": None},
             {"type": "msg", "detail": "Answer in English. report"},
         ]
@@ -9694,7 +9538,7 @@ class TestValidatePlanGroups:
     def test_no_groups_is_valid(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A"},
+            {"type": "exec", "detail": "fetch A"},
             {"type": "exec", "detail": "process"},
             {"type": "msg", "detail": "Answer in English. report"},
         ]
@@ -9703,7 +9547,7 @@ class TestValidatePlanGroups:
     def test_msg_in_group_rejected(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "exec", "detail": "fetch A", "group": 1},
             {"type": "msg", "detail": "Answer in English. hi", "group": 1},
         ]
         errors = _validate_plan_groups(tasks)
@@ -9721,7 +9565,7 @@ class TestValidatePlanGroups:
     def test_single_task_group_rejected(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "exec", "detail": "fetch A", "group": 1},
             {"type": "msg", "detail": "Answer in English. report"},
         ]
         errors = _validate_plan_groups(tasks)
@@ -9730,9 +9574,9 @@ class TestValidatePlanGroups:
     def test_non_adjacent_group_rejected(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A", "group": 1},
+            {"type": "exec", "detail": "fetch A", "group": 1},
             {"type": "exec", "detail": "process"},
-            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "exec", "detail": "fetch B", "group": 1},
             {"type": "msg", "detail": "Answer in English. report"},
         ]
         errors = _validate_plan_groups(tasks)
@@ -9741,8 +9585,8 @@ class TestValidatePlanGroups:
     def test_multiple_valid_groups(self):
         from kiso.brain import _validate_plan_groups
         tasks = [
-            {"type": "search", "detail": "search A", "group": 1},
-            {"type": "search", "detail": "search B", "group": 1},
+            {"type": "exec", "detail": "fetch A", "group": 1},
+            {"type": "exec", "detail": "fetch B", "group": 1},
             {"type": "exec", "detail": "process A", "group": 2},
             {"type": "exec", "detail": "process B", "group": 2},
             {"type": "msg", "detail": "Answer in English. report"},
@@ -9763,9 +9607,9 @@ class TestValidatePlanGroups:
         plan = {
             "goal": "Compare competitors",
             "tasks": [
-                {"type": "search", "detail": "search comp A", "wrapper": None,
+                {"type": "exec", "detail": "fetch comp A", "wrapper": None,
                  "args": None, "expect": "info", "group": 1},
-                {"type": "search", "detail": "search comp B", "wrapper": None,
+                {"type": "exec", "detail": "fetch comp B", "wrapper": None,
                  "args": None, "expect": "info", "group": 1},
                 {"type": "exec", "detail": "Create comparison table",
                  "wrapper": None, "args": None, "expect": "file created"},
@@ -9896,16 +9740,6 @@ class TestActionTaskUserDeliveryRouting:
              "wrapper": None, "args": None, "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["ocr"])
-        assert any("user-delivery wording" in e for e in errors)
-
-    def test_search_with_user_delivery_wording_rejected(self):
-        plan = {"goal": "test", "tasks": [
-            {"type": "search", "detail": "Find Tokyo population and show me the answer",
-             "wrapper": None, "args": None, "expect": "population found"},
-            {"type": "msg", "detail": "Answer in English. report results",
-             "wrapper": None, "args": None, "expect": None},
-        ]}
-        errors = validate_plan(plan)
         assert any("user-delivery wording" in e for e in errors)
 
     def test_action_detail_about_file_output_still_accepted(self):
@@ -10353,31 +10187,6 @@ class TestNeedsInstallMsgOnly:
         errors = validate_plan(plan)
         assert not any("needs_install is set" in e for e in errors)
 
-    def test_needs_install_with_search_bias_drop_proposal(self):
-        """When the drafted plan contains a `search` task alongside
-        `needs_install`, the validator must emit a dedicated feedback
-        message biasing the retry toward DROPPING `needs_install`
-        (search is a built-in Kiso capability that never requires a
-        wrapper), not toward reducing to msg-only as the legacy
-        feedback would prescribe."""
-        plan = {
-            "goal": "Find Italian restaurants in Berlin",
-            "needs_install": ["browser"],
-            "tasks": [
-                {"type": "search", "detail": "italian restaurants berlin",
-                 "expect": "top-rated list"},
-                {"type": "msg", "detail": "Answer in English. Here you go"},
-            ],
-        }
-        errors = validate_plan(plan)
-        joined = " ".join(errors).lower()
-        # Still surfaces the same constraint class for legacy compat
-        assert any("needs_install is set" in e for e in errors)
-        # Dedicated guidance: mention built-in + drop proposal
-        assert "built-in" in joined
-        assert "drop needs_install" in joined or "remove needs_install" in joined
-        # Must NOT prescribe the reduce-to-msg direction for this combo
-        assert "end the plan with a msg" not in joined
 
     def test_needs_install_with_exec_keeps_legacy_reduce_to_msg(self):
         """Guard: exec+needs_install still gets the legacy
