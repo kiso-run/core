@@ -928,7 +928,7 @@ class TestLoadSystemPrompt:
         _modules = [
             "kiso.config", "kiso.brain", "kiso.wrappers", "kiso.main",
             "kiso.pub", "kiso.log", "kiso.audit", "kiso.sysenv",
-            "kiso.connectors", "kiso.recipe_loader", "kiso.wrapper_repair",
+            "kiso.connectors", "kiso.wrapper_repair",
             "kiso.worker.loop", "kiso.worker.utils",
         ]
         invalidate_prompt_cache()
@@ -3557,19 +3557,6 @@ class TestBuildExecTranslatorMessages:
         )
         assert "Preceding Task Outputs" not in msgs[1]["content"]
 
-    def test_includes_recipe_contracts(self):
-        config = _make_brain_config()
-        msgs = build_exec_translator_messages(
-            config,
-            "Generate the report",
-            "OS: Linux",
-            recipe_contracts_text="- env-report: when producing structured output, prefer a valid JSON object",
-        )
-        content = msgs[1]["content"]
-        assert "## Recipe Contracts" in content
-        assert "valid JSON object" in content
-
-
 class TestRunExecTranslator:
     async def test_successful_translation(self):
         config = _make_brain_config(models=full_models(worker="gpt-4"))
@@ -4606,26 +4593,6 @@ class TestExecTranslatorRetryContext:
         user_content = captured_messages[1]["content"]
         assert "## Retry Context" in user_content
         assert "use python3 not python" in user_content
-
-    async def test_run_worker_passes_recipe_contracts(self):
-        config = _make_brain_config(models=full_models(worker="gpt-4"))
-        captured_messages = []
-
-        async def _capture(cfg, role, messages, **kw):
-            captured_messages.extend(messages)
-            return "printf '{}\n'"
-
-        with patch("kiso.brain.call_llm", side_effect=_capture):
-            result = await run_worker(
-                config,
-                "Generate the report",
-                "OS: Linux",
-                recipe_contracts_text="- json-report: when producing structured output, prefer a valid JSON object",
-            )
-        assert result == "printf '{}\n'"
-        user_content = captured_messages[1]["content"]
-        assert "## Recipe Contracts" in user_content
-        assert "valid JSON object" in user_content
 
 
 # --- reviewer prompt mentions retry_hint ---

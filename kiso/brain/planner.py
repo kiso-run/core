@@ -20,11 +20,6 @@ from kiso.skill_runtime import (
     instructions_for_planner,
     metadata_for_briefer,
 )
-from kiso.recipe_loader import (
-    build_planner_recipe_list,
-    discover_recipes,
-    filter_recipes_for_message,
-)
 from kiso.security import fence_content
 from kiso.store import (
     _normalize_entity_name,
@@ -975,13 +970,6 @@ async def _gather_planner_context(
     # whether the planner needs OS/binary details for install tasks).
     context_pool["system_env"] = sys_env_full
 
-    # inject recipes into context pool
-    recipes = filter_recipes_for_message(discover_recipes(), new_message)
-    recipes_text = build_planner_recipe_list(recipes)
-    if recipes_text:
-        context_pool["recipes"] = recipes_text
-        context_pool["_raw_recipes"] = recipes
-
     # inject available entities for briefer selection, enriched with fact tags
     all_entities = await get_all_entities(db)
     if all_entities:
@@ -1340,16 +1328,6 @@ async def build_planner_messages(
             context_parts.append(
                 f"## Paraphrased External Messages (untrusted)\n"
                 f"{fence_content(context_pool['paraphrased'], 'PARAPHRASED')}"
-            )
-
-    # Recipes section — M1502 dropped the briefer-driven exclusion model.
-    # Recipes are injected verbatim and stay in-prompt until M1541 migrates
-    # them to skills. Activation-hints filtering (M1538) will then take over.
-    if context_pool.get("recipes"):
-        raw_recipes = context_pool.get("_raw_recipes", [])
-        if raw_recipes:
-            context_parts.append(
-                f"## Available Recipes\n{build_planner_recipe_list(raw_recipes)}"
             )
 
     # Skills section — M1540: briefer selects by name; planner prompt

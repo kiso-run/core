@@ -25,7 +25,99 @@ import sys
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from kiso.recipe_loader import discover_recipes
+
+
+def _discover_recipes(recipes_dir: Path) -> list[dict]:
+    """Parse every ``*.md`` recipe under ``recipes_dir`` into a dict.
+
+    Vendored inside the migration tool so we can drop the legacy
+    ``kiso.recipe_loader`` module in the v0.10 cleanup. Mirrors the
+    subset of the loader used by migration: frontmatter parsing,
+    ``applies_to``/``excludes`` selector lists, and runtime-contract
+    inference that feeds the synthetic ``## Worker`` section.
+    """
+    if not recipes_dir.is_dir():
+        return []
+
+    recipes: list[dict] = []
+    for f in sorted(recipes_dir.glob("*.md")):
+        parsed = _parse_recipe_file(f)
+        if parsed:
+            recipes.append(parsed)
+    return recipes
+
+
+def _parse_recipe_file(path: Path) -> dict | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    end = text.find("---", 3)
+    if end == -1:
+        return None
+
+    frontmatter = text[3:end].strip()
+    body = text[end + 3:].strip()
+
+    meta: dict[str, str] = {}
+    for line in frontmatter.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        colon = line.find(":")
+        if colon == -1:
+            continue
+        meta[line[:colon].strip()] = line[colon + 1:].strip()
+
+    name = meta.get("name")
+    summary = meta.get("summary")
+    if not name or not summary:
+        return None
+
+    recipe: dict = {
+        "name": name,
+        "summary": summary,
+        "instructions": body,
+    }
+    applies_to = _parse_selector_list(meta.get("applies_to", ""))
+    excludes = _parse_selector_list(meta.get("excludes", ""))
+    if applies_to:
+        recipe["applies_to"] = applies_to
+    if excludes:
+        recipe["excludes"] = excludes
+    contract = _infer_runtime_contract(recipe)
+    if contract:
+        recipe["runtime_contract"] = contract
+    return recipe
+
+
+def _parse_selector_list(raw: str) -> list[str]:
+    raw = raw.strip()
+    if not raw:
+        return []
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    items: list[str] = []
+    for piece in raw.split(","):
+        selector = piece.strip().strip("'\"").strip()
+        if selector:
+            items.append(selector)
+    return items
+
+
+def _infer_runtime_contract(recipe: dict) -> dict | None:
+    text = " ".join(
+        [str(recipe.get("summary") or ""), str(recipe.get("instructions") or "")]
+    ).lower()
+    if not text.strip():
+        return None
+    if any(token in text for token in ("valid json", "json object", "json format")):
+        return {"output_format": "json_object"}
+    if any(token in text for token in ("key-value", "key value", "key=value")):
+        return {"output_format": "key_value"}
+    return None
 
 
 def migrate_recipes(
@@ -48,7 +140,7 @@ def migrate_recipes(
         return summary
 
     skills_root.mkdir(parents=True, exist_ok=True)
-    recipes = discover_recipes(recipes_root)
+    recipes = _discover_recipes(recipes_root)
 
     for recipe in recipes:
         name = recipe["name"]

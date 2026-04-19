@@ -98,73 +98,8 @@ class TestF37SafetyRuleEnforcement:
 
 
 # ---------------------------------------------------------------------------
-# F38 — Recipe-driven planning
+# F38 — Recipe-driven planning (retired in v0.10; recipes replaced by skills)
 # ---------------------------------------------------------------------------
-
-
-class TestF38RecipeDrivenPlanning:
-    """F38: Recipe file influences planner behavior."""
-
-    async def test_recipe_influences_output(
-        self, _func_kiso_dir, func_db, run_message,
-    ):
-        """What: Write a recipe, send a matching request, verify influence.
-
-        Why: Validates the full recipe pipeline: discover → briefer select →
-        planner receives instructions. Zero functional coverage before this.
-        Expects: Exec or msg output contains structured key-value data.
-        """
-        from kiso.recipe_loader import invalidate_recipes_cache
-
-        recipes_dir = _func_kiso_dir / "recipes"
-        recipes_dir.mkdir(exist_ok=True)
-        recipe_file = recipes_dir / "env-report.md"
-        recipe_file.write_text(
-            "---\n"
-            "name: env-report\n"
-            "summary: Format system environment reports as structured data\n"
-            "---\n"
-            "\n"
-            "## Instructions\n"
-            "\n"
-            "When the user asks for environment or system reports, the exec\n"
-            "task should produce output as valid JSON (a JSON object with\n"
-            "curly braces containing key-value pairs).\n"
-            "The msg task should reference the structured format.\n"
-        )
-        invalidate_recipes_cache()
-
-        try:
-            result = await run_message(
-                "fammi un report delle variabili d'ambiente del sistema",
-                timeout=LLM_SINGLE_PLAN_TIMEOUT,
-            )
-
-            assert result.success, (
-                f"Plan failed: {[p.get('status') for p in result.plans]}"
-            )
-
-            all_output = "\n".join(
-                t.get("output") or "" for t in result.tasks
-            )
-            # Recipe should influence output to be structured (JSON or
-            # key=value pairs). Check task outputs, published file names,
-            # and messenger output — the exec may write to a file in pub/.
-            combined = all_output + "\n" + result.msg_output + "\n" + " ".join(
-                pf.get("filename", "") for pf in result.pub_files
-            )
-            has_structured = bool(
-                re.search(r"\{.*\}", all_output, re.DOTALL)
-                or re.search(r"[A-Z_]+=\S+", all_output)
-                or re.search(r"\.json\b", combined)
-            )
-            assert has_structured, (
-                f"Expected structured output (recipe influence), got: "
-                f"{all_output[:500]}\nmsg: {result.msg_output[:300]}"
-            )
-        finally:
-            recipe_file.unlink(missing_ok=True)
-            invalidate_recipes_cache()
 
 
 # ---------------------------------------------------------------------------

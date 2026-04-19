@@ -25,12 +25,6 @@ from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.registry import get_registry_wrappers
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
-from kiso.recipe_loader import (
-    build_recipe_runtime_contracts_text,
-    discover_recipes,
-    build_planner_recipe_list,
-    filter_recipes_for_message,
-)
 from kiso.wrappers import (
     discover_wrappers,
     build_planner_wrapper_list,
@@ -1248,7 +1242,6 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("skills", "Available Skills"),
-    ("recipes", "Available Recipes"),
     ("mcp_methods", "Available MCP Methods"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
@@ -1366,11 +1359,6 @@ def _prefilter_context_pool(
     # but not by planner on first plan
     if not is_replan and consumer_role == "planner":
         pool.pop("plan_outputs", None)
-    # recipes only relevant when recipes are installed
-    if not pool.get("recipes"):
-        pool.pop("recipes", None)
-    # _raw_recipes is internal (list of dicts), not for LLM consumption
-    pool.pop("_raw_recipes", None)
     return pool
 
 

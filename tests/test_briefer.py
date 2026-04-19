@@ -49,7 +49,7 @@ def _config(briefer_enabled=True) -> Config:
 
 
 def _briefing(
-    modules=None, wrappers=None, mcp_methods=None, exclude_recipes=None,
+    modules=None, wrappers=None, mcp_methods=None,
     context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
 ) -> dict:
@@ -411,92 +411,6 @@ class TestBrieferPromptBudget:
             "context", "output_indices", "relevant_tags", "relevant_entities",
         }
         assert schema_required == expected
-
-
-# ---------------------------------------------------------------------------
-# MD wrappers in briefer context pool
-# ---------------------------------------------------------------------------
-
-
-class TestRecipesInBriefer:
-    """Verify recipes are injected into the briefer context pool."""
-
-    async def test_recipes_appear_in_context_pool(self, db):
-        """When recipes exist, they appear in the briefer context pool."""
-        fake_recipes = [
-            {"name": "data-analyst", "summary": "Data analysis guidance",
-             "instructions": "Use pandas for tabular data.", "path": "/fake/data-analyst.md"},
-        ]
-        briefing = _briefing(context="User wants data analysis help.")
-
-        captured_messages = []
-
-        async def _capturing_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps(briefing)
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]), \
-             patch("kiso.brain.discover_recipes", return_value=fake_recipes):
-            await build_planner_messages(
-                db, _config(), "sess1", "user", "analyze this data",
-            )
-
-        # Briefer should receive the recipes section
-        briefer_input = captured_messages[1]["content"]
-        assert "Available Recipes" in briefer_input
-        assert "data-analyst" in briefer_input
-        assert "Data analysis guidance" in briefer_input
-
-    async def test_no_recipes_no_section(self, db):
-        """When no recipes exist, no recipes section in briefer context."""
-        briefing = _briefing(context="Simple request.")
-
-        captured_messages = []
-
-        async def _capturing_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                captured_messages.extend(messages)
-                return json.dumps(briefing)
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]), \
-             patch("kiso.brain.discover_recipes", return_value=[]):
-            await build_planner_messages(
-                db, _config(), "sess1", "user", "hello",
-            )
-
-        briefer_input = captured_messages[1]["content"]
-        assert "Available Recipes" not in briefer_input
-
-    async def test_recipes_in_planner_context_when_briefer_selects(self, db):
-        """Recipe instructions appear in planner messages when briefer passes them through."""
-        fake_recipes = [
-            {"name": "data-analyst", "summary": "Data analysis guidance",
-             "instructions": "Use pandas for tabular data.", "path": "/fake/data-analyst.md"},
-        ]
-        briefing = _briefing(
-            context="User wants data analysis help.\n\n"
-                    "## Available Recipes\n- data-analyst — Data analysis guidance\n  Use pandas for tabular data.",
-        )
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps(briefing)
-            return "{}"
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]), \
-             patch("kiso.brain.discover_recipes", return_value=fake_recipes):
-            msgs, _, _ = await build_planner_messages(
-                db, _config(), "sess1", "user", "analyze this data",
-            )
-
-        user_content = msgs[1]["content"]
-        assert "pandas" in user_content
 
 
 # ---------------------------------------------------------------------------

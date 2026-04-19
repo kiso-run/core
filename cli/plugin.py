@@ -1,12 +1,9 @@
-"""Plugin umbrella CLI commands — unified view across wrappers, recipes, connectors."""
+"""Plugin umbrella CLI commands — unified view across wrappers and connectors."""
 
 from __future__ import annotations
 
-import sys
-
 from cli.plugin_ops import fetch_registry, search_entries
 from kiso.connectors import discover_connectors
-from kiso.recipe_loader import discover_recipes, invalidate_recipes_cache
 from kiso.wrappers import discover_wrappers
 
 
@@ -21,15 +18,13 @@ def run_plugin_command(args) -> None:
 def _plugin_list() -> None:
     """List all installed plugins grouped by type."""
     wrappers = discover_wrappers()
-    invalidate_recipes_cache()
-    recipes = discover_recipes()
     connectors = discover_connectors()
 
-    if not wrappers and not recipes and not connectors:
+    if not wrappers and not connectors:
         print("No plugins installed.")
         return
 
-    for label, items in [("Wrappers", wrappers), ("Recipes", recipes), ("Connectors", connectors)]:
+    for label, items in [("Wrappers", wrappers), ("Connectors", connectors)]:
         if not items:
             continue
         print(f"{label}:")
@@ -46,7 +41,7 @@ def _plugin_search(args) -> None:
     query = getattr(args, "query", "")
 
     found_any = False
-    for section, label in [("wrappers", "Wrappers"), ("recipes", "Recipes"), ("connectors", "Connectors")]:
+    for section, label in [("wrappers", "Wrappers"), ("connectors", "Connectors")]:
         entries = registry.get(section, [])
         results = search_entries(entries, query)
         if results:

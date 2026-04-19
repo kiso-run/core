@@ -22,11 +22,6 @@ _FAKE_TOOLS = [
      "path": "/fake", "summary": "", "args_schema": {}, "env": {}, "session_secrets": []},
 ]
 
-_FAKE_RECIPES = [
-    {"name": "data-analyst", "summary": "Data analysis guidance",
-     "instructions": "Use pandas.", "path": "/fake/data-analyst.md"},
-]
-
 _FAKE_CONNECTORS = [
     {"name": "discord", "description": "Discord bridge", "version": "1.0",
      "path": "/fake", "summary": "", "env": {}},
@@ -36,24 +31,20 @@ _FAKE_CONNECTORS = [
 class TestPluginList:
     def test_list_all_types(self, capsys):
         with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_recipes", return_value=_FAKE_RECIPES), \
-             patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS), \
-             patch("cli.plugin.invalidate_recipes_cache"):
+             patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS):
             _plugin_list()
 
         out = capsys.readouterr().out
         assert "Wrappers:" in out
         assert "browser" in out
-        assert "Recipes:" in out
-        assert "data-analyst" in out
         assert "Connectors:" in out
         assert "discord" in out
+        # Recipes retired in M1504 part 2b — section must not surface anymore
+        assert "Recipes:" not in out
 
     def test_list_tools_only(self, capsys):
         with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_recipes", return_value=[]), \
-             patch("cli.plugin.discover_connectors", return_value=[]), \
-             patch("cli.plugin.invalidate_recipes_cache"):
+             patch("cli.plugin.discover_connectors", return_value=[]):
             _plugin_list()
 
         out = capsys.readouterr().out
@@ -63,9 +54,7 @@ class TestPluginList:
 
     def test_list_empty(self, capsys):
         with patch("cli.plugin.discover_wrappers", return_value=[]), \
-             patch("cli.plugin.discover_recipes", return_value=[]), \
-             patch("cli.plugin.discover_connectors", return_value=[]), \
-             patch("cli.plugin.invalidate_recipes_cache"):
+             patch("cli.plugin.discover_connectors", return_value=[]):
             _plugin_list()
 
         out = capsys.readouterr().out
@@ -76,7 +65,6 @@ class TestPluginSearch:
     def test_search_across_types(self, capsys):
         registry = {
             "wrappers": [{"name": "browser", "description": "Browser automation"}],
-            "exclude_recipes": [],
             "connectors": [{"name": "discord", "description": "Discord bridge"}],
         }
         args = _FakeArgs(query="")
@@ -90,7 +78,7 @@ class TestPluginSearch:
         assert "discord" in out
 
     def test_search_no_results(self, capsys):
-        registry = {"wrappers": [], "exclude_recipes": [], "connectors": []}
+        registry = {"wrappers": [], "connectors": []}
         args = _FakeArgs(query="nonexistent")
         with patch("cli.plugin.fetch_registry", return_value=registry):
             _plugin_search(args)
