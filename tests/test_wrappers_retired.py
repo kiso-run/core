@@ -210,3 +210,34 @@ class TestRolePromptsWrapperPurged:
     def test_classifier_prompt_no_wrapper_mentions(self):
         text = self._read("classifier.md").lower()
         assert "wrapper" not in text
+
+
+# ---------------------------------------------------------------------------
+# KISO_DIR no longer precreates wrappers/
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateKisoDirNoWrappers:
+    """The ``wrappers`` subsystem is retired — ``_populate_kiso_dir``
+    must not precreate ``~/.kiso/wrappers/`` at startup, and the
+    docstring that advertises the standard subdirs must not list it.
+    """
+
+    def test_populate_does_not_create_wrappers_dir(self, tmp_path):
+        from unittest.mock import patch
+        from kiso.main import _init_kiso_dirs
+
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert not (tmp_path / "wrappers").exists(), (
+            "wrappers/ must not be precreated after retirement"
+        )
+
+    def test_populate_docstring_does_not_list_wrappers(self):
+        from kiso.main import _populate_kiso_dir
+
+        doc = _populate_kiso_dir.__doc__ or ""
+        assert "wrappers" not in doc.lower(), (
+            "_populate_kiso_dir docstring must not list wrappers as a "
+            "standard subdir after retirement"
+        )

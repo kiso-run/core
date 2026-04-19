@@ -218,9 +218,9 @@ def _populate_kiso_dir(target: Path) -> None:
 
     Behavior:
 
-    - Creates the standard subdirs (``wrappers``, ``connectors``,
-      ``recipes``, ``skills``, ``sessions``, ``roles``,
-      ``reference``, ``sys/bin``, ``sys/ssh``).
+    - Creates the standard subdirs (``connectors``, ``skills``,
+      ``sessions``, ``roles``, ``reference``, ``sys/bin``,
+      ``sys/ssh``).
     - Runs the ``summarizer-session.md → summarizer.md``
       migration before copying bundled roles, so a stale legacy
       file does not land alongside the canonical filename.

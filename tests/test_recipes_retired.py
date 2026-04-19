@@ -82,3 +82,34 @@ class TestBrieferNoRecipesKey:
         section_keys = {k for k, _label in common._CONTEXT_POOL_SECTIONS}
         assert "recipes" not in section_keys
         assert "_raw_recipes" not in section_keys
+
+
+# ---------------------------------------------------------------------------
+# KISO_DIR no longer precreates recipes/
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateKisoDirNoRecipes:
+    """The ``recipes`` subsystem is retired — ``_populate_kiso_dir``
+    must not precreate ``~/.kiso/recipes/`` at startup, and the
+    docstring that advertises the standard subdirs must not list it.
+    """
+
+    def test_populate_does_not_create_recipes_dir(self, tmp_path):
+        from unittest.mock import patch
+        from kiso.main import _init_kiso_dirs
+
+        with patch("kiso.main.KISO_DIR", tmp_path):
+            _init_kiso_dirs()
+        assert not (tmp_path / "recipes").exists(), (
+            "recipes/ must not be precreated after retirement"
+        )
+
+    def test_populate_docstring_does_not_list_recipes(self):
+        from kiso.main import _populate_kiso_dir
+
+        doc = _populate_kiso_dir.__doc__ or ""
+        assert "recipes" not in doc.lower(), (
+            "_populate_kiso_dir docstring must not list recipes as a "
+            "standard subdir after retirement"
+        )
