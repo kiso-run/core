@@ -90,7 +90,6 @@ async def _make_ctx(db, mcp_manager) -> _PlanCtx:
         max_output_size=65536,
         max_worker_retries=3,
         messenger_timeout=30,
-        installed_wrappers=[],
         slog=None,
         sandbox_uid=None,
         mcp_manager=mcp_manager,

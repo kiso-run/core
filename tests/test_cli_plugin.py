@@ -15,13 +15,6 @@ class _FakeArgs:
             setattr(self, k, v)
 
 
-_FAKE_TOOLS = [
-    {"name": "browser", "description": "Headless browser automation", "version": "1.0",
-     "path": "/fake", "summary": "", "args_schema": {}, "env": {}, "session_secrets": []},
-    {"name": "search", "description": "Web search", "version": "1.0",
-     "path": "/fake", "summary": "", "args_schema": {}, "env": {}, "session_secrets": []},
-]
-
 _FAKE_CONNECTORS = [
     {"name": "discord", "description": "Discord bridge", "version": "1.0",
      "path": "/fake", "summary": "", "env": {}},
@@ -29,32 +22,18 @@ _FAKE_CONNECTORS = [
 
 
 class TestPluginList:
-    def test_list_all_types(self, capsys):
-        with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS):
+    def test_list_connectors(self, capsys):
+        with patch("cli.plugin.discover_connectors", return_value=_FAKE_CONNECTORS):
             _plugin_list()
 
         out = capsys.readouterr().out
-        assert "Wrappers:" in out
-        assert "browser" in out
         assert "Connectors:" in out
         assert "discord" in out
-        # Recipes retired in M1504 part 2b — section must not surface anymore
+        # Recipes retired in the v0.10 cycle — section must not surface
         assert "Recipes:" not in out
-
-    def test_list_tools_only(self, capsys):
-        with patch("cli.plugin.discover_wrappers", return_value=_FAKE_TOOLS), \
-             patch("cli.plugin.discover_connectors", return_value=[]):
-            _plugin_list()
-
-        out = capsys.readouterr().out
-        assert "Wrappers:" in out
-        assert "Recipes:" not in out
-        assert "Connectors:" not in out
 
     def test_list_empty(self, capsys):
-        with patch("cli.plugin.discover_wrappers", return_value=[]), \
-             patch("cli.plugin.discover_connectors", return_value=[]):
+        with patch("cli.plugin.discover_connectors", return_value=[]):
             _plugin_list()
 
         out = capsys.readouterr().out
@@ -62,9 +41,8 @@ class TestPluginList:
 
 
 class TestPluginSearch:
-    def test_search_across_types(self, capsys):
+    def test_search_connectors(self, capsys):
         registry = {
-            "wrappers": [{"name": "browser", "description": "Browser automation"}],
             "connectors": [{"name": "discord", "description": "Discord bridge"}],
         }
         args = _FakeArgs(query="")
@@ -72,13 +50,11 @@ class TestPluginSearch:
             _plugin_search(args)
 
         out = capsys.readouterr().out
-        assert "Wrappers:" in out
-        assert "browser" in out
         assert "Connectors:" in out
         assert "discord" in out
 
     def test_search_no_results(self, capsys):
-        registry = {"wrappers": [], "connectors": []}
+        registry = {"connectors": []}
         args = _FakeArgs(query="nonexistent")
         with patch("cli.plugin.fetch_registry", return_value=registry):
             _plugin_search(args)
@@ -92,41 +68,3 @@ class TestRunPluginCommand:
         args = _FakeArgs(plugin_command=None)
         with pytest.raises(SystemExit):
             run_plugin_command(args)
-
-
-class TestPluginInstallGitPull:
-    """kiso wrapper install runs git pull when plugin already exists."""
-
-    def test_git_pull_called_on_reinstall(self, tmp_path):
-        from cli.plugin_ops import _plugin_install
-        from kiso.wrappers import _validate_manifest as validate_fn, check_deps
-
-        # Create a fake installed plugin dir with kiso.toml
-        plugin_dir = tmp_path / "wrappers" / "test-wrapper"
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "kiso.toml").write_text(
-            '[kiso]\nname = "test-wrapper"\ntype = "wrapper"\n\n'
-            '[kiso.wrapper]\nsummary = "Test"\n\n'
-            '[kiso.wrapper.args]\n'
-        )
-
-        calls = []
-
-        def _mock_run(cmd, **kw):
-            calls.append(cmd)
-            result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-            return result
-
-        args = type("A", (), {"no_deps": True, "target": "test-wrapper", "name": None, "show_deps": False})()
-
-        with patch("cli.plugin_ops.subprocess.run", side_effect=_mock_run):
-            _plugin_install(
-                "wrapper", "wrapper-",
-                tmp_path / "wrappers",
-                validate_fn, check_deps,
-                args,
-            )
-
-        # git pull should be called before uv sync
-        git_calls = [c for c in calls if c[0] == "git"]
-        assert any("pull" in c for c in git_calls), f"Expected git pull, got: {calls}"

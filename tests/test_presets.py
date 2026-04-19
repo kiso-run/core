@@ -164,7 +164,7 @@ class TestRegistryPresets:
             assert "description" in p and p["description"]
 
     def test_search_entries_on_presets(self):
-        from kiso.registry import search_entries
+        from cli.plugin_ops import search_entries
         presets = [
             {"name": "performance-marketer", "description": "marketing"},
             {"name": "seo-specialist", "description": "SEO optimization"},

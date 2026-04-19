@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import getpass
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -27,13 +29,67 @@ def _clean_env() -> dict[str, str]:
     env = dict(os.environ)
     env.pop("VIRTUAL_ENV", None)
     return env
-from kiso.registry import (
-    cross_type_hint,
-    fetch_registry as _fetch_registry_core,
-    search_entries,
-)
-
 OFFICIAL_ORG = "kiso-run"
+
+REGISTRY_URL = (
+    "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
+)
+_registry_cache: dict | None = None
+_registry_ts: float = 0.0
+_REGISTRY_TTL: float = 300.0
+
+
+def _fetch_registry_core() -> dict:
+    """Fetch the official registry from GitHub, cached for 5 min.
+
+    Returns ``{}`` on network/parse errors — callers must tolerate empty.
+    """
+    import httpx
+
+    global _registry_cache, _registry_ts  # noqa: PLW0603
+    now = time.monotonic()
+    if _registry_cache is not None and (now - _registry_ts) < _REGISTRY_TTL:
+        return _registry_cache
+    try:
+        resp = httpx.get(REGISTRY_URL, timeout=10.0, follow_redirects=True)
+        resp.raise_for_status()
+        _registry_cache = json.loads(resp.text)
+        _registry_ts = now
+        return _registry_cache
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed to fetch registry: %s", exc)
+        return _registry_cache or {}
+
+
+def search_entries(entries: list[dict], query: str | None) -> list[dict]:
+    """Filter registry entries: match name first, then description."""
+    if not query:
+        return entries
+    q = query.lower()
+    by_name = [e for e in entries if q in e["name"].lower()]
+    if by_name:
+        return by_name
+    return [e for e in entries if q in e.get("description", "").lower()]
+
+
+def cross_type_hint(registry: dict, current_type: str, query: str) -> str | None:
+    """Suggest the other plugin type when a search yields no results."""
+    if current_type == "connectors":
+        other_type = "wrappers"
+        other_cmd = "wrapper"
+    else:
+        other_type = "connectors"
+        other_cmd = "connector"
+    other_entries = registry.get(other_type, [])
+    matches = search_entries(other_entries, query)
+    if matches:
+        names = ", ".join(m["name"] for m in matches)
+        return (
+            f"Did you mean `kiso {other_cmd} search {query}`? "
+            f"Found in {other_type}: {names}"
+        )
+    return None
 
 # Prevent git from opening /dev/tty to prompt for credentials.
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
@@ -182,11 +238,7 @@ def require_admin() -> None:
 
 
 def fetch_registry() -> dict:
-    """Fetch the official registry — exits on failure (CLI use).
-
-    For core/worker code that must not exit, use
-    ``kiso.registry.fetch_registry()`` directly.
-    """
+    """Fetch the official registry — exits on failure (CLI use)."""
     reg = _fetch_registry_core()
     if not reg:
         print("error: failed to fetch registry")
@@ -421,8 +473,6 @@ def _plugin_install(
 
         print(f"{plugin_type.capitalize()} '{name}' installed successfully.")
         invalidate_cache()
-        from kiso.wrappers import invalidate_wrappers_cache
-        invalidate_wrappers_cache()
 
     except Exception:
         if plugin_dir.exists():

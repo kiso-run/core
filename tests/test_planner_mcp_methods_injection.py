@@ -89,10 +89,8 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), patch(
-            "kiso.brain.discover_wrappers", return_value=[]
-        ):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db,
                 _config(briefer_enabled=True),
                 "sess1",
@@ -114,15 +112,14 @@ class TestMcpMethodsInjectedIntoPlannerContext:
     async def test_catalog_appears_in_fallback_path(self, db):
         """Even with briefer disabled, the catalog reaches the planner."""
 
-        with patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
-                db,
-                _config(briefer_enabled=False),
-                "sess1",
-                "admin",
-                "read /workspace/foo.txt",
-                mcp_catalog_text=_CATALOG_TEXT,
-            )
+        msgs = await build_planner_messages(
+            db,
+            _config(briefer_enabled=False),
+            "sess1",
+            "admin",
+            "read /workspace/foo.txt",
+            mcp_catalog_text=_CATALOG_TEXT,
+        )
 
         user_content = msgs[1]["content"]
         assert "MCP Methods" in user_content
@@ -136,10 +133,8 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 return json.dumps(_briefing())
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), patch(
-            "kiso.brain.discover_wrappers", return_value=[]
-        ):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db,
                 _config(),
                 "sess1",
@@ -159,10 +154,8 @@ class TestMcpMethodsInjectedIntoPlannerContext:
                 return json.dumps(_briefing())
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), patch(
-            "kiso.brain.discover_wrappers", return_value=[]
-        ):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db,
                 _config(),
                 "sess1",

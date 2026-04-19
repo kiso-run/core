@@ -169,8 +169,6 @@ class TestInstallRouterNodeCli:
                 "os": {"pkg_manager": "apt"},
                 "available_binaries": ["python3", "node", "npm", "npx"],
             },
-            installed_wrapper_names=[],
-            registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "node_cli"
         assert route["target"] == "typescript"
@@ -182,8 +180,6 @@ class TestInstallRouterNodeCli:
                 "os": {"pkg_manager": "apt"},
                 "available_binaries": ["python3", "node", "npm", "npx"],
             },
-            installed_wrapper_names=[],
-            registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "node_cli"
         assert route["target"] == "prettier"
@@ -196,8 +192,6 @@ class TestInstallRouterNodeCli:
                 "os": {"pkg_manager": "apt"},
                 "available_binaries": ["python3", "node", "npm", "uv"],
             },
-            installed_wrapper_names=[],
-            registry_hint_names={"browser", "aider"},
         )
         assert route["mode"] == "python_lib"
         assert route["target"] == "flask"

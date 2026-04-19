@@ -230,27 +230,6 @@ def _collect_connectors() -> list[dict[str, str]]:
     return result
 
 
-def _load_registry_hints() -> str:
-    """Load brief wrapper/connector descriptions from the online registry."""
-    from kiso.registry import fetch_registry
-
-    data = fetch_registry()
-    if not data:
-        return ""
-    parts: list[str] = []
-    for s in data.get("wrappers", []):
-        name = s.get("name", "")
-        desc = s.get("description", "")
-        if name and desc:
-            parts.append(f"{name} ({desc})")
-    for c in data.get("connectors", []):
-        name = c.get("name", "")
-        desc = c.get("description", "")
-        if name and desc:
-            parts.append(f"{name} ({desc})")
-    return "; ".join(parts) if parts else ""
-
-
 def _collect_user_info() -> dict:
     """Detect current user, root status, and sudo availability."""
     import pwd
@@ -274,7 +253,6 @@ def collect_system_env(config: Config) -> dict:
     os_info = _collect_os_info()
     found_bins, missing_bins = _collect_binaries()
     connectors = _collect_connectors()
-    registry_hints = _load_registry_hints()
     user_info = _collect_user_info()
 
     return {
@@ -290,9 +268,7 @@ def collect_system_env(config: Config) -> dict:
         "max_plan_tasks": int(config.settings["max_plan_tasks"]),
         "max_replan_depth": int(config.settings["max_replan_depth"]),
         "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
-        "registry_hints": registry_hints,
         "reference_docs_path": str(KISO_DIR / "reference"),
-        "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         "bot_persona": config.settings.get("bot_persona", ""),
         "user_settings": {
             k: config.settings.get(k, SETTINGS_DEFAULTS.get(k))
@@ -478,8 +454,7 @@ def build_system_env_section(env: dict, session: str = "") -> str:
         persistent_parts.append(f"ssh pub key: {ssh_pub}")
     lines.append(f"Persistent dir: {sys_dir} ({', '.join(persistent_parts)})")
     lines.append(f"Sys bin: {env['sys_bin_path']} (prepended to exec PATH)")
-    lines.append(f"Reference docs: {env['reference_docs_path']} (wrapper/connector authoring guides — cat before planning)")
-    lines.append(f"Plugin registry: {env['registry_url']}")
+    lines.append(f"Reference docs: {env['reference_docs_path']} (connector authoring guides — cat before planning)")
     lines.append(f"Max output: {_format_size(env['max_output_size'])}")
     lines.append("")
 

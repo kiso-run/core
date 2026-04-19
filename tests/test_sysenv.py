@@ -18,7 +18,6 @@ from kiso.sysenv import (
     _collect_user_info,
     _collect_workspace_files,
     _detect_pkg_manager,
-    _load_registry_hints,
     build_install_context,
     build_system_env_essential,
     build_system_env_section,
@@ -272,7 +271,7 @@ class TestCollectSystemEnv:
             "os", "shell", "exec_cwd", "exec_env",
             "max_output_size", "available_binaries", "missing_binaries",
             "connectors", "max_plan_tasks", "max_replan_depth",
-            "sys_bin_path", "reference_docs_path", "registry_url",
+            "sys_bin_path", "reference_docs_path",
         }
         assert expected_keys <= set(env.keys())
 
@@ -382,8 +381,6 @@ class TestBuildSystemEnvSection:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
-            "registry_hints": "browser (Headless browser automation); search (Web search)",
         }
 
     def test_contains_os_info(self, sample_env):
@@ -521,7 +518,7 @@ class TestBuildSystemEnvSection:
         """Output contains the Reference docs line."""
         section = build_system_env_section(sample_env)
         assert "Reference docs:" in section
-        assert "wrapper/connector authoring guides" in section
+        assert "connector authoring guides" in section
 
     def test_contains_persistent_dir_line(self, sample_env):
         """Output contains the Persistent dir line with KISO_DIR path."""
@@ -529,12 +526,6 @@ class TestBuildSystemEnvSection:
         assert "Persistent dir:" in section
         assert "git config" in section
         assert "ssh keys" in section
-
-    def test_contains_plugin_registry_line(self, sample_env):
-        """Output contains the Plugin registry line."""
-        section = build_system_env_section(sample_env)
-        assert "Plugin registry:" in section
-        assert "registry.json" in section
 
     def test_contains_network_line(self, sample_env):
         """Output contains the Network line."""
@@ -600,7 +591,6 @@ class TestBuildSystemEnvEssential:
             "exec_env": "PATH",
             "sys_bin_path": "/fake/bin",
             "reference_docs_path": "/fake/docs",
-            "registry_url": "https://example.com/registry.json",
             "available_binaries": ["git", "python3"],
             "missing_binaries": [],
             "connectors": [],
@@ -712,12 +702,6 @@ class TestCollectSystemEnvNewKeys:
         with patch("kiso.connectors.discover_connectors", return_value=[]):
             env = collect_system_env(config)
         assert env["reference_docs_path"] == str(KISO_DIR / "reference")
-
-    def test_includes_registry_url(self, config):
-        with patch("kiso.connectors.discover_connectors", return_value=[]):
-            env = collect_system_env(config)
-        assert env["registry_url"] == "https://raw.githubusercontent.com/kiso-run/core/main/registry.json"
-
 
 # --- _collect_workspace_files ---
 
@@ -920,7 +904,6 @@ class TestWorkspaceInBuildSection:
             "max_replan_depth": 3,
             "sys_bin_path": "/tmp/sys/bin",
             "reference_docs_path": "/tmp/reference",
-            "registry_url": "https://example.com/registry.json",
         }
 
     def test_workspace_files_listed_in_output(self, sample_env, tmp_path):
@@ -971,35 +954,6 @@ class TestWorkspaceInBuildSection:
             section = build_system_env_section(sample_env, session="filter-test")
         assert "report.txt" in section
         assert "internal.json" not in section
-
-
-class TestLoadRegistryHints:
-    """_load_registry_hints fetches from online registry."""
-
-    def test_returns_tool_descriptions(self):
-        """Fetches online registry and returns wrapper name + description pairs."""
-        registry_data = {
-            "wrappers": [
-                {"name": "browser", "description": "Headless browser"},
-                {"name": "ocr", "description": "Image OCR"},
-            ],
-            "connectors": [
-                {"name": "discord", "description": "Discord bridge"},
-            ],
-        }
-        with patch("kiso.registry.fetch_registry", return_value=registry_data):
-            result = _load_registry_hints()
-        assert "browser" in result
-        assert "Headless browser" in result
-        assert "ocr" in result
-        assert "Image OCR" in result
-        assert "discord" in result
-
-    def test_returns_empty_when_fetch_fails(self):
-        """Returns empty string when online fetch returns empty dict."""
-        with patch("kiso.registry.fetch_registry", return_value={}):
-            result = _load_registry_hints()
-        assert result == ""
 
 
 # --- Config settings in sysenv ---

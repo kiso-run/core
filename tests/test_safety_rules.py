@@ -59,7 +59,7 @@ async def test_safety_facts_always_injected_into_planner(db, test_config):
 
     await save_message(db, "safety-planner-test", "testuser", "user", "deploy the app", trusted=True)
 
-    messages, _, _ = await build_planner_messages(
+    messages = await build_planner_messages(
         db, test_config, "safety-planner-test", "user", "deploy the app",
     )
 
@@ -84,7 +84,7 @@ async def test_behavior_facts_injected_into_planner(db, test_config):
     await save_fact(db, "Always respond formally", "admin", category="behavior")
     await save_message(db, "behavior-test", "testuser", "user", "do something", trusted=True)
 
-    messages, _, _ = await build_planner_messages(
+    messages = await build_planner_messages(
         db, test_config, "behavior-test", "user", "do something",
     )
     all_text = " ".join(m.get("content", "") for m in messages)

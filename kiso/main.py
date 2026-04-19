@@ -245,9 +245,7 @@ def _populate_kiso_dir(target: Path) -> None:
         (target / "sys" / "bin").mkdir(parents=True, exist_ok=True)
         (target / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
         (target / "reference").mkdir(parents=True, exist_ok=True)
-        (target / "wrappers").mkdir(parents=True, exist_ok=True)
         (target / "connectors").mkdir(parents=True, exist_ok=True)
-        (target / "recipes").mkdir(parents=True, exist_ok=True)
         (target / "skills").mkdir(parents=True, exist_ok=True)
         (target / "sessions").mkdir(parents=True, exist_ok=True)
         (target / "roles").mkdir(parents=True, exist_ok=True)
@@ -615,25 +613,6 @@ async def lifespan(app: FastAPI):
 
     await _startup_recovery(db, config)
 
-    # Wrapper deps repair runs in background — doesn't block server healthcheck
-    from kiso.wrapper_repair import _is_container_rebuilt, _mark_image_id, rerun_all_deps, repair_unhealthy_wrappers
-
-    async def _background_wrapper_repair():
-        try:
-            if _is_container_rebuilt():
-                log.info("Container rebuilt — re-running deps.sh in background...")
-                reran = await rerun_all_deps()
-                if reran:
-                    log.info("Re-ran deps.sh for: %s", reran)
-                _mark_image_id()
-            repaired = await repair_unhealthy_wrappers()
-            if repaired:
-                log.info("Repaired wrappers on startup: %s", repaired)
-        except Exception as e:
-            log.warning("Background wrapper repair failed: %s", e)
-
-    repair_task = asyncio.create_task(_background_wrapper_repair())
-
     # Webhook secret length warning
     webhook_secret = config.settings["webhook_secret"]
     if webhook_secret and len(webhook_secret) < 32:
@@ -648,12 +627,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cancel background tasks
-    for task in (cron_task, repair_task):
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    cron_task.cancel()
+    try:
+        await cron_task
+    except asyncio.CancelledError:
+        pass
 
     # Graceful shutdown with timeout
     shutdown_timeout = setting_int(config.settings, "llm_timeout", lo=1)

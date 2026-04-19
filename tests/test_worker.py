@@ -52,12 +52,10 @@ from kiso.worker.loop import (
     _handle_plan_error,
     _handle_replan_task,
     _run_review_step,
-    _handle_wrapper_task,
     _make_plan_output,
     _msg_task,
     _persist_plan_tasks,
     _repair_exec_pythonpath,
-    _repair_wrapper_workspace_args,
     _resolve_workspace_file_reference,
     _review_task,
     _run_planning_loop,
@@ -65,7 +63,6 @@ from kiso.worker.loop import (
     _post_plan_knowledge,
     _process_message,
 )
-from kiso.worker.wrapper import _wrapper_task
 from kiso.worker.utils import (
     _auto_publish_skill_files,
     _build_cancel_summary,
@@ -100,15 +97,6 @@ EXEC_THEN_MSG_PLAN = {
     "tasks": [
         {"type": "exec", "detail": "echo hello", "wrapper": None, "args": None, "expect": "prints hello"},
         {"type": "msg", "detail": "Report the output", "wrapper": None, "args": None, "expect": None},
-    ],
-}
-
-TOOL_PLAN = {
-    "goal": "Use wrapper",
-    "secrets": None,
-    "tasks": [
-        {"type": "wrapper", "detail": "search", "wrapper": "search", "args": "{}", "expect": "results"},
-        {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
     ],
 }
 
@@ -759,25 +747,6 @@ class TestRunWorker:
         # Output is the raw detail text (fallback)
         assert msg_task["output"] == "Hello!"
 
-    async def test_wrapper_task_fails_not_implemented(self, db, tmp_path):
-        config = make_config(settings={"max_replan_depth": 1})
-        await create_session(db, "sess1")
-        msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
-
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put({"id": msg_id, "content": "search", "user_role": "admin"})
-
-        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=TOOL_PLAN), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
-
-        # Should eventually fail (after replan attempts hit max depth)
-        tasks = await get_tasks_for_session(db, "sess1")
-        skill_tasks = [t for t in tasks if t["type"] == "wrapper"]
-        assert all(t["status"] == "failed" for t in skill_tasks)
-        assert any("not installed" in (t["output"] or "") for t in skill_tasks)
-
     async def test_planning_error_continues(self, db, tmp_path):
         """If planning fails, the worker should continue to the next message."""
         config = make_config()
@@ -1263,41 +1232,6 @@ class TestRunWorker:
         assert plans[0] == "failed"  # old plan finalized to "failed"
         assert plans[1] == "done"    # new plan succeeded
 
-    async def test_skill_review_error_fails_without_replan(self, db, tmp_path):
-        """Wrapper task review error → plan fails (after replan attempts)."""
-        config = make_config(settings={"max_replan_depth": 1})
-        await create_session(db, "sess1")
-        msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
-
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put({"id": msg_id, "content": "search", "user_role": "admin"})
-
-        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=TOOL_PLAN), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("LLM down")), \
-             _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
-
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
-
-    async def test_skill_review_ok_still_fails_plan(self, db, tmp_path):
-        """Even if reviewer says ok for a wrapper task, plan still fails (wrapper not installed)."""
-        config = make_config(settings={"max_replan_depth": 1})
-        await create_session(db, "sess1")
-        msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
-
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put({"id": msg_id, "content": "search", "user_role": "admin"})
-
-        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=TOOL_PLAN), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
-
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
-
-
 # --- _review_task ---
 
 class TestReviewTask:
@@ -1687,11 +1621,11 @@ class TestBuildReplanContext:
         completed = [
             {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
             {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
-            {"type": "wrapper", "detail": "run wrapper", "status": "done", "output": "result"},
+            {"type": "exec", "detail": "run plugin", "status": "done", "output": "result", "wrapper": None, "args": None},
         ]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "install" in ctx
-        assert "run wrapper" in ctx
+        assert "run plugin" in ctx
         assert "intent message" not in ctx
         assert "hello user" not in ctx
 
@@ -1808,13 +1742,7 @@ class TestBuildReplanContext:
 
 
 class TestTaskTypeLabel:
-    """replan context includes wrapper name in task type labels."""
-
-    def test_wrapper_task_includes_wrapper_name(self):
-        completed = [{"type": "wrapper", "wrapper": "ocr", "detail": "Extract text",
-                       "status": "done", "output": "hello"}]
-        ctx = _build_replan_context(completed, [], "failed", [])
-        assert "[wrapper/ocr]" in ctx
+    """replan context renders generic task type labels."""
 
     def test_exec_task_no_tool_suffix(self):
         completed = [{"type": "exec", "detail": "echo hi",
@@ -1822,11 +1750,6 @@ class TestTaskTypeLabel:
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[exec]" in ctx
         assert "[exec/" not in ctx
-
-    def test_remaining_wrapper_task_includes_wrapper_name(self):
-        remaining = [{"type": "wrapper", "wrapper": "browser", "detail": "Navigate"}]
-        ctx = _build_replan_context([], remaining, "failed", [])
-        assert "[wrapper/browser]" in ctx
 
     def test_remaining_msg_no_tool_suffix(self):
         remaining = [{"type": "msg", "detail": "report"}]
@@ -1941,133 +1864,6 @@ class TestExecutePlan:
         assert reason is None
         assert len(completed) == 1
         assert completed[0]["output"] == "hello"
-
-    async def test_skill_not_installed_triggers_replan(self, db, tmp_path):
-        """Wrapper not installed → replan with error message."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          wrapper="search", args="{}", expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        mock_reviewer = AsyncMock(return_value=REVIEW_REPLAN)
-        with patch("kiso.worker.loop.run_reviewer", mock_reviewer), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason is not None
-        assert "not installed" in reason
-        assert len(remaining) == 1  # msg task
-        mock_reviewer.assert_not_called()  # review skipped (setup error)
-        tasks = await get_tasks_for_plan(db, plan_id)
-        skill_task = [t for t in tasks if t["type"] == "wrapper"][0]
-        assert skill_task["status"] == "failed"
-        assert "not installed" in skill_task["output"]
-        # plan_outputs should contain the error
-        assert len(_po) == 1
-        assert "not installed" in _po[0]["output"]
-
-    async def test_skill_invalid_args_json_triggers_replan(self, db, tmp_path):
-        """Invalid JSON in wrapper args → replan with error."""
-        config = make_config()
-        tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="do thing",
-                          wrapper="browser", args="not-json{", expect="done")
-        tasks = await get_tasks_for_plan(db, plan_id)
-        task_row = tasks[0]
-        ctx = _PlanCtx(
-            db=db, config=config, session="sess1",
-            goal="Test", user_message="msg",
-            deploy_secrets={}, session_secrets={},
-            max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_wrappers=[tool_info],
-            slog=None, sandbox_uid=None,
-        )
-        result = await _handle_wrapper_task(ctx, task_row, 0, False, 0)
-        assert result.stop is True
-        assert result.stop_success is False
-        assert result.stop_replan is not None
-        assert "Invalid wrapper args JSON" in result.stop_replan
-        assert result.plan_output is not None
-
-    async def test_skill_args_validation_failure_triggers_replan(self, db, tmp_path):
-        """Wrapper args missing required field → replan with error."""
-        config = make_config()
-        tool_info = {
-            "name": "browser",
-            "args_schema": {"action": {"type": "string", "required": True}},
-            "entry": "browser.sh",
-        }
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="take screenshot",
-                          wrapper="browser", args="{}", expect="screenshot")
-        tasks = await get_tasks_for_plan(db, plan_id)
-        task_row = tasks[0]
-        ctx = _PlanCtx(
-            db=db, config=config, session="sess1",
-            goal="Test", user_message="msg",
-            deploy_secrets={}, session_secrets={},
-            max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_wrappers=[tool_info],
-            slog=None, sandbox_uid=None,
-        )
-        result = await _handle_wrapper_task(ctx, task_row, 0, False, 0)
-        assert result.stop is True
-        assert result.stop_replan is not None
-        assert "validation failed" in result.stop_replan
-        assert result.plan_output is not None
-        assert result.plan_output["status"] == "failed"
-
-    async def test_skill_execution_failure_reviewer_replan(self, db, tmp_path):
-        """wrapper executes but fails (exit_code=1), reviewer says replan → replan reason returned."""
-        config = make_config()
-        tool_info = {"name": "browser", "args_schema": {}, "entry": "browser.sh"}
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="take screenshot",
-                          wrapper="browser", args="{}", expect="screenshot")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-        tasks = await get_tasks_for_plan(db, plan_id)
-        task_row = tasks[0]
-        ctx = _PlanCtx(
-            db=db, config=config, session="sess1",
-            goal="Test", user_message="msg",
-            deploy_secrets={}, session_secrets={},
-            max_output_size=4096, max_worker_retries=1,
-            messenger_timeout=5, installed_wrappers=[tool_info],
-            slog=None, sandbox_uid=None,
-        )
-        with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                    return_value=("error output", "wrapper crashed", False, 1)), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                    return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop._write_plan_outputs", new_callable=AsyncMock), \
-             patch("kiso.worker.loop._check_disk_limit", return_value=None):
-            result = await _handle_wrapper_task(ctx, task_row, 0, False, 0)
-        assert result.stop is True
-        assert result.stop_success is False
-        assert result.stop_replan == "Task failed"
-        assert result.plan_output is not None
-
-    async def test_skill_review_error(self, db, tmp_path):
-        """Wrapper not installed → replan; reviewer never reached."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          wrapper="search", args="{}", expect="results")
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, side_effect=ReviewError("err")), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason is not None  # setup failure triggers replan
-        assert "not installed" in reason
 
     async def test_multiple_exec_first_fails(self, db, tmp_path):
         """First exec fails → remaining tasks returned."""
@@ -2575,19 +2371,6 @@ class TestPersistPlanTasks:
         assert db_tasks[0]["type"] == "exec"
         assert db_tasks[1]["type"] == "msg"
 
-    async def test_persists_skill_fields(self, db):
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        tasks = [
-            {"type": "wrapper", "detail": "search", "wrapper": "search", "args": '{"q":"test"}', "expect": "results"},
-        ]
-        ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
-        assert len(ids) == 1
-
-        db_tasks = await get_tasks_for_plan(db, plan_id)
-        assert db_tasks[0]["wrapper"] == "search"
-        assert db_tasks[0]["args"] == '{"q":"test"}'
-
-
 # --- store: save_learning ---
 
 class TestSaveLearning:
@@ -2837,7 +2620,7 @@ class TestExtractPublishedUrls:
         assert _extract_published_urls(outputs) == []
 
     def test_extracts_single_url(self):
-        outputs = [{"index": 1, "type": "wrapper", "output": (
+        outputs = [{"index": 1, "type": "exec", "output": (
             "Screenshot saved: /tmp/shot.png\n\n"
             "Published files:\n"
             "- screenshot.png: http://host:8334/pub/abc123/screenshot.png"
@@ -2858,7 +2641,7 @@ class TestExtractPublishedUrls:
 
     def test_extracts_from_multiple_tasks(self):
         outputs = [
-            {"index": 1, "type": "wrapper", "output": "Published files:\n- a.txt: http://h/pub/t/a.txt", "status": "done"},
+            {"index": 1, "type": "exec", "output": "Published files:\n- a.txt: http://h/pub/t/a.txt", "status": "done"},
             {"index": 2, "type": "exec", "output": "Published files:\n- b.txt: http://h/pub/t/b.txt", "status": "done"},
         ]
         result = _extract_published_urls(outputs)
@@ -2876,7 +2659,7 @@ class TestFormatPlanOutputsPublishedUrls:
     """Published file URLs appear prominently at the top of formatted output."""
 
     def test_published_urls_section_present(self):
-        outputs = [{"index": 1, "type": "wrapper", "detail": "take screenshot",
+        outputs = [{"index": 1, "type": "exec", "detail": "take screenshot",
                      "output": "ok\n\nPublished files:\n- shot.png: http://h/pub/t/shot.png",
                      "status": "done"}]
         result = _format_plan_outputs_for_msg(outputs)
@@ -2884,12 +2667,12 @@ class TestFormatPlanOutputsPublishedUrls:
         assert "http://h/pub/t/shot.png" in result
 
     def test_published_urls_before_task_entries(self):
-        outputs = [{"index": 1, "type": "wrapper", "detail": "screenshot",
+        outputs = [{"index": 1, "type": "exec", "detail": "screenshot",
                      "output": "ok\n\nPublished files:\n- s.png: http://h/pub/t/s.png",
                      "status": "done"}]
         result = _format_plan_outputs_for_msg(outputs)
         pub_pos = result.index("## Published Files")
-        task_pos = result.index("[1] wrapper:")
+        task_pos = result.index("[1] exec:")
         assert pub_pos < task_pos
 
     def test_no_published_urls_no_section(self):
@@ -2900,7 +2683,7 @@ class TestFormatPlanOutputsPublishedUrls:
     def test_published_urls_survive_truncation(self):
         """Even when task outputs are summarized due to budget, URLs are preserved."""
         outputs = [
-            {"index": 1, "type": "wrapper", "detail": "screenshot",
+            {"index": 1, "type": "exec", "detail": "screenshot",
              "output": "x" * 5000 + "\n\nPublished files:\n- s.png: http://h/pub/t/s.png",
              "status": "done"},
             {"index": 2, "type": "exec", "detail": "heavy",
@@ -2925,7 +2708,7 @@ class TestMakePlanOutput:
         assert entry["index"] == 7
 
     def test_all_task_types(self):
-        for task_type in ("exec", "msg", "wrapper", "search"):
+        for task_type in ("exec", "msg", "replan", "mcp"):
             entry = _make_plan_output(1, task_type, "d", "o", "done")
             assert entry["type"] == task_type
 
@@ -3190,7 +2973,7 @@ class TestExecutePlanOutputChaining:
         assert "hello" in user_content
 
     async def test_plan_outputs_accumulates_all_types(self, db, tmp_path):
-        """plan_outputs should accumulate entries for exec, msg, and wrapper tasks."""
+        """plan_outputs should accumulate entries for exec and msg tasks."""
         config = make_config()
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo step1", expect="ok")
@@ -3214,559 +2997,6 @@ class TestExecutePlanOutputChaining:
         assert len(completed) == 2
         # msg task had 1 preceding exec output
         assert "## Preceding Task Outputs" in msg_calls[0][1]["content"]
-
-    async def test_skill_output_in_plan_outputs(self, db, tmp_path):
-        """Wrapper task output should be accumulated in plan_outputs."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          wrapper="search", args="{}", expect="results")
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        # Wrapper accumulated in plan_outputs before cleanup — verify via DB task output
-        tasks = await get_tasks_for_plan(db, plan_id)
-        assert "not installed" in tasks[0]["output"]
-
-
-# --- M7: _wrapper_task ---
-
-def _create_echo_skill(tmp_path: Path) -> dict:
-    """Create a minimal echo wrapper for testing and return its info dict."""
-    skill_dir = tmp_path / "wrappers" / "echo"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "run.py").write_text(
-        "import json, sys\n"
-        "data = json.load(sys.stdin)\n"
-        "print(json.dumps(data['args']))\n"
-    )
-    (skill_dir / "kiso.toml").write_text(
-        '[kiso]\ntype = "wrapper"\nname = "echo"\n'
-        '[kiso.wrapper]\nsummary = "Echo"\n'
-        '[kiso.wrapper.args]\ntext = { type = "string", required = true }\n'
-    )
-    (skill_dir / "pyproject.toml").write_text('[project]\nname = "echo"\nversion = "0.1.0"')
-    return {
-        "name": "echo",
-        "summary": "Echo",
-        "args_schema": {"text": {"type": "string", "required": True}},
-        "env": {},
-        "session_secrets": [],
-        "path": str(skill_dir),
-        "version": "0.1.0",
-        "description": "",
-    }
-
-
-class TestToolTask:
-    async def test_successful_skill(self, tmp_path):
-        wrapper = _create_echo_skill(tmp_path)
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", wrapper, {"text": "hello"}, None, None,
-            )
-        assert success is True
-        result = json.loads(stdout)
-        assert result["text"] == "hello"
-
-    async def test_skill_receives_plan_outputs(self, tmp_path):
-        # Create wrapper that dumps full input
-        skill_dir = tmp_path / "wrappers" / "dump"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text(
-            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data))\n"
-        )
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "dump"\n'
-            '[kiso.wrapper]\nsummary = "Dump"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "dump"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "dump", "summary": "Dump", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        plan_outputs = [{"index": 1, "type": "exec", "detail": "ls", "output": "files", "status": "done"}]
-        with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, plan_outputs, None,
-            )
-        assert success is True
-        data = json.loads(stdout)
-        assert len(data["plan_outputs"]) == 1
-        assert data["plan_outputs"][0]["output"] == "files"
-
-    async def test_skill_scoped_secrets(self, tmp_path):
-        skill_dir = tmp_path / "wrappers" / "sec"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text(
-            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
-        )
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "sec"\n'
-            '[kiso.wrapper]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "sec", "summary": "Sec", "args_schema": {}, "env": {},
-            "session_secrets": ["api_token"], "path": str(skill_dir),
-            "version": "0.1.0", "description": "",
-        }
-
-        secrets = {"api_token": "tok_123", "other": "should_not_appear"}
-        with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, None, secrets,
-            )
-        assert success is True
-        result = json.loads(stdout)
-        assert result == {"api_token": "tok_123"}
-
-    async def test_skill_failing_script(self, tmp_path):
-        skill_dir = tmp_path / "wrappers" / "fail"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text("import sys; print('err msg', file=sys.stderr); sys.exit(1)")
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "fail"\n'
-            '[kiso.wrapper]\nsummary = "Fail"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "fail"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "fail", "summary": "Fail", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, None, None,
-            )
-        assert success is False
-        assert "err msg" in stderr
-
-    async def test_skill_executable_not_found(self, tmp_path):
-        skill_dir = tmp_path / "wrappers" / "broken"
-        skill_dir.mkdir(parents=True)
-        # Point run.py to a nonexistent path
-        (skill_dir / "run.py").write_text("pass")
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "broken"\n'
-            '[kiso.wrapper]\nsummary = "Broken"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "broken"\nversion = "0.1.0"')
-        # Create a venv with a python "file" that is actually a directory
-        # This will trigger FileNotFoundError from create_subprocess_exec
-        venv_python = skill_dir / ".venv" / "bin" / "python"
-        venv_python.mkdir(parents=True)  # directory, not file
-        wrapper = {
-            "name": "broken", "summary": "Broken", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, None, None,
-            )
-        assert success is False
-        # Might be PermissionError or similar — just check it failed
-        assert stderr != ""
-
-    async def test_skill_runs_in_workspace(self, tmp_path):
-        skill_dir = tmp_path / "wrappers" / "pwd"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text("import os; print(os.getcwd())")
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "pwd"\n'
-            '[kiso.wrapper]\nsummary = "Pwd"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "pwd"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "pwd", "summary": "Pwd", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        with _patch_kiso_dir(tmp_path):
-            stdout, _, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, None, None,
-            )
-        assert success is True
-        expected = str(tmp_path / "sessions" / "sess1")
-        assert stdout.strip() == expected
-
-
-# --- M7: _execute_plan with real wrapper ---
-
-class TestExecutePlanTool:
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_skill_not_installed(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="search",
-                          wrapper="nonexistent", args='{"q":"test"}', expect="results")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        tasks = await get_tasks_for_plan(db, plan_id)
-        assert "not installed" in tasks[0]["output"]
-
-    async def test_skill_invalid_args_json(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args="not json", expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        # Create a real wrapper so lookup succeeds
-        wrapper = _create_echo_skill(tmp_path)
-        skills_dir = tmp_path / "wrappers"
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        tasks = await get_tasks_for_plan(db, plan_id)
-        assert "Invalid wrapper args JSON" in tasks[0]["output"]
-
-    async def test_skill_args_validation_error(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        # Missing required arg 'text'
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, _, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        tasks = await get_tasks_for_plan(db, plan_id)
-        assert "validation failed" in tasks[0]["output"]
-        assert "missing required arg: text" in tasks[0]["output"]
-
-    async def test_skill_executes_successfully(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hello"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, completed, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is True
-        assert len(completed) == 2
-        # First task is wrapper with output
-        skill_task = completed[0]
-        assert skill_task["status"] == "done"
-        result = json.loads(skill_task["output"])
-        assert result["text"] == "hello"
-
-    async def test_skill_passes_session_secrets(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="sec",
-                          wrapper="sec", args='{}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        # Create wrapper that outputs session_secrets
-        skill_dir = tmp_path / "wrappers" / "sec"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text(
-            "import json, sys\ndata = json.load(sys.stdin)\nprint(json.dumps(data['session_secrets']))\n"
-        )
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "sec"\n'
-            '[kiso.wrapper]\nsummary = "Sec"\nsession_secrets = ["api_token"]\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "sec"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "sec", "summary": "Sec", "args_schema": {},
-            "env": {}, "session_secrets": ["api_token"],
-            "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-
-        secrets = {"api_token": "tok_xyz", "other": "hidden"}
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, _, _, completed, _, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-                session_secrets=secrets,
-            )
-
-        assert success is True
-        result = json.loads(completed[0]["output"])
-        # Session secrets are now sanitized in output
-        assert result == {"api_token": "[REDACTED]"}
-
-    async def test_skill_review_replan(self, db, tmp_path):
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hi"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason == "Task failed"
-        assert len(remaining) == 1  # msg task remaining
-
-    async def test_skill_review_replan_carries_retry_hint(self, db, tmp_path):
-        """wrapper handler propagates retry_hint to plan_output on replan."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hi"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        review_with_hint = {
-            "status": "replan", "reason": "Task failed",
-            "learn": None, "retry_hint": "use action=screenshot instead",
-            "summary": None,
-        }
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=review_with_hint), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, remaining, plan_outputs = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason == "Task failed"
-        # The wrapper task's plan_output should carry the retry_hint
-        skill_outputs = [po for po in plan_outputs if po.get("type") == "wrapper"]
-        assert len(skill_outputs) == 1
-        assert skill_outputs[0].get("retry_hint") == "use action=screenshot instead"
-
-    async def test_skill_retry_on_transient_failure(self, db, tmp_path):
-        """wrapper retries internally when reviewer provides retry_hint."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hi"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        review_replan_with_hint = {
-            "status": "replan", "reason": "Task failed",
-            "learn": None, "retry_hint": "try again", "summary": None,
-        }
-        # First call: reviewer says replan with hint (triggers retry)
-        # Second call: reviewer says ok (retry succeeds)
-        reviewer_side = AsyncMock(side_effect=[review_replan_with_hint, REVIEW_OK])
-
-        with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                    return_value=("ok output", "", True, 0)), \
-             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="done"), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is True
-        assert reason is None
-        # Wrapper was reviewed twice (retry + success)
-        assert reviewer_side.call_count == 2
-
-    async def test_skill_retry_exhausted_escalates_to_replan(self, db, tmp_path):
-        """wrapper escalates to replan after max_worker_retries exhausted."""
-        config = make_config(settings={"max_worker_retries": 1})
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hi"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        review_replan_with_hint = {
-            "status": "replan", "reason": "Still failing",
-            "learn": None, "retry_hint": "try something else", "summary": None,
-        }
-        # Both calls return replan with hint — retry once, then escalate
-        reviewer_side = AsyncMock(return_value=review_replan_with_hint)
-
-        with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                    return_value=("error", "crash", False, 1)), \
-             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, remaining, plan_outputs = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason == "Still failing"
-        # Reviewed twice: initial + 1 retry
-        assert reviewer_side.call_count == 2
-        # retry_hint carried to plan_output
-        skill_outputs = [po for po in plan_outputs if po.get("type") == "wrapper"]
-        assert skill_outputs[0].get("retry_hint") == "try something else"
-
-    async def test_skill_no_retry_without_hint(self, db, tmp_path):
-        """wrapper does NOT retry when reviewer returns replan without retry_hint."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="echo",
-                          wrapper="echo", args='{"text":"hi"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        wrapper = _create_echo_skill(tmp_path)
-
-        # replan without retry_hint → immediate escalation, no retry
-        reviewer_side = AsyncMock(return_value=REVIEW_REPLAN)
-
-        with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                    return_value=("error", "crash", False, 1)), \
-             patch("kiso.worker.loop.run_reviewer", reviewer_side), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _, _, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert reason == "Task failed"
-        # Only reviewed once — no retry without hint
-        assert reviewer_side.call_count == 1
-
-
-# --- Post-install rescan ---
-
-
-class TestPostInstallRescan:
-    """after an install exec with unhealthy wrappers, rescan once after delay."""
-
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_rescan_triggered_after_install_exec(self, db, tmp_path):
-        """If exec detail contains 'install' and a wrapper is unhealthy, rescan."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "install browser")
-        await create_task(db, plan_id, "sess1", type="exec",
-                          detail="kiso wrapper install browser", expect="wrapper installed")
-
-        unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
-        healthy_tool = {"name": "browser", "healthy": True, "missing_deps": []}
-
-        # Init + post-exec discover return unhealthy; rescan (3rd call) returns healthy
-        discover_calls = [0]
-        def _discover():
-            discover_calls[0] += 1
-            if discover_calls[0] <= 2:
-                return [unhealthy_tool]
-            return [healthy_tool]
-
-        with (
-            patch("kiso.worker.loop.discover_wrappers", side_effect=_discover),
-            patch("kiso.worker.loop.invalidate_wrappers_cache"),
-            patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
-                  return_value=("installed", "", True, 0)),
-            patch("kiso.worker.loop.run_worker_role", return_value="echo ok"),
-            patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
-                  return_value=({"status": "ok", "reason": None, "learn": [],
-                                 "retry_hint": None, "summary": "ok"}, None)),
-            patch("kiso.worker.loop.reload_config", return_value=config),
-            patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock),
-            patch("kiso.worker.loop.audit"),
-            _patch_kiso_dir(tmp_path),
-        ):
-            success, *_ = await _execute_plan(
-                db, config, "sess1", plan_id, "install browser", "install browser",
-            )
-
-        # discover_wrappers called: 1 at init + 1 post-exec + 1 rescan = 3
-        assert discover_calls[0] >= 3, (
-            f"Expected at least 3 discover_wrappers calls (init+post-exec+rescan), "
-            f"got {discover_calls[0]}"
-        )
-
-    async def test_no_rescan_without_install_keyword(self, db, tmp_path):
-        """Non-install exec tasks don't trigger rescan even if wrappers unhealthy."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "check something")
-        await create_task(db, plan_id, "sess1", type="exec",
-                          detail="ls -la", expect="files listed")
-
-        unhealthy_tool = {"name": "browser", "healthy": False, "missing_deps": ["playwright"]}
-        discover_calls = [0]
-        def _discover():
-            discover_calls[0] += 1
-            return [unhealthy_tool]
-
-        with (
-            patch("kiso.worker.loop.discover_wrappers", side_effect=_discover),
-            patch("kiso.worker.loop.invalidate_wrappers_cache"),
-            patch("kiso.worker.loop._exec_task", new_callable=AsyncMock,
-                  return_value=("files", "", True, 0)),
-            patch("kiso.worker.loop.run_worker_role", return_value="ls -la"),
-            patch("kiso.worker.loop._run_review_step", new_callable=AsyncMock,
-                  return_value=({"status": "ok", "reason": None, "learn": [],
-                                 "retry_hint": None, "summary": "ok"}, None)),
-            patch("kiso.worker.loop.reload_config", return_value=config),
-            patch("kiso.worker.loop.deliver_webhook", new_callable=AsyncMock),
-            patch("kiso.worker.loop.audit"),
-            _patch_kiso_dir(tmp_path),
-        ):
-            success, *_ = await _execute_plan(
-                db, config, "sess1", plan_id, "check", "check something",
-            )
-
-        # discover_wrappers called: 1 at init + 1 post-exec = 2 (no rescan)
-        assert discover_calls[0] == 2
 
 
 # --- M8: Webhook delivery in _execute_plan ---
@@ -4300,7 +3530,7 @@ class TestKnowledgeProcessing:
 
         # Build planner messages for session B — facts are global
         from kiso.brain import build_planner_messages
-        msgs, _installed, *_ = await build_planner_messages(db, config, "sessB", "admin", "hello")
+        msgs = await build_planner_messages(db, config, "sessB", "admin", "hello")
         content = msgs[1]["content"]
         assert "Python 3.12" in content
 
@@ -4655,43 +3885,6 @@ class TestPerSessionSandbox:
             await _exec_task("sess1", "echo ok", sandbox_uid=None)
 
         assert "user" not in captured_kwargs
-
-    async def test_sandbox_uid_passed_to_skill_subprocess(self, tmp_path):
-        """When sandbox_uid is set, it's passed to create_subprocess_exec."""
-        captured_kwargs = {}
-
-        async def _mock_subprocess(*args, **kwargs):
-            captured_kwargs.update(kwargs)
-            proc = AsyncMock()
-            proc.communicate = AsyncMock(return_value=(b'{"ok":true}\n', b""))
-            proc.returncode = 0
-            return proc
-
-        wrapper = _create_echo_skill(tmp_path)
-        with _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _wrapper_task("sess1", wrapper, {"text": "hi"}, None, None, sandbox_uid=9999)
-
-        assert captured_kwargs.get("user") == 9999
-
-    async def test_skill_no_sandbox_uid_no_user_kwarg(self, tmp_path):
-        """When sandbox_uid is None, 'user' kwarg is NOT passed to wrapper subprocess."""
-        captured_kwargs = {}
-
-        async def _mock_subprocess(*args, **kwargs):
-            captured_kwargs.update(kwargs)
-            proc = AsyncMock()
-            proc.communicate = AsyncMock(return_value=(b'{"ok":true}\n', b""))
-            proc.returncode = 0
-            return proc
-
-        wrapper = _create_echo_skill(tmp_path)
-        with _patch_kiso_dir(tmp_path), \
-             patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess):
-            await _wrapper_task("sess1", wrapper, {"text": "hi"}, None, None, sandbox_uid=None)
-
-        assert "user" not in captured_kwargs
-
 
 class TestPermissionRevalidationEdgeCases:
     @pytest.fixture()
@@ -5117,28 +4310,6 @@ class TestOutputTruncation:
         assert success is True
         assert len(stdout) <= 100
         assert stdout.endswith("[truncated]")
-
-    async def test_skill_output_truncated_when_large(self, tmp_path):
-        skill_dir = tmp_path / "wrappers" / "big"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "run.py").write_text("print('B' * 2000)")
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\ntype = "wrapper"\nname = "big"\n'
-            '[kiso.wrapper]\nsummary = "Big"\n'
-        )
-        (skill_dir / "pyproject.toml").write_text('[project]\nname = "big"\nversion = "0.1.0"')
-        wrapper = {
-            "name": "big", "summary": "Big", "args_schema": {}, "env": {},
-            "session_secrets": [], "path": str(skill_dir), "version": "0.1.0", "description": "",
-        }
-        with _patch_kiso_dir(tmp_path):
-            stdout, stderr, success, _ = await _wrapper_task(
-                "sess1", wrapper, {}, None, None, max_output_size=100,
-            )
-        assert success is True
-        assert stdout.endswith("[truncated]")
-        assert len(stdout) <= 100
-
 
 class TestTruncateOutputUnit:
     """Direct unit tests for _truncate_output respecting the limit."""
@@ -5752,39 +4923,6 @@ class TestSanitizeTaskDetail:
         exec_task = [t for t in tasks if t["type"] == "exec"][0]
         assert "sk-secret-value-1234" not in exec_task["detail"]
         assert "[REDACTED]" in exec_task["detail"]
-
-    async def test_secret_in_skill_args_redacted(self, db, tmp_path):
-        """Secret value in wrapper args → [REDACTED] in DB."""
-        config = make_config()
-        await create_session(db, "sess1")
-        msg_id = await save_message(db, "sess1", "alice", "user", "search", processed=False)
-
-        plan_with_secret = {
-            "goal": "Search",
-            "secrets": [{"key": "TOKEN", "value": "tok-mysecret5678"}],
-            "tasks": [
-                {"type": "wrapper", "detail": "search the web",
-                 "wrapper": "search", "args": '{"query": "test", "token": "tok-mysecret5678"}',
-                 "expect": "results"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
-            ],
-        }
-
-        queue: asyncio.Queue = asyncio.Queue()
-        await queue.put({"id": msg_id, "content": "search", "user_role": "admin"})
-
-        with patch("kiso.worker.loop.run_planner", new_callable=AsyncMock, return_value=plan_with_secret), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Results"), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[]), \
-             _patch_kiso_dir(tmp_path):
-            await asyncio.wait_for(run_worker(db, config, "sess1", queue), timeout=5)
-
-        plan = await get_plan_for_session(db, "sess1")
-        tasks = await get_tasks_for_plan(db, plan["id"])
-        skill_task = [t for t in tasks if t["type"] == "wrapper"][0]
-        assert "tok-mysecret5678" not in (skill_task["args"] or "")
-        assert "[REDACTED]" in (skill_task["args"] or "")
-
 
 class TestBuildFailureSummary:
     def test_basic(self):
@@ -7140,9 +6278,9 @@ class TestFastPathIntegration:
             "secrets": None,
             "tasks": [
                 {
-                    "type": "wrapper",
+                    "type": "exec",
                     "detail": "Open the page",
-                    "wrapper": "browser",
+                    "wrapper": None,
                     "args": {"action": "navigate", "url": "https://example.com"},
                     "expect": "Page loaded",
                 },
@@ -7889,12 +7027,16 @@ class TestApplyCuratorCategory:
 # Tests for task handlers (62a) and planning loop (62c)
 # ---------------------------------------------------------------------------
 
-def _make_ctx(db, config=None, plan_outputs=None, installed_wrappers=None) -> _PlanCtx:
-    """Build a minimal _PlanCtx for handler tests."""
+def _make_ctx(db, config=None, plan_outputs=None, **_legacy) -> _PlanCtx:
+    """Build a minimal _PlanCtx for handler tests.
+
+    Legacy kwargs (``installed_wrappers``) from the retired wrapper
+    subsystem are accepted and ignored so that not-yet-migrated handler
+    tests at least collect; those tests should be deleted when touched.
+    """
     from kiso.config import SETTINGS_DEFAULTS, MODEL_DEFAULTS
     if config is None:
         config = make_config()
-    wrappers = installed_wrappers or []
     return _PlanCtx(
         db=db,
         config=config,
@@ -7906,7 +7048,6 @@ def _make_ctx(db, config=None, plan_outputs=None, installed_wrappers=None) -> _P
         max_output_size=1024 * 1024,
         max_worker_retries=1,
         messenger_timeout=30,
-        installed_wrappers=wrappers,
         slog=None,
         sandbox_uid=None,
         plan_outputs=plan_outputs if plan_outputs is not None else [],
@@ -7940,7 +7081,7 @@ class TestTaskHandlers:
     async def test_task_handlers_dict_has_all_types(self):
         """_TASK_HANDLERS covers all task types."""
         assert set(_TASK_HANDLERS.keys()) == {
-            "exec", "msg", "wrapper", "replan", "mcp",
+            "exec", "msg", "replan", "mcp",
         }
 
     # --- _handle_replan_task ---
@@ -8015,43 +7156,6 @@ class TestTaskHandlers:
         assert result.completed_row["output"] == "Summarize the results"
         assert result.plan_output is not None
 
-    # --- _handle_wrapper_task ---
-
-    async def test_handle_wrapper_task_not_installed_returns_stop(self, db, plan_id, tmp_path):
-        """wrapper handler returns stop=True when wrapper is not installed."""
-        task_row = await _make_task_row(
-            db, plan_id, "wrapper", "Search for something",
-            wrapper="missing-wrapper", args="{}"
-        )
-        ctx = _make_ctx(db, installed_wrappers=[])  # no wrappers installed
-        with _patch_kiso_dir(tmp_path):
-            result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is True
-        assert result.stop_success is False
-        assert result.completed_row is None
-
-    async def test_handle_wrapper_task_invalid_json_args_returns_stop(self, db, plan_id, tmp_path):
-        """wrapper handler returns stop=True when args JSON is malformed."""
-        tool_info = {
-            "name": "test-wrapper",
-            "summary": "A test wrapper",
-            "args_schema": {},
-            "env": {},
-            "session_secrets": [],
-            "path": "/fake/path",
-        }
-        task_row = await _make_task_row(
-            db, plan_id, "wrapper", "Run test wrapper",
-            wrapper="test-wrapper", args="{invalid json}"
-        )
-        ctx = _make_ctx(db, installed_wrappers=[tool_info])
-        with _patch_kiso_dir(tmp_path):
-            result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is True
-        assert result.completed_row is None
-
     # --- _handle_exec_task ---
 
     async def test_handle_exec_task_translator_error_triggers_replan(self, db, plan_id, tmp_path):
@@ -8123,14 +7227,14 @@ class TestTaskHandlers:
 
     async def test_handle_exec_install_blocked_with_needs_install(self, db, plan_id, tmp_path):
         """install blocked when plan has needs_install (mixed propose+install)."""
-        task_row = await _make_task_row(db, plan_id, "exec", "Install the OCR wrapper")
+        task_row = await _make_task_row(db, plan_id, "exec", "Install curl via apt")
         ctx = _make_ctx(db)
         ctx.plan_has_needs_install = True
         assert ctx.install_approved is False
         with patch(
             "kiso.worker.loop.run_worker_role",
             new_callable=AsyncMock,
-            return_value="kiso wrapper install ocr",
+            return_value="apt-get install curl",
         ), _patch_kiso_dir(tmp_path):
             result = await _handle_exec_task(ctx, task_row, 0, True, 0)
 
@@ -8159,111 +7263,6 @@ class TestTaskHandlers:
     )
     async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
         pass
-
-    async def test_handle_wrapper_task_success_returns_plan_output(self, db, plan_id, tmp_path):
-        """wrapper handler returns plan_output with correct fields on success."""
-        tool_info = {
-            "name": "test-wrapper",
-            "summary": "A test wrapper",
-            "args_schema": {},
-            "env": {},
-            "session_secrets": [],
-            "path": "/fake/path",
-        }
-        task_row = await _make_task_row(db, plan_id, "wrapper", "run the wrapper",
-                                        wrapper="test-wrapper", args="{}")
-        ctx = _make_ctx(db, installed_wrappers=[tool_info])
-        with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                   return_value=("wrapper output", "", True, 0)), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                   return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path):
-            result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is False
-        assert result.plan_output is not None
-        assert result.plan_output["type"] == "wrapper"
-        assert result.plan_output["index"] == 1
-        assert result.plan_output["output"] == "wrapper output"
-        assert result.plan_output["status"] == "done"
-
-    async def test_handle_wrapper_task_repairs_unique_workspace_file_arg(self, db, plan_id, tmp_path):
-        """wrapper handler rewrites invented file pattern to exact local path."""
-        tool_info = {
-            "name": "ocr",
-            "summary": "OCR",
-            "args_schema": {
-                "file_path": {"type": "string", "required": True, "description": "path to image file in workspace"},
-            },
-            "env": {},
-            "session_secrets": [],
-            "path": "/fake/path",
-            "consumes": ["image"],
-        }
-        task_row = await _make_task_row(
-            db, plan_id, "wrapper", "extract text",
-            wrapper="ocr", args='{"file_path":"screenshot_*.png"}', expect="ocr text",
-        )
-        ctx = _make_ctx(db, installed_wrappers=[tool_info])
-        with _patch_kiso_dir(tmp_path):
-            ws = _session_workspace("sess1")
-            (ws / "screenshot.png").write_bytes(b"img")
-            with patch("kiso.worker.loop._wrapper_task", new_callable=AsyncMock,
-                       return_value=("ocr output", "", True, 0)) as mock_tool, \
-                 patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                       return_value=REVIEW_OK):
-                result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        assert result.stop is False
-        passed_args = mock_tool.await_args.args[2]
-        assert passed_args["file_path"] == "screenshot.png"
-
-
-# --- M112c: wrapper cache invalidation after exec/wrapper tasks ---
-
-
-class TestToolCacheInvalidation:
-    """Verify invalidate_wrappers_cache + ctx refresh after exec/wrapper tasks."""
-
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        from kiso.store import create_session
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    @pytest.fixture()
-    async def plan_id(self, db):
-        pid = await create_plan(db, "sess1", 0, "Test plan")
-        yield pid
-
-    async def test_exec_task_invalidates_skill_cache(self, db, plan_id, tmp_path):
-        """After exec task completes, wrapper cache is invalidated and ctx refreshed."""
-        task_row = await _make_task_row(db, plan_id, "exec", "echo hello")
-        ctx = _make_ctx(db)
-        assert ctx.installed_wrappers == []
-
-        new_skills = [{"name": "new-wrapper", "summary": "Just installed"}]
-        with _patch_translator(), \
-             patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock,
-                   return_value=REVIEW_OK), \
-             _patch_kiso_dir(tmp_path), \
-             patch("kiso.worker.loop.invalidate_wrappers_cache") as mock_invalidate, \
-             patch("kiso.worker.loop.discover_wrappers", return_value=new_skills):
-            result = await _handle_exec_task(ctx, task_row, 0, True, 0)
-
-        # invalidation itself happens in execute_plan_tasks, not the handler
-        # So we test the import is correct and function exists
-        from kiso.worker.loop import invalidate_wrappers_cache as imported_fn
-        from kiso.wrappers import invalidate_wrappers_cache as original_fn
-        assert imported_fn is original_fn
-
-    async def test_tool_cache_invalidation_import(self):
-        """invalidate_wrappers_cache is importable from worker/loop.py."""
-        from kiso.worker.loop import invalidate_wrappers_cache
-        assert callable(invalidate_wrappers_cache)
-
 
 # --- M91a: _handle_plan_error ---
 
@@ -9578,32 +8577,6 @@ class TestBumpFactUsage:
 
         facts = await get_facts(db, is_admin=True)
         assert facts[0]["use_count"] == 0  # not bumped — wrong session for non-admin
-
-
-# --- M85d: _PlanCtx.installed_wrappers_by_name ---
-
-
-class TestPlanCtxToolsDict:
-    def test_post_init_builds_dict(self, db):
-        """_PlanCtx.__post_init__ derives installed_wrappers_by_name from installed_wrappers."""
-        wrappers = [
-            {"name": "alpha", "summary": "A"},
-            {"name": "beta", "summary": "B"},
-        ]
-        ctx = _make_ctx(db, installed_wrappers=wrappers)
-        assert ctx.installed_wrappers_by_name == {
-            "alpha": {"name": "alpha", "summary": "A"},
-            "beta": {"name": "beta", "summary": "B"},
-        }
-
-    def test_empty_skills_gives_empty_dict(self, db):
-        ctx = _make_ctx(db, installed_wrappers=[])
-        assert ctx.installed_wrappers_by_name == {}
-
-    def test_missing_skill_returns_none(self, db):
-        """Dict lookup for unknown wrapper name returns None (not KeyError)."""
-        ctx = _make_ctx(db, installed_wrappers=[{"name": "echo", "summary": "x"}])
-        assert ctx.installed_wrappers_by_name.get("unknown") is None
 
 
 # ---------------------------------------------------------------------------
@@ -11357,26 +10330,6 @@ REVIEW_STUCK = {
 class TestStuckHandling:
     """Verify stuck review status stops execution without triggering replan."""
 
-    async def test_skill_handler_returns_stop_stuck(self, db, tmp_path):
-        """Wrapper handler sets stop_stuck (not stop_replan) for stuck reviews."""
-        config = make_config()
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        wrapper = _create_echo_skill(tmp_path)
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="submit form",
-                          wrapper="echo", args='{"text":"hello"}', expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        with patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_STUCK), \
-             patch("kiso.worker.loop.discover_wrappers", return_value=[wrapper]), \
-             _patch_kiso_dir(tmp_path):
-            success, replan, stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-            )
-
-        assert success is False
-        assert replan is None
-        assert stuck == "CAPTCHA requires human verification"
-
     async def test_exec_handler_returns_stop_stuck(self, db, tmp_path):
         """Exec handler sets stop_stuck for stuck reviews."""
         config = make_config()
@@ -12007,7 +10960,7 @@ class TestHandleReviewError:
         from kiso.worker.loop import _handle_review_error, _PlanCtx
         ctx = MagicMock(spec=_PlanCtx)
         ctx.db = AsyncMock()
-        plan_output = {"index": 1, "type": "wrapper", "detail": "d", "output": "o", "status": "done"}
+        plan_output = {"index": 1, "type": "exec", "detail": "d", "output": "o", "status": "done"}
         with patch("kiso.worker.loop._store_step_usage", new_callable=AsyncMock) as mock_usage:
             result = await _handle_review_error(ctx, 42, "LLM error", plan_output, 10)
         mock_usage.assert_awaited_once_with(ctx.db, 42, 10)
@@ -12381,9 +11334,9 @@ class TestPlannerTaskPersistence:
             "sess1",
             [
                 {
-                    "type": "wrapper",
+                    "type": "exec",
                     "detail": "Use echo",
-                    "wrapper": "echo",
+                    "wrapper": None,
                     "args": {"text": "hello"},
                     "expect": "ok",
                 },
@@ -12394,30 +11347,6 @@ class TestPlannerTaskPersistence:
 
 
 class TestTaskContract:
-    def test_normalize_task_contract_for_wrapper_task(self):
-        from kiso.worker.utils import _normalize_task_contract
-
-        contract = _normalize_task_contract(
-            {
-                "type": "wrapper",
-                "detail": "Extract OCR text",
-                "wrapper": "ocr",
-                "args": {"file_path": "shot.png"},
-                "expect": "ocr text extracted",
-            },
-            task_index=2,
-            task_id=11,
-        )
-
-        assert contract.task_type == "wrapper"
-        assert contract.delivery_mode == "action"
-        assert contract.verification_mode == "review"
-        assert contract.allowed_repair_scope == "task"
-        assert contract.declared_inputs == ["wrapper:ocr", "file_path=shot.png"]
-        assert contract.expected_outputs == ["ocr text extracted"]
-        assert contract.task_index == 2
-        assert contract.task_id == 11
-
     def test_build_replan_context_excludes_user_facing_contract_tasks(self):
         from kiso.worker.utils import _build_replan_context
 
@@ -12508,7 +11437,7 @@ class TestTaskContract:
         }
         plan_outputs = [{
             "index": 1,
-            "type": "wrapper",
+            "type": "exec",
             "detail": "edit calculator",
             "output": "ok",
             "status": "done",
@@ -12521,7 +11450,7 @@ class TestTaskContract:
                 "exists": True,
                 "module_name": "kiso_test_f42",
                 "origin_task_index": 1,
-                "origin_wrapper": "aider",
+                "origin_wrapper": None,
             }],
         }]
 
@@ -12624,12 +11553,12 @@ class TestWriteLastPlanSummary:
             pre = set(ws.rglob("*"))
             (ws / "report.md").write_text("# report")
             completed = [
-                {"type": "wrapper", "wrapper": "aider", "reviewer_summary": "wrote report"},
+                {"type": "exec", "wrapper": "aider", "reviewer_summary": "wrote report"},
             ]
             plan_outputs = [
                 {
                     "index": 1,
-                    "type": "wrapper",
+                    "type": "exec",
                     "detail": "write report",
                     "output": "ok",
                     "status": "done",
@@ -12672,12 +11601,12 @@ class TestWriteLastPlanSummary:
             (ws / "code.py").write_text("print(1)")
             (ws / "shot.png").write_bytes(b"\x89PNG" + b"x" * 100)
             completed = [
-                {"type": "wrapper", "wrapper": "aider", "reviewer_summary": "wrote code"},
+                {"type": "exec", "wrapper": "aider", "reviewer_summary": "wrote code"},
                 {"type": "exec", "wrapper": "browser", "reviewer_summary": "took shot"},
             ]
             plan_outputs = [
                 {
-                    "index": 1, "type": "wrapper", "detail": "code", "output": "ok", "status": "done",
+                    "index": 1, "type": "exec", "detail": "code", "output": "ok", "status": "done",
                     "file_refs": [{
                         "path": "code.py", "workspace_path": "code.py",
                         "abs_path": str(ws / "code.py"), "type": "code",
@@ -12716,7 +11645,7 @@ class TestWriteLastPlanSummary:
             (ws / "orphan.log").write_text("ok")  # not in any plan_output
             plan_outputs = [
                 {
-                    "index": 1, "type": "wrapper", "detail": "do", "output": "ok", "status": "done",
+                    "index": 1, "type": "exec", "detail": "do", "output": "ok", "status": "done",
                     "file_refs": [{
                         "path": "tracked.md", "workspace_path": "tracked.md",
                         "abs_path": str(ws / "tracked.md"), "type": "text",
@@ -12725,7 +11654,7 @@ class TestWriteLastPlanSummary:
                 },
             ]
             _write_last_plan_summary(
-                "s-prov-partial", "do", [{"type": "wrapper", "wrapper": "aider"}], pre,
+                "s-prov-partial", "do", [{"type": "exec", "wrapper": "aider"}], pre,
                 plan_outputs=plan_outputs,
             )
 
@@ -12792,7 +11721,7 @@ class TestLoadLastPlanSummary:
 
 
 class TestWorkspaceFileRouting:
-    """wrapper file args prefer exact existing workspace files."""
+    """Workspace file resolution and PYTHONPATH repair helpers."""
 
     def test_resolve_workspace_file_reference_prefers_unique_existing_file(self, tmp_path):
         with _patch_kiso_dir(tmp_path):
@@ -12806,7 +11735,7 @@ class TestWorkspaceFileRouting:
     def test_repair_exec_pythonpath_for_known_external_module(self):
         plan_outputs = [{
             "index": 1,
-            "type": "wrapper",
+            "type": "exec",
             "file_refs": [{
                 "file_id": "file:/tmp/kiso_test_f42.py",
                 "path": "/tmp/kiso_test_f42.py",
@@ -12830,7 +11759,7 @@ class TestWorkspaceFileRouting:
     def test_repair_exec_pythonpath_ignores_workspace_module(self):
         plan_outputs = [{
             "index": 1,
-            "type": "wrapper",
+            "type": "exec",
             "file_refs": [{
                 "file_id": "file:kiso_test_f42.py",
                 "path": "kiso_test_f42.py",
@@ -12869,136 +11798,6 @@ class TestWorkspaceFileRouting:
             )
 
         assert resolved is None
-
-    def test_repair_wrapper_workspace_args_only_updates_file_like_args(self, tmp_path):
-        tool_info = {
-            "name": "ocr",
-            "args_schema": {
-                "file_path": {"type": "string", "required": True, "description": "path to image file in workspace"},
-                "action": {"type": "string", "required": False, "description": "one of extract/info"},
-            },
-            "consumes": ["image"],
-        }
-        args = {"file_path": "screenshot_*.png", "action": "extract"}
-
-        with _patch_kiso_dir(tmp_path):
-            ws = _session_workspace("sess1")
-            (ws / "screenshot.png").write_bytes(b"img")
-            repaired = _repair_wrapper_workspace_args(tool_info, args, "sess1")
-
-        assert repaired == {"file_path": "screenshot.png", "action": "extract"}
-
-    @pytest.mark.asyncio
-    async def test_handle_wrapper_task_blocks_instruction_like_aider_files_before_tool_run(
-        self, tmp_path
-    ):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        plan_id = await create_plan(conn, "sess1", 0, "Test plan")
-        task_row = await _make_task_row(
-            conn,
-            plan_id,
-            "wrapper",
-            detail="Use aider",
-            wrapper="aider",
-            args=json.dumps({
-                "message": "Create text_stats.py",
-                "files": "Write a Python script named text_stats.py that reads stdin and prints counts.",
-            }),
-            expect="file created",
-        )
-        tool_info = {
-            "name": "aider",
-            "summary": "aider",
-            "args_schema": {
-                "message": {"type": "string", "required": True},
-                "files": {"type": "string", "required": False},
-                "read_only_files": {"type": "string", "required": False},
-            },
-            "env": {},
-            "session_secrets": [],
-            "path": str(
-                Path(__file__).resolve().parents[2]
-                / "plugins"
-                / "wrapper-aider"
-            ),
-            "version": "0.1.0",
-            "description": "",
-            "usage_guide": "aider",
-        }
-        ctx = _make_ctx(conn, installed_wrappers=[tool_info])
-
-        with (
-            patch("kiso.worker.loop._wrapper_task", side_effect=AssertionError("wrapper task should not run")),
-            _patch_kiso_dir(tmp_path),
-        ):
-            result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        await conn.close()
-        assert result.stop is True
-        assert result.stop_success is False
-        assert "Wrapper args validation failed" in (result.stop_replan or "")
-
-    @pytest.mark.asyncio
-    async def test_handle_wrapper_task_runs_plugin_repair_before_semantic_validation(
-        self, tmp_path
-    ):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        plan_id = await create_plan(conn, "sess1", 0, "Test plan")
-        task_row = await _make_task_row(
-            conn,
-            plan_id,
-            "wrapper",
-            detail="Use echo",
-            wrapper="echo",
-            args=json.dumps({"text": " raw "}),
-            expect="echo output",
-        )
-        tool_dir = tmp_path / "wrappers" / "echo"
-        tool_dir.mkdir(parents=True)
-        (tool_dir / "run.py").write_text("print('ok')\n")
-        (tool_dir / "pyproject.toml").write_text("[project]\nname='echo'\nversion='0.1.0'\n")
-        tool_info = {
-            "name": "echo",
-            "summary": "echo",
-            "args_schema": {"text": {"type": "string", "required": True}},
-            "env": {},
-            "session_secrets": [],
-            "path": str(tool_dir),
-            "version": "0.1.0",
-            "description": "",
-            "usage_guide": "echo",
-        }
-        ctx = _make_ctx(conn, installed_wrappers=[tool_info])
-        call_order: list[str] = []
-
-        def _repair(wrapper, args, context):
-            call_order.append("repair")
-            repaired = dict(args)
-            repaired["text"] = repaired["text"].strip()
-            return repaired
-
-        def _semantic(wrapper, args, context):
-            call_order.append(f"semantic:{args['text']}")
-            return []
-
-        async def _fake_wrapper_task(*_args, **_kwargs):
-            return ("echo output", "", True, 0)
-
-        with (
-            patch("kiso.worker.loop.repair_wrapper_args", side_effect=_repair),
-            patch("kiso.worker.loop.validate_wrapper_args_semantic", side_effect=_semantic),
-            patch("kiso.worker.loop._wrapper_task", side_effect=_fake_wrapper_task),
-            patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_OK),
-            _patch_kiso_dir(tmp_path),
-        ):
-            result = await _handle_wrapper_task(ctx, task_row, 0, True, 0)
-
-        await conn.close()
-        assert result.stop is False
-        assert call_order == ["repair", "semantic:raw"]
-
 
 class TestSafetyRulePreExecCheck:
     """_handle_exec_task blocks exec when safety rule matches."""
@@ -13042,57 +11841,3 @@ class TestSafetyRulePreExecCheck:
         assert result.completed_row is not None
 
 
-# --- Wrapper-arg file-reference harvesting boundary hardening ---
-
-
-class TestBuildToolFileRefs:
-    """_build_wrapper_file_refs skips free-form strings and handles OSError."""
-
-    def _refs(self, session, args, *, task_index=1, wrapper_name="test"):
-        from kiso.worker.dependencies import _build_wrapper_file_refs
-        return _build_wrapper_file_refs(session, args, task_index=task_index, wrapper_name=wrapper_name)
-
-    def test_legitimate_file_arg_produces_ref(self, tmp_path):
-        """A real file in the workspace is harvested as a file ref."""
-        test_file = tmp_path / "sessions" / "s1" / "data.txt"
-        test_file.parent.mkdir(parents=True, exist_ok=True)
-        test_file.write_text("hello")
-        with patch("kiso.worker.dependencies._session_workspace", return_value=test_file.parent):
-            refs = self._refs("s1", {"file": "data.txt"}, wrapper_name="ocr")
-        assert len(refs) == 1
-        assert "data.txt" in refs[0]["file_id"]
-
-    def test_freeform_string_arg_skipped(self, tmp_path):
-        """Long instruction strings (like aider.message) must not produce file refs."""
-        workspace = tmp_path / "sessions" / "s1"
-        workspace.mkdir(parents=True, exist_ok=True)
-        long_message = (
-            "Create a Python script named text_stats.py that reads all text from "
-            "standard input (sys.stdin). It should count the total number of characters "
-            "and the total number of lines. Print exactly two lines."
-        )
-        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
-            refs = self._refs("s1", {"message": long_message}, wrapper_name="aider")
-        assert refs == []
-
-    def test_oserror_on_impossible_path_handled(self, tmp_path):
-        """OSError from impossibly long path candidates must not crash."""
-        workspace = tmp_path / "sessions" / "s1"
-        workspace.mkdir(parents=True, exist_ok=True)
-        bad_value = "a" * 300
-        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
-            refs = self._refs("s1", {"arg": bad_value})
-        assert refs == []
-
-    def test_mixed_args_only_file_harvested(self, tmp_path):
-        """Only the file arg produces a ref; the message arg is skipped."""
-        workspace = tmp_path / "sessions" / "s1"
-        workspace.mkdir(parents=True, exist_ok=True)
-        real_file = workspace / "screenshot.png"
-        real_file.write_bytes(b"\x89PNG")
-        long_msg = "Write a comprehensive analysis of the screenshot content and output findings."
-        args = {"file": "screenshot.png", "message": long_msg}
-        with patch("kiso.worker.dependencies._session_workspace", return_value=workspace):
-            refs = self._refs("s1", args, task_index=2, wrapper_name="aider")
-        assert len(refs) == 1
-        assert "screenshot.png" in refs[0]["file_id"]

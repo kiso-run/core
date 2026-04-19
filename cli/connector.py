@@ -20,7 +20,13 @@ from kiso.connectors import (
     discover_connectors,
     invalidate_connectors_cache,
 )
-from kiso.wrappers import check_deps
+def check_deps(connector: dict) -> list[str]:
+    """Check [kiso.deps].bin entries with ``shutil.which``."""
+    deps = connector.get("deps", {})
+    bins = deps.get("bin", [])
+    if not isinstance(bins, list):
+        return []
+    return [b for b in bins if not shutil.which(b)]
 from cli.plugin_ops import (
     OFFICIAL_ORG,
     _GIT_ENV,

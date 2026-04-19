@@ -37,6 +37,15 @@ __all__ = (
 )
 
 
+def _attr(obj, name, default=None):
+    """Return attribute or dict key; tolerates mocks passed as plain dicts."""
+    if hasattr(obj, name):
+        return getattr(obj, name, default)
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return default
+
+
 def metadata_for_briefer(skill: Skill) -> dict[str, Any]:
     """Return the subset of skill metadata visible to the briefer.
 
@@ -44,44 +53,50 @@ def metadata_for_briefer(skill: Skill) -> dict[str, Any]:
     reasons about *what* to select, not *how* to execute.
     """
     out: dict[str, Any] = {
-        "name": skill.name,
-        "description": skill.description,
+        "name": _attr(skill, "name", ""),
+        "description": _attr(skill, "description", "") or _attr(skill, "summary", ""),
     }
-    if skill.when_to_use:
-        out["when_to_use"] = skill.when_to_use
-    if skill.audiences:
-        out["audiences"] = list(skill.audiences)
+    when_to_use = _attr(skill, "when_to_use")
+    if when_to_use:
+        out["when_to_use"] = when_to_use
+    audiences = _attr(skill, "audiences")
+    if audiences:
+        out["audiences"] = list(audiences)
     return out
 
 
 def _audience_allows(skill: Skill, role: str) -> bool:
-    if skill.audiences is None:
+    audiences = _attr(skill, "audiences")
+    if audiences is None:
         return True
-    return role in skill.audiences
+    return role in audiences
 
 
 def instructions_for_planner(skill: Skill) -> str:
     if not _audience_allows(skill, "planner"):
         return ""
-    planner = skill.role_sections.get("planner")
+    role_sections = _attr(skill, "role_sections", {}) or {}
+    planner = role_sections.get("planner")
     if planner:
         return planner
-    # Fallback: body with no role sections is planner-only.
-    if not skill.role_sections and skill.body:
-        return skill.body
+    body = _attr(skill, "body", "")
+    if not role_sections and body:
+        return body
     return ""
 
 
 def instructions_for_worker(skill: Skill) -> str:
     if not _audience_allows(skill, "worker"):
         return ""
-    return skill.role_sections.get("worker", "")
+    role_sections = _attr(skill, "role_sections", {}) or {}
+    return role_sections.get("worker", "")
 
 
 def instructions_for_reviewer(skill: Skill) -> str:
     if not _audience_allows(skill, "reviewer"):
         return ""
-    return skill.role_sections.get("reviewer", "")
+    role_sections = _attr(skill, "role_sections", {}) or {}
+    return role_sections.get("reviewer", "")
 
 
 def instructions_for_messenger(skill: Skill) -> str:
@@ -122,7 +137,7 @@ def filter_by_activation_hints(
     message_norm = " ".join(message.lower().split())
     kept: list[Skill] = []
     for s in skills:
-        hints = s.activation_hints or None
+        hints = getattr(s, "activation_hints", None) or None
         if hints is None:
             kept.append(s)
             continue

@@ -1,9 +1,8 @@
 """Fixtures and helpers for functional acceptance tests.
 
 Functional tests exercise the full kiso pipeline (classifier → planner →
-worker → wrappers → messenger) with real LLM, real network, and real wrapper
-execution.  They are gated by ``--functional`` and optionally
-``--destructive`` pytest flags.
+worker → messenger) with real LLM and real network.  They are gated by
+``--functional`` and optionally ``--destructive`` pytest flags.
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ from kiso.config import (
     SETTINGS_DEFAULTS,
     User,
 )
-from kiso.wrappers import discover_wrappers, invalidate_wrappers_cache
 from kiso.main import _collect_boot_facts, _init_ssh_keys
 from kiso.store import create_session, init_db, save_message
 from kiso.worker.loop import _process_message
@@ -81,9 +79,14 @@ _RU_WORDS = frozenset(
 
 
 def tool_installed(name: str) -> bool:
-    """Return True when a named wrapper is currently installed."""
-    invalidate_wrappers_cache()
-    return any(t["name"] == name for t in discover_wrappers())
+    """Return True when a named wrapper is currently installed.
+
+    The wrapper subsystem was retired in the v0.10 cycle, so this helper
+    always reports False in the migrated test environment. Tests that
+    still depend on it patch this function directly in
+    ``tests.functional.conftest`` to drive the install flow.
+    """
+    return False
 
 _LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS, "ru": _RU_WORDS}
 _LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish", "ru": "Russian",
@@ -380,14 +383,12 @@ def func_config() -> Config:
 _KISO_DIR_MODULES = [
     "kiso.config",
     "kiso.brain",
-    "kiso.wrappers",
     "kiso.main",
     "kiso.pub",
     "kiso.log",
     "kiso.audit",
     "kiso.sysenv",
     "kiso.connectors",
-    "kiso.wrapper_repair",
     "kiso.worker.loop",
     "kiso.worker.utils",
 ]
@@ -430,15 +431,14 @@ def _write_test_config(kiso_dir: Path, cfg: Config) -> None:
 def _func_kiso_dir(func_config, tmp_path_factory):
     """Isolate functional tests from the host ~/.kiso directory.
 
-    Creates a temp KISO_DIR with clean ``wrappers/`` and ``sys/ssh/`` dirs,
-    patches every module that imports KISO_DIR, stubs ``reload_config``
-    so mid-execution config reloads return func_config, writes a config.toml
-    so subprocess CLI commands can load it, and sets KISO_HOME so subprocess
-    processes resolve KISO_DIR to the isolated directory.
+    Creates a temp KISO_DIR with a clean ``sys/ssh/`` dir, patches every
+    module that imports KISO_DIR, stubs ``reload_config`` so
+    mid-execution config reloads return func_config, writes a config.toml
+    so subprocess CLI commands can load it, and sets KISO_HOME so
+    subprocess processes resolve KISO_DIR to the isolated directory.
     SSH keys are generated inside the temp dir.
     """
     kiso_dir = tmp_path_factory.mktemp("kiso_home")
-    (kiso_dir / "wrappers").mkdir()
     (kiso_dir / "sys" / "ssh").mkdir(parents=True)
 
     # write config.toml for subprocess CLI commands
@@ -628,47 +628,15 @@ async def run_message(func_config, func_db, func_session):
 
 
 # ---------------------------------------------------------------------------
-# Wrapper install helpers (shared across functional test files)
+# Wrapper install helpers — retired
 # ---------------------------------------------------------------------------
-
-
-_PRESET_TOOLS = ["browser", "ocr", "aider"]
-
-
-@pytest.fixture(scope="session")
-def preset_tools_installed():
-    """Install browser, ocr, and aider before any test that needs them.
-
-    Session-scoped — runs once per test session.
-    """
-    import subprocess
-    from kiso.wrappers import discover_wrappers, invalidate_wrappers_cache
-
-    invalidate_wrappers_cache()
-    installed = {t["name"] for t in discover_wrappers()}
-
-    for name in _PRESET_TOOLS:
-        if name in installed:
-            continue
-        # Cold install of the `browser` wrapper pulls chromium via apt
-        # and can exceed 5 minutes on a loaded host. The fixture is
-        # session-scoped so we pay this cost at most once per suite
-        # invocation — a generous 30-minute budget accommodates a
-        # slow cold provision without racing the per-test timeouts.
-        result = subprocess.run(
-            ["uv", "run", "kiso", "wrapper", "install", name],
-            capture_output=True, text=True, timeout=1800,
-        )
-        if result.returncode != 0:
-            pytest.skip(
-                f"Could not install {name}: {result.stderr[:200]}"
-            )
-
-    invalidate_wrappers_cache()
-    installed = {t["name"] for t in discover_wrappers()}
-    missing = [n for n in _PRESET_TOOLS if n not in installed]
-    if missing:
-        pytest.skip(f"Wrappers not available after install: {missing}")
+#
+# The ``preset_tools_installed`` session fixture and the
+# ``discover_wrappers``/``invalidate_wrappers_cache`` glue it relied on
+# have been removed together with the wrapper subsystem. Any functional
+# test that still requests that fixture will fail to collect, which is
+# the intended signal that the test needs to be rewritten against the
+# skill/MCP replacement.
 
 
 # ---------------------------------------------------------------------------

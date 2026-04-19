@@ -224,12 +224,6 @@ def test_render_task_header_failed():
     assert "exec: bad" in result
 
 
-def test_render_task_header_skill_with_name():
-    task = {"type": "wrapper", "detail": "search query", "status": "running", "wrapper": "web_search"}
-    result = render_task_header(task, 1, 2, _COLOR)
-    assert "wrapper:web_search" in result
-
-
 def test_render_task_header_with_spinner():
     task = {"type": "exec", "detail": "ls", "status": "running"}
     result = render_task_header(task, 1, 2, _COLOR, spinner_frame="⠋")
@@ -786,17 +780,6 @@ def test_render_plan_detail_mixed_types():
 
 def test_render_plan_detail_empty():
     assert render_plan_detail([], _COLOR) == ""
-
-
-def test_render_plan_detail_skill_type():
-    tasks = [
-        {"type": "wrapper", "detail": "Search the web"},
-        {"type": "msg", "detail": "Report findings"},
-    ]
-    result = render_plan_detail(tasks, _PLAIN)
-    assert "[wrapper]" in result
-    assert "[msg]" in result
-    assert "\033[" not in result
 
 
 def test_render_plan_detail_multiline_detail():

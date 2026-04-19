@@ -242,24 +242,10 @@ class TestFunctionalResult:
             success=True,
             tasks=[
                 {"type": "exec", "status": "done"},
-                {"type": "wrapper", "status": "done"},
                 {"type": "msg", "status": "done"},
             ],
         )
-        assert r.task_types() == ["exec", "wrapper", "msg"]
-
-    def test_wrapper_tasks(self):
-        r = FunctionalResult(
-            success=True,
-            tasks=[
-                {"type": "exec", "wrapper": None},
-                {"type": "wrapper", "wrapper": "browser"},
-                {"type": "msg", "wrapper": None},
-            ],
-        )
-        wrappers = r.tool_tasks()
-        assert len(wrappers) == 1
-        assert wrappers[0]["wrapper"] == "browser"
+        assert r.task_types() == ["exec", "msg"]
 
     def test_last_plan_msg_output_single_plan(self):
         r = FunctionalResult(

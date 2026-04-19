@@ -22,15 +22,8 @@ from .prompts import (
 )
 from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
-from kiso.registry import get_registry_wrappers
 from kiso.security import fence_content
 from kiso.connectors import discover_connectors
-from kiso.wrappers import (
-    discover_wrappers,
-    build_planner_wrapper_list,
-    validate_wrapper_args,
-    validate_wrapper_args_semantic,
-)
 from kiso.store import (
     _normalize_entity_name,
     delete_facts, get_all_entities, get_all_tags, get_facts, get_kv, get_pending_items,
@@ -48,11 +41,10 @@ log = logging.getLogger(__name__)
 # Task type constants
 TASK_TYPE_EXEC = "exec"
 TASK_TYPE_MSG = "msg"
-TASK_TYPE_WRAPPER = "wrapper"
 TASK_TYPE_REPLAN = "replan"
 TASK_TYPE_MCP = "mcp"
 TASK_TYPES: frozenset[str] = frozenset({
-    TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_WRAPPER,
+    TASK_TYPE_EXEC, TASK_TYPE_MSG,
     TASK_TYPE_REPLAN, TASK_TYPE_MCP,
 })
 
@@ -276,9 +268,6 @@ def _is_explicit_named_wrapper_request(message: str, target: str) -> bool:
 def _classify_install_mode(
     message: str,
     sys_env: dict,
-    *,
-    installed_wrapper_names: "list[str] | set[str] | None" = None,
-    registry_hint_names: "set[str] | frozenset[str] | None" = None,
 ) -> dict[str, str]:
     """Deterministically route install-family requests before planning."""
     msg_lower = message.lower()
@@ -288,24 +277,6 @@ def _classify_install_mode(
     target = _extract_install_target(message)
     if not target:
         return {"mode": _INSTALL_MODE_NONE}
-
-    hint_names = {n.lower() for n in (registry_hint_names or set())}
-    installed_names = {n.lower() for n in (installed_wrapper_names or set())}
-    if target in hint_names or target in installed_names:
-        return {
-            "mode": _INSTALL_MODE_KISO_WRAPPER,
-            "target": target,
-            "target_installed": target in installed_names,
-            "explicit_install_request": True,
-            "reason": "target matches kiso wrapper context",
-        }
-
-    if _is_explicit_named_wrapper_request(message, target):
-        return {
-            "mode": _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
-            "target": target,
-            "reason": "user explicitly requested a named wrapper/plugin not present in current kiso wrapper context",
-        }
 
     if _SYSTEM_INSTALL_HINT_RE.search(msg_lower):
         return {
@@ -360,14 +331,7 @@ def _build_install_mode_context(route: dict[str, str], sys_env: dict) -> str:
     target = route.get("target", "unknown")
     pkg_manager = (sys_env.get("os") or {}).get("pkg_manager") or "package manager"
     lines = [f"Target: {target}", f"Mode: {mode}"]
-    if mode == _INSTALL_MODE_KISO_WRAPPER:
-        lines.append("Route: kiso wrapper proposal — set needs_install + approval msg only.")
-        lines.append("Do not use apt-get or uv pip install for this target.")
-    elif mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
-        lines.append("Route: unknown named wrapper/plugin request — msg only.")
-        lines.append("Do not set needs_install and do not use apt-get, uv pip install, or kiso wrapper install.")
-        lines.append("Explain that the named wrapper is not available in the current registry/wrapper context and ask for a git URL or installation instructions if it is private.")
-    elif mode == _INSTALL_MODE_PYTHON_LIB:
+    if mode == _INSTALL_MODE_PYTHON_LIB:
         lines.append(f"Route: Python library — exec `uv pip install {target}`.")
         lines.append("Do not set needs_install and do not use the system package manager.")
     elif mode == _INSTALL_MODE_SYSTEM_PKG:
@@ -509,11 +473,12 @@ def _repair_json(text: str) -> str:
 
 
 _INSTALL_CMD_RE = re.compile(
-    r"kiso\s+(wrapper|connector)\s+install", re.IGNORECASE,
+    r"(?:kiso\s+connector\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
+    re.IGNORECASE,
 )
-# Extract plugin name from "kiso wrapper install <name>" for registry validation.
+# Extract plugin name from "kiso connector install <name>" for registry validation.
 _INSTALL_NAME_RE = re.compile(
-    r"kiso\s+(?:wrapper|connector)\s+install\s+(\S+)", re.IGNORECASE,
+    r"kiso\s+connector\s+install\s+(\S+)", re.IGNORECASE,
 )
 # Detect external git URLs — these bypass registry name validation.
 _GIT_URL_RE = re.compile(r"https?://|git@|\.git\b", re.IGNORECASE)
@@ -959,7 +924,7 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
     "tasks": {"type": "array", "items": {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan", "mcp"]},
+            "type": {"type": "string", "enum": ["exec", "msg", "replan", "mcp"]},
             "detail": {"type": "string"},
             "wrapper": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
@@ -1702,7 +1667,6 @@ __brain_exports__ = [
     "TASK_TYPE_MCP",
     "TASK_TYPE_MSG",
     "TASK_TYPE_REPLAN",
-    "TASK_TYPE_WRAPPER",
     "TASK_TYPES",
     "WORKER_PHASE_CLASSIFYING",
     "WORKER_PHASE_EXECUTING",

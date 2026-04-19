@@ -65,7 +65,7 @@ def preset_list(args: argparse.Namespace) -> None:
 
 def preset_search(args: argparse.Namespace) -> None:
     """Search presets by name or description."""
-    from kiso.registry import search_entries
+    from cli.plugin_ops import search_entries
 
     registry = fetch_registry()
     presets = registry.get("presets", [])

@@ -89,9 +89,8 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "what time is it?",
             )
 
@@ -123,9 +122,8 @@ class TestBrieferScenarios:
              "args_schema": {}, "env": {}, "session_secrets": [],
              "path": "/fake", "version": "0.1.0", "description": ""},
         ]
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=fake_skills):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "admin", "vai su gazzetta.it",
             )
 
@@ -150,9 +148,8 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "retry the previous plan",
             )
 
@@ -205,9 +202,8 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "scrape the site and analyze",
             )
 
@@ -239,9 +235,8 @@ class TestBrieferFallback:
                            "wrapper": None, "args": None, "expect": None}],
             })
 
-        with patch("kiso.brain.call_llm", side_effect=_failing_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_failing_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
             )
 
@@ -259,9 +254,8 @@ class TestBrieferFallback:
                 return "not valid json at all"
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_bad_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_bad_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "hello",
             )
 
@@ -277,9 +271,8 @@ class TestBrieferFallback:
             call_log.append(role)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_logging_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_logging_llm):
+            msgs = await build_planner_messages(
                 db, _config(briefer_enabled=False), "sess1", "user", "hello",
             )
 
@@ -310,8 +303,7 @@ class TestBrieferTagPipeline:
                 return json.dumps(_briefing())
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_capturing_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
+        with patch("kiso.brain.call_llm", side_effect=_capturing_llm):
             await build_planner_messages(
                 db, _config(), "sess1", "user", "check db status",
             )
@@ -338,9 +330,8 @@ class TestBrieferTagPipeline:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "Python version",
             )
 
@@ -357,9 +348,8 @@ class TestBrieferTagPipeline:
                 return json.dumps(briefing)
             return "{}"
 
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]):
-            msgs, _, _ = await build_planner_messages(
+        with patch("kiso.brain.call_llm", side_effect=_fake_llm):
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "user", "hi",
             )
 
@@ -434,7 +424,6 @@ class TestSessionFilesModule:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch(
                  "kiso.worker.utils._build_execution_state",
                  return_value=ExecutionState(
@@ -450,7 +439,7 @@ class TestSessionFilesModule:
                      }],
                  ),
              ):
-            msgs, _, _ = await build_planner_messages(
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "admin", "read the screenshot",
             )
 
@@ -475,7 +464,6 @@ class TestSessionFilesModule:
             return "{}"
 
         with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.brain.discover_wrappers", return_value=[]), \
              patch(
                  "kiso.worker.utils._build_execution_state",
                  return_value=ExecutionState(
@@ -484,7 +472,7 @@ class TestSessionFilesModule:
                      workspace_files=[],
                  ),
              ):
-            msgs, _, _ = await build_planner_messages(
+            msgs = await build_planner_messages(
                 db, _config(), "sess1", "admin", "hello",
             )
 

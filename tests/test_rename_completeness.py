@@ -21,21 +21,6 @@ CLI = ROOT / "cli"
 class TestWrapperRenameRuntimeInvariants:
     """Verify that runtime entry points use the post-rename module layout."""
 
-    def test_current_wrapper_modules_import(self):
-        # M1504 retired cli.wrapper and cli.recipe. Part 2b also retired
-        # kiso/recipe_loader.py. kiso/wrappers.py, kiso/wrapper_repair.py
-        # and kiso/worker/wrapper.py still import cleanly during the
-        # v0.10 transition — part 2c deletes the wrapper source files
-        # entirely.
-        modules = {
-            "kiso.wrappers": "discover_wrappers",
-            "kiso.wrapper_repair": "repair_unhealthy_wrappers",
-            "kiso.worker.wrapper": "_wrapper_task",
-        }
-        for module_name, attr in modules.items():
-            module = importlib.import_module(module_name)
-            assert hasattr(module, attr), f"{module_name} missing {attr}"
-
     def test_legacy_files_removed(self):
         legacy_paths = [
             SRC / "tools.py",
@@ -59,10 +44,6 @@ class TestWrapperRenameRuntimeInvariants:
     def test_registry_uses_connectors_key(self):
         registry = json.loads((ROOT / "registry.json").read_text())
         assert "connectors" in registry, "registry.json missing 'connectors' key"
-
-    def test_task_type_wrapper_value(self):
-        from kiso.brain.common import TASK_TYPE_WRAPPER
-        assert TASK_TYPE_WRAPPER == "wrapper"
 
     def test_fact_categories_use_wrapper(self):
         from kiso.brain.common import _VALID_FACT_CATEGORIES
@@ -94,10 +75,11 @@ class TestWrapperRenameRuntimeInvariants:
         assert "--wrappers" in src
         assert "--skills" not in src
 
-    def test_install_detect_regex_matches_wrapper(self):
+    def test_install_detect_regex_matches_install_commands(self):
         from kiso.brain.common import _INSTALL_CMD_RE
-        assert _INSTALL_CMD_RE.search("kiso wrapper install browser")
         assert _INSTALL_CMD_RE.search("kiso connector install discord")
+        assert _INSTALL_CMD_RE.search("apt-get install curl")
+        assert _INSTALL_CMD_RE.search("uv pip install flask")
 
 
 class TestNoStrayToolSkillReferences:

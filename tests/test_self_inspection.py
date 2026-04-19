@@ -91,12 +91,14 @@ class TestSelfInspection:
 
     # ── 4. Planner validation semantics for self-inspection ──
 
-    def test_validate_plan_rejects_kiso_as_wrapper_task(self):
-        """self-inspection must use exec/tasks, not type='wrapper' with kiso."""
+    def test_validate_plan_rejects_unknown_wrapper_task_type(self):
+        """self-inspection must use exec/msg tasks — the legacy
+        ``type='wrapper'`` task type is no longer recognised, so the
+        validator rejects it outright as an unknown task type."""
         plan = {"tasks": [
             {"type": "wrapper", "detail": "inspect the local host", "wrapper": "kiso",
              "args": "{}", "expect": "system information returned"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
-        assert any("not available" in e for e in errors)
+        assert any("unknown type" in e for e in errors)

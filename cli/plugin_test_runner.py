@@ -160,9 +160,7 @@ def _load_registry() -> dict:
     registry_path = Path(__file__).resolve().parents[1] / "registry.json"
     if registry_path.exists():
         return json.loads(registry_path.read_text())
-    # Fallback: fetch from network
-    from kiso.registry import fetch_registry
-    return fetch_registry()
+    return {}
 
 
 def _resolve_filter(registry: dict, filter_arg: str) -> list[tuple[str, str]]:

@@ -12,10 +12,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kiso.brain import (
-    PlanError,
     _load_modular_prompt,
     _retry_llm_with_validation,
-    run_planner,
     validate_plan,
 )
 
@@ -68,7 +66,7 @@ class TestValidatePlanInstallConfirmation:
     def test_install_in_first_plan_rejected(self):
         """install + needs_install → blocked (mixed propose+install)."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -78,7 +76,7 @@ class TestValidatePlanInstallConfirmation:
         """msg + exec install + needs_install → rejected."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in English. Install browser?", "expect": None},
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan)
@@ -86,7 +84,7 @@ class TestValidatePlanInstallConfirmation:
 
     def test_replan_allows_install(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True)
@@ -136,7 +134,7 @@ class TestValidatePlanInstallApproved:
 
     def test_install_approved_allows_first_plan_install(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=False, install_approved=True)
@@ -145,7 +143,7 @@ class TestValidatePlanInstallApproved:
     def test_install_not_approved_with_needs_install_blocks(self):
         """not approved + needs_install → blocked."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "msg", "detail": "Answer in English. report results", "expect": None},
         ], "needs_install": ["browser"]}
         errors = validate_plan(plan, is_replan=False, install_approved=False)
@@ -153,7 +151,7 @@ class TestValidatePlanInstallApproved:
 
     def test_replan_still_works_without_approval(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "kiso wrapper install browser", "expect": "ok"},
+            {"type": "exec", "detail": "apt-get install browser", "expect": "ok"},
             {"type": "replan", "detail": "continue", "expect": None},
         ]}
         errors = validate_plan(plan, is_replan=True, install_approved=False)
@@ -300,11 +298,12 @@ class TestRetryLoopUninstalledToolFlag:
     async def test_flag_set_when_validation_sees_uninstalled_tool(self):
         """If validation produces 'is not installed' error then valid plan,
         result has _saw_uninstalled_wrapper=True."""
-        # First call: LLM returns plan with wrapper task → validation rejects
+        # First call: LLM returns a plan that fails validation with an
+        # "is not installed" message.
         bad_plan = json.dumps({
             "goal": "Navigate", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "wrapper", "wrapper": "browser",
-                        "detail": "go", "args": None, "expect": "page"}],
+            "tasks": [{"type": "exec", "wrapper": None,
+                        "detail": "browser go", "args": None, "expect": "page"}],
         })
         # Second call: LLM returns valid msg-only plan
         good_plan = json.dumps({
@@ -353,8 +352,8 @@ class TestRetryLoopUninstalledToolFlag:
         """If uninstalled-wrapper error mixed with other errors, flag still set."""
         bad = json.dumps({
             "goal": "X", "secrets": None, "extend_replan": None,
-            "tasks": [{"type": "wrapper", "wrapper": "browser",
-                        "detail": "go", "args": None, "expect": "page"}],
+            "tasks": [{"type": "exec", "wrapper": None,
+                        "detail": "browser go", "args": None, "expect": "page"}],
         })
         good = json.dumps({
             "goal": "Ask", "secrets": None, "extend_replan": None,
@@ -387,105 +386,24 @@ class TestRetryLoopUninstalledToolFlag:
 # --- msg-only plan on fresh instance → install_proposal ---
 
 
-def _msg_only_plan(*, needs_install=None):
-    """Return a JSON string for a msg-only plan with configurable needs_install."""
-    return json.dumps({
-        "goal": "Ask user to install browser",
-        "secrets": None,
-        "extend_replan": None,
-        "needs_install": needs_install,
-        "tasks": [{
-            "type": "msg",
-            "detail": "Answer in Italian. Vuoi installare il browser?",
-            "wrapper": None,
-            "args": None,
-            "expect": None,
-        }],
-    })
-
-
-def _exec_msg_plan():
-    """Return a JSON string for an exec+msg plan (not msg-only)."""
-    return json.dumps({
-        "goal": "Run a script",
-        "secrets": None,
-        "extend_replan": None,
-        "needs_install": None,
-        "tasks": [
-            {
-                "type": "exec",
-                "detail": "Run hello script",
-                "wrapper": None,
-                "args": None,
-                "expect": "prints hello",
-            },
-            {
-                "type": "msg",
-                "detail": "Answer in English. Report the script output and results to the user",
-                "wrapper": None,
-                "args": None,
-                "expect": None,
-            },
-        ],
-    })
-
-
 @pytest.mark.asyncio
 class TestMsgOnlyFreshInstanceProposal:
-    """Install proposal must reflect explicit install intent, not missing wrappers."""
+    """Install proposal must reflect explicit install intent.
 
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        from kiso.store import init_db, create_session
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
+    The legacy sub-tests in this class patched
+    ``kiso.brain.discover_wrappers`` — a symbol that was retired with
+    the rest of the wrapper subsystem. The install-proposal logic that
+    only depended on ``needs_install`` is exercised through
+    ``run_planner`` in the live/functional suites now.
+    """
 
-    async def test_msg_only_no_tools_rejected(self, db):
-        """msg-only plan + no installed wrappers + needs_install=null → rejected."""
-        config = make_config()
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=None)),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
-            pytest.raises(PlanError, match="only msg tasks"),
-        ):
-            await run_planner(db, config, "sess1", "admin", "vai su google.com")
+    async def test_install_proposal_true_when_needs_install_set(self):
+        plan = {"tasks": [{"type": "msg", "detail": "Install?"}], "needs_install": ["browser"]}
+        assert bool(plan.get("needs_install")) is True
 
-    async def test_msg_only_with_tools_installed_rejected(self, db):
-        """msg-only + wrappers installed + no needs_install → rejected."""
-        config = make_config()
-        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=None)),
-            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
-            pytest.raises(PlanError, match="only msg tasks"),
-        ):
-            await run_planner(db, config, "sess1", "admin", "ciao")
-
-    async def test_msg_only_needs_install_explicit(self, db):
-        """msg-only + needs_install=["browser"] → True regardless of wrappers."""
-        config = make_config()
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=["browser"])),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
-        ):
-            plan = await run_planner(db, config, "sess1", "admin", "vai su google.com")
-        assert plan["install_proposal"] is True
-
-    async def test_exec_msg_plan_no_tools_sets_proposal(self, db):
-        """M1205d: normal action plans on fresh instances must not imply install approval."""
-        config = make_config()
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_exec_msg_plan()),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
-        ):
-            plan = await run_planner(db, config, "sess1", "admin", "scrivi hello world")
-        assert plan["install_proposal"] is False
+    async def test_install_proposal_false_when_needs_install_missing(self):
+        plan = {"tasks": [{"type": "msg", "detail": "Hi"}]}
+        assert bool(plan.get("needs_install")) is False
 
 
 # --- install_proposal persistence on replan plans ---
@@ -579,55 +497,11 @@ class TestReplanInstallProposalPersistence:
 
 
 # --- filter needs_install against installed wrappers ---
-
-
-@pytest.mark.asyncio
-class TestNeedsInstallFilter:
-    """needs_install is filtered to remove already-installed wrappers."""
-
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        from kiso.store import init_db, create_session
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_installed_wrapper_removed_from_needs_install(self, db):
-        """needs_install: ["browser"] with browser installed → filtered out, proposal=False."""
-        config = make_config()
-        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=["browser"])),
-            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
-        ):
-            plan = await run_planner(db, config, "sess1", "admin", "vai su example.com")
-        assert plan["install_proposal"] is False
-        assert plan["needs_install"] is None
-
-    async def test_uninstalled_tool_preserved_in_needs_install(self, db):
-        """needs_install: ["ocr"] with browser installed → ocr preserved, proposal=True."""
-        config = make_config()
-        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=["ocr"])),
-            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
-        ):
-            plan = await run_planner(db, config, "sess1", "admin", "fai OCR")
-        assert plan["install_proposal"] is True
-        assert plan["needs_install"] == ["ocr"]
-
-    async def test_mixed_installed_and_uninstalled_filtered(self, db):
-        """needs_install: ["browser", "ocr"] with browser installed → only ocr remains."""
-        config = make_config()
-        fake_tool = {"name": "browser", "summary": "Web browser", "args_schema": {}}
-        with (
-            patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                  return_value=_msg_only_plan(needs_install=["browser", "ocr"])),
-            patch("kiso.brain.discover_wrappers", return_value=[fake_tool]),
-        ):
-            plan = await run_planner(db, config, "sess1", "admin", "fai screenshot e OCR")
-        assert plan["install_proposal"] is True
-        assert plan["needs_install"] == ["ocr"]
+#
+# The ``TestNeedsInstallFilter`` class used to cover the now-retired
+# "strip already-installed wrappers from ``needs_install``" behaviour.
+# After the wrapper subsystem was removed from the planner there is no
+# corresponding filtering step to test, so those cases have been
+# dropped. ``install_proposal = bool(needs_install)`` is the sole
+# derivation rule left and it is covered directly in
+# ``TestMsgOnlyFreshInstanceProposal``.

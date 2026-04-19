@@ -39,24 +39,18 @@ class TestPluginTaxonomyCLIEntrypoints:
 
 
 class TestPluginListAggregation:
-    """kiso plugin list shows wrappers + connectors (recipes retired)."""
+    """kiso plugin list shows connectors (wrappers/recipes retired)."""
 
-    def test_aggregates_wrappers_and_connectors(self, capsys):
+    def test_aggregates_connectors(self, capsys):
         from cli.plugin import _plugin_list
 
-        fake_tools = [{"name": "search", "description": "Web search", "version": "1.0",
-                        "path": "/f", "summary": "", "args_schema": {}, "env": {},
-                        "session_secrets": []}]
         fake_connectors = [{"name": "discord", "description": "Discord", "version": "1.0",
                             "path": "/f", "summary": "", "env": {}}]
 
-        with patch("cli.plugin.discover_wrappers", return_value=fake_tools), \
-             patch("cli.plugin.discover_connectors", return_value=fake_connectors):
+        with patch("cli.plugin.discover_connectors", return_value=fake_connectors):
             _plugin_list()
 
         out = capsys.readouterr().out
-        assert "Wrappers:" in out
-        assert "search" in out
         assert "Connectors:" in out
         assert "discord" in out
         assert "Recipes:" not in out

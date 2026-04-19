@@ -13,7 +13,6 @@ import aiosqlite
 
 from kiso.config import Config, setting_bool, setting_int
 from kiso.connectors import discover_connectors
-from kiso.registry import get_registry_wrappers
 from kiso.skill_loader import discover_skills
 from kiso.skill_runtime import (
     filter_by_activation_hints,
@@ -42,13 +41,6 @@ from kiso.sysenv import (
     build_user_settings_text,
     get_system_env,
 )
-from kiso.wrappers import (
-    build_planner_wrapper_list,
-    discover_wrappers,
-    validate_wrapper_args,
-    validate_wrapper_args_semantic,
-)
-
 from .common import (
     BRIEFER_MODULES,
     PLAN_SCHEMA,
@@ -59,12 +51,9 @@ from .common import (
     TASK_TYPE_MCP,
     TASK_TYPE_MSG,
     TASK_TYPE_REPLAN,
-    TASK_TYPE_WRAPPER,
     TASK_TYPES,
     _INSTALL_CMD_RE,
-    _INSTALL_MODE_KISO_WRAPPER,
     _INSTALL_MODE_NONE,
-    _INSTALL_MODE_UNKNOWN_KISO_WRAPPER,
     _INSTALL_NAME_RE,
     _MIN_PROMOTED_FACT_LEN,
     _NPM_GLOBAL_RE,
@@ -72,7 +61,6 @@ from .common import (
     _PIP_INSTALL_RE,
     _SYSTEM_INSTALL_HINT_RE,
     _TYPE_EXAMPLES,
-    _WRAPPER_UNAVAILABLE_MARKER,
     _UV_PIP_RE,
     _VALID_FACT_CATEGORIES,
     _add_context_section,
@@ -86,7 +74,6 @@ from .common import (
     _load_modular_prompt,
     _merge_context_sections,
     _normalize_install_target_token,
-    _parse_registry_hint_names,
     _prefilter_context_pool,
     _retry_llm_with_validation,
     _GIT_URL_RE,
@@ -133,8 +120,6 @@ _NON_ACTIONABLE_PREFIXES = (
     "validate the ", "verify the content", "inspect the content",
     "review the ", "understand ", "evaluate ",
 )
-_DIRECT_TOOL_EXEC_VERB_RE = r"(?:use|run|invoke|launch|ask|have)"
-_DIRECT_TOOL_EXEC_SUFFIX_RE = r"(?:to|for|on|with|against)\b"
 _ACTION_TO_USER_RE = re.compile(
     r"\b("
     r"tell me|send me|show me|report back|reply with|let me know|"
@@ -155,34 +140,6 @@ def _is_non_actionable_exec(detail: str) -> bool:
     if "/" in detail:
         return False
     return True
-
-
-def _find_direct_wrapper_exec(
-    detail: str, installed_skills: list[str] | None,
-) -> str | None:
-    """Return wrapper name if exec detail tries to use an installed kiso wrapper.
-
-    This is intentionally narrow: it catches routing mistakes like
-    "Use aider to write ..." or "Run browser on https://...".
-    Normal shell tasks mentioning unrelated words must keep passing.
-    """
-    if not installed_skills:
-        return None
-
-    lower = (detail or "").lower()
-    if "kiso wrapper " in lower or "kiso connector " in lower:
-        return None
-    if _INSTALL_CMD_RE.search(lower):
-        return None
-
-    for name in sorted(installed_skills, key=len, reverse=True):
-        pattern = (
-            rf"\b{_DIRECT_TOOL_EXEC_VERB_RE}\s+{re.escape(name.lower())}\s+"
-            rf"{_DIRECT_TOOL_EXEC_SUFFIX_RE}"
-        )
-        if re.search(pattern, lower):
-            return name
-    return None
 
 
 def _mentions_user_delivery(detail: str) -> bool:
@@ -206,7 +163,7 @@ def _validate_plan_tasks(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_MCP) and task.get("expect") is None:
+        if t in (TASK_TYPE_EXEC, TASK_TYPE_MCP) and task.get("expect") is None:
             errors.append(
                 f"Task {i}: {t} task must have expect describing WHAT RESULT you need "
                 f"(e.g., 'list of search results', 'file created successfully')"
@@ -228,15 +185,7 @@ def _validate_plan_tasks(
         if t == TASK_TYPE_EXEC and _is_non_actionable_exec(detail):
             errors.append(
                 f"Task {i}: exec detail is analytical, not actionable — "
-                f"rewrite as a concrete shell command description "
-                f"(e.g., 'Run kiso wrapper install browser')"
-            )
-        direct_tool_exec = _find_direct_wrapper_exec(detail, installed_skills)
-        if t == TASK_TYPE_EXEC and direct_tool_exec:
-            errors.append(
-                f"Task {i}: exec detail directly routes installed wrapper '{direct_tool_exec}'. "
-                f"Installed kiso wrappers must use type='wrapper' with wrapper='{direct_tool_exec}', "
-                f"not type='exec'."
+                f"rewrite as a concrete shell command description"
             )
         if t == TASK_TYPE_EXEC and _PIP_INSTALL_RE.search(detail) and not _UV_PIP_RE.search(detail):
             errors.append(
@@ -249,7 +198,7 @@ def _validate_plan_tasks(
                 f"Global npm installs pollute the runtime; npx -y runs ephemerally "
                 f"and is the right default for one-shot tools and MCP servers."
             )
-        if t in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) and _mentions_user_delivery(detail):
+        if t == TASK_TYPE_EXEC and _mentions_user_delivery(detail):
             errors.append(
                 f"Task {i}: action task detail includes user-delivery wording. "
                 f"Action tasks should do the work only; use a final msg task "
@@ -292,102 +241,6 @@ def _validate_plan_tasks(
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
                 errors.append(f"Task {i}: replan task can only be the last task")
-        if t == TASK_TYPE_WRAPPER:
-            wrapper_name = task.get("wrapper")
-            if not wrapper_name:
-                errors.append(f"Task {i}: wrapper task must have a non-null wrapper name")
-            elif wrapper_name in (TASK_TYPE_EXEC, TASK_TYPE_MSG, TASK_TYPE_REPLAN):
-                errors.append(
-                    f"Task {i}: '{wrapper_name}' is a task TYPE, not a wrapper. "
-                    f"Use type='{wrapper_name}' instead of type='wrapper' with "
-                    f"wrapper='{wrapper_name}'."
-                )
-            elif wrapper_name in BRIEFER_MODULES:
-                errors.append(
-                    f"Task {i}: '{wrapper_name}' is a prompt module, not a wrapper. "
-                    f"For shell commands, use type='exec'. For installed wrappers, "
-                    f"use type='wrapper' with an actual wrapper name from the available list."
-                )
-            elif installed_skills is not None and wrapper_name not in installed_skills:
-                available = ", ".join(sorted(installed_skills)) if installed_skills else "none"
-                if install_approved:
-                    errors.append(
-                        f"Task {i}: wrapper '{wrapper_name}' is not installed. "
-                        f"Available wrappers: {available}. "
-                        f"You CANNOT use type=wrapper for uninstalled wrappers. "
-                        f"Installation is approved — plan an exec task to install "
-                        f"{wrapper_name} via the kiso CLI, then replan to use it."
-                    )
-                elif registry_hint_names and wrapper_name in registry_hint_names:
-                    errors.append(
-                        f"Task {i}: wrapper '{wrapper_name}' is not installed but IS "
-                        f"available in the registry. If a built-in task type "
-                        f"(e.g. search) can achieve the same goal, use that "
-                        f"instead. Otherwise, plan a SINGLE msg task asking "
-                        f"whether to install '{wrapper_name}', then end the plan."
-                    )
-                else:
-                    errors.append(
-                        f"Task {i}: wrapper '{wrapper_name}' is "
-                        f"{_WRAPPER_UNAVAILABLE_MARKER}. Plan a SINGLE msg task "
-                        f"informing the user that '{wrapper_name}' cannot be found "
-                        f"in the public registry. If the user may have a private "
-                        f"source, suggest providing a git URL or installation "
-                        f"instructions. Do NOT plan any exec, search, or wrapper "
-                        f"tasks referencing this wrapper."
-                    )
-            elif installed_skills_info and wrapper_name in installed_skills_info:
-                args_raw = task.get("args") or "{}"
-                try:
-                    args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-                except (json.JSONDecodeError, TypeError):
-                    errors.append(
-                        f"Task {i}: wrapper args must be a JSON object with named fields"
-                    )
-                else:
-                    if not isinstance(args, dict):
-                        errors.append(
-                            f"Task {i}: wrapper args must be a JSON object with named fields"
-                        )
-                        continue
-                    schema = installed_skills_info[wrapper_name].get("args_schema", {})
-                    arg_errors = validate_wrapper_args(args, schema)
-                    semantic_errors = validate_wrapper_args_semantic(
-                        installed_skills_info[wrapper_name],
-                        args,
-                        {
-                            "phase": "planner",
-                            "task_index": i,
-                            "detail": task.get("detail"),
-                            "expect": task.get("expect"),
-                            "goal": task.get("goal"),
-                        },
-                    )
-                    arg_errors.extend(semantic_errors)
-                    if arg_errors:
-                        # show only required args in example so the
-                        # model focuses on what it MUST provide.
-                        required_args = {
-                            aname: _TYPE_EXAMPLES.get(adef.get("type", "string"), "value")
-                            for aname, adef in schema.items()
-                            if adef.get("required", False)
-                        }
-                        example_json = json.dumps(required_args)
-                        errors.append(
-                            f"Task {i}: wrapper '{wrapper_name}' args invalid: "
-                            + "; ".join(arg_errors)
-                            + f". Required args object: '{example_json}'"
-                        )
-                    # browser must use web URLs, not local file paths
-                    if wrapper_name == "browser":
-                        for v in args.values():
-                            if isinstance(v, str) and v.startswith("file://"):
-                                errors.append(
-                                    f"Task {i}: browser cannot open local files "
-                                    f"(file:// URL). Use exec with cat/head to "
-                                    f"read local files instead."
-                                )
-                                break
         if t == TASK_TYPE_MCP:
             server = task.get("server")
             method = task.get("method")
@@ -474,16 +327,12 @@ _ARTIFACT_NOUNS = frozenset({
 })
 
 
-_GOAL_RUN_KEYWORDS = frozenset({"run", "test", "execute", "launch", "start"})
-
-
 def _validate_plan_ordering(
     tasks: list[dict], is_replan: bool, install_approved: bool,
     has_needs_install: bool = False,
     has_knowledge: bool = False,
     has_kb_answer: bool = False,
     allow_msg_only: bool = False,
-    goal: str = "",
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
     errors: list[str] = []
@@ -492,7 +341,7 @@ def _validate_plan_ordering(
     # needs_install (install proposal), knowledge (storage), kb_answer
     # (: KB recall from briefer context), or allow_msg_only
     # (structural fallback).
-    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_WRAPPER, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
+    _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
         if (
@@ -503,8 +352,8 @@ def _validate_plan_ordering(
         ):
             errors.append(
                 "Plan has only msg tasks — include at least one "
-                "exec/wrapper/mcp task for action requests. "
-                "Msg-only is valid only for kiso wrapper install proposals "
+                "exec/mcp task for action requests. "
+                "Msg-only is valid only for install proposals "
                 "(set needs_install), knowledge storage, or KB recall "
                 "(set kb_answer when answering from briefer context)."
             )
@@ -528,14 +377,14 @@ def _validate_plan_ordering(
         )
         if first_install_idx is not None:
             errors.append(
-                f"Task {first_install_idx + 1}: installs a wrapper/connector in the first plan. "
+                f"Task {first_install_idx + 1}: installs a package in the first plan. "
                 f"You CANNOT install in the same plan that asks for permission — the user "
                 f"hasn't replied yet. Plan a SINGLE msg task asking whether to install, "
                 f"offer alternatives, and end the plan there. The install happens in the "
                 f"next cycle after the user approves."
             )
 
-    # after installing a wrapper that was proposed in a prior turn, the
+    # after installing a package that was proposed in a prior turn, the
     # original request is still pending — must replan to continue with it.
     if install_approved:
         has_install_exec = any(
@@ -545,7 +394,7 @@ def _validate_plan_ordering(
         )
         if has_install_exec and tasks[-1].get("type") == TASK_TYPE_MSG:
             errors.append(
-                "Plan installs a wrapper after user approval but ends with msg. "
+                "Plan installs a package after user approval but ends with msg. "
                 "The original request is still pending — use replan as the last "
                 "task so the next cycle can fulfill the original request."
             )
@@ -554,124 +403,18 @@ def _validate_plan_ordering(
     if last.get("type") not in (TASK_TYPE_MSG, TASK_TYPE_REPLAN):
         errors.append("Last task must be type 'msg' or 'replan'")
 
-    # codegen-only pattern = plan starts with wrapper then exec.
-    # Only fire when tasks[0]=wrapper, tasks[1]=exec.  Multi-step workflows
-    # where wrapper comes after other tasks are intentional, not verification.
-    if (
-        len(tasks) >= 2
-        and tasks[0].get("type") == TASK_TYPE_WRAPPER
-        and tasks[1].get("type") == TASK_TYPE_EXEC
-        and not bool(set(goal.lower().split()) & _GOAL_RUN_KEYWORDS)
-    ):
-        errors.append(
-            "Task 2: exec immediately after wrapper — reviewer already "
-            "inspects wrapper output. Remove the exec task. Add exec after wrapper "
-            "ONLY when the user asks to run or test the result."
-        )
-
-    return errors
-
-
-def _validate_install_route_consistency(
-    plan: dict,
-    tasks: list[dict],
-    install_route: dict[str, str] | None,
-    *,
-    install_approved: bool,
-) -> list[str]:
-    """Validate that the plan stays consistent with the deterministic install route."""
-    if not install_route:
-        return []
-
-    mode = install_route.get("mode", _INSTALL_MODE_NONE)
-    target = (install_route.get("target") or "").lower()
-    if mode == _INSTALL_MODE_NONE or not target:
-        return []
-
-    errors: list[str] = []
-    exec_details = [
-        (i, (t.get("detail") or ""))
-        for i, t in enumerate(tasks, 1)
-        if t.get("type") == TASK_TYPE_EXEC
-    ]
-    non_msg_types = [t.get("type") for t in tasks if t.get("type") != TASK_TYPE_MSG]
-
-    if mode == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER:
-        if plan.get("needs_install"):
-            errors.append(
-                f"Unknown named wrapper '{target}' is not in the installed/registry context. "
-                f"Do NOT set needs_install."
-            )
-        if non_msg_types:
-            errors.append(
-                f"Unknown named wrapper '{target}' is not available in the current kiso wrapper context. "
-                f"Plan ONLY msg tasks explaining that it cannot be installed from the current registry/wrapper set, "
-                f"and suggest a git URL or private installation instructions if applicable."
-            )
-        return errors
-
-    if mode != _INSTALL_MODE_KISO_WRAPPER or install_route.get("target_installed"):
-        return errors
-
-    has_target_mention_install = False
-    for i, detail in exec_details:
-        lower = detail.lower()
-        name_match = _INSTALL_NAME_RE.search(detail)
-        if name_match:
-            install_name = _normalize_install_target_token(name_match.group(1))
-            if not install_name:
-                continue
-            if install_name == target:
-                has_target_mention_install = True
-                continue
-            errors.append(
-                f"Task {i}: install routing target is '{target}', but this plan installs '{install_name}'. "
-                f"Use `kiso wrapper install {target}` for the approved registry wrapper."
-            )
-            continue
-        if _SYSTEM_INSTALL_HINT_RE.search(lower) or _PIP_INSTALL_RE.search(lower):
-            errors.append(
-                f"Task {i}: install routing target '{target}' is a kiso wrapper. "
-                f"Do not use system package managers or pip/uv pip here; use `kiso wrapper install {target}`."
-            )
-            continue
-        # Natural-language detail mentioning the target + install intent
-        if target in lower and "install" in lower:
-            has_target_mention_install = True
-
-    explicit_request = install_route.get("explicit_install_request", False)
-
-    if install_approved and not has_target_mention_install:
-        errors.append(
-            f"Approved install for kiso wrapper '{target}' requires an exec task that "
-            f"installs '{target}', then a final replan task."
-        )
-
-    if not install_approved and not plan.get("needs_install") and non_msg_types:
-        if explicit_request and has_target_mention_install:
-            if tasks and tasks[-1].get("type") == TASK_TYPE_MSG:
-                errors.append(
-                    f"Explicit install for kiso wrapper '{target}' must end with replan, "
-                    f"not msg — the original request may still be pending."
-                )
-        else:
-            errors.append(
-                f"Known registry wrapper '{target}' is not installed yet. "
-                f"Before approval, propose installation with needs_install + msg only."
-            )
-
     return errors
 
 
 # Types that can participate in parallel groups.
-_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC, TASK_TYPE_WRAPPER})
+_GROUPABLE_TYPES = frozenset({TASK_TYPE_EXEC})
 
 
 def _validate_plan_groups(tasks: list[dict]) -> list[str]:
     """Validate parallel group constraints.
 
     Rules:
-    - group only on exec/search/wrapper (msg/replan → error)
+    - group only on exec (msg/replan → error)
     - Same-group tasks must be adjacent
     - Each group value must have ≥2 tasks
     """
@@ -684,7 +427,7 @@ def _validate_plan_groups(tasks: list[dict]) -> list[str]:
             continue
         if t.get("type") not in _GROUPABLE_TYPES:
             errors.append(
-                f"Task {i + 1}: group is only allowed on exec/wrapper tasks, "
+                f"Task {i + 1}: group is only allowed on exec tasks, "
                 f"not '{t.get('type')}'. Remove the group field."
             )
             continue
@@ -720,28 +463,22 @@ def validate_plan(
 ) -> list[str]:
     """Validate plan semantics. Returns list of error strings (empty = valid).
 
-    If installed_skills is provided, wrapper tasks are validated against it.
     If max_tasks is provided, plans with more tasks are rejected.
-    If installed_skills_info is provided (name→wrapper dict), wrapper args are
-    validated against the schema at plan time.
     If is_replan is False, extend_replan is stripped.
-    If registry_hint_names is provided, exec tasks with ``kiso wrapper install``
+    If registry_hint_names is provided, exec tasks with ``kiso plugin install``
     are validated: the name must be in the registry (or a git URL).
     If force_msg_only is True, only msg tasks are allowed — all other task
-    types are rejected (set after a wrapper-not-in-registry rejection).
+    types are rejected.
     """
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
         return errors
-    # after a wrapper was determined to not exist in any registry,
-    # force the planner to produce a msg-only plan.
     if force_msg_only:
         non_msg = [t for t in tasks if t.get("type") != TASK_TYPE_MSG]
         if non_msg:
             errors.append(
-                "The requested wrapper does not exist in any registry. "
                 "Plan ONLY msg tasks explaining the situation to the user. "
-                "Do NOT plan exec, wrapper, or search tasks."
+                "Do NOT plan exec or mcp tasks."
             )
             return errors
     errors.extend(_validate_plan_tasks(
@@ -758,15 +495,7 @@ def validate_plan(
         allow_msg_only=(
             force_msg_only
             or plan.get("msg_only_fallback") == "unavailable_named_tool"
-            or (
-                bool(install_route)
-                and install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER
-            )
         ),
-        goal=plan.get("goal", ""),
-    ))
-    errors.extend(_validate_install_route_consistency(
-        plan, tasks, install_route, install_approved=install_approved,
     ))
     errors.extend(_validate_plan_groups(tasks))
 
@@ -775,17 +504,15 @@ def validate_plan(
     has_verb = bool(goal_words & _ARTIFACT_VERBS)
     has_noun = bool(goal_words & _ARTIFACT_NOUNS)
     has_action_task = any(
-        t.get("type") in (TASK_TYPE_EXEC, TASK_TYPE_WRAPPER) for t in tasks
+        t.get("type") == TASK_TYPE_EXEC for t in tasks
     )
     has_needs_install = bool(plan.get("needs_install"))
     if has_verb and has_noun and not has_action_task and not is_replan and not has_needs_install:
         errors.append(
             "Goal mentions creating a file/document but plan has no "
-            "exec or wrapper task. Add an action task that writes the "
-            "file to the workspace — either an exec task (e.g. shell "
-            "redirect, cat, echo) or a wrapper task whose wrapper "
-            "produces files (e.g. aider, datagen). Auto-publish will "
-            "generate a download URL automatically."
+            "exec task. Add an action task that writes the file to the "
+            "workspace (e.g. shell redirect, cat, echo). Auto-publish "
+            "will generate a download URL automatically."
         )
 
     # validate knowledge items (if present)
@@ -823,26 +550,6 @@ def validate_plan(
                 f"Either remove all action tasks or set kb_answer=false."
             )
             return errors
-
-    # coherence — wrappers listed in needs_install must not appear in wrapper tasks
-    needs = plan.get("needs_install") or []
-    if needs:
-        for i, t in enumerate(tasks, 1):
-            if t.get("type") == TASK_TYPE_WRAPPER and t.get("wrapper") in needs:
-                if install_approved:
-                    errors.append(
-                        f"Task {i}: wrapper '{t['wrapper']}' is not installed yet. "
-                        f"Install is approved — plan ONLY an exec task to install "
-                        f"{t['wrapper']} via the kiso CLI, then replan as last task. "
-                        f"Wrapper tasks go in the NEXT plan after install completes."
-                    )
-                else:
-                    errors.append(
-                        f"Task {i}: wrapper '{t['wrapper']}' is in needs_install (not "
-                        f"available) but used as a wrapper task. Plan a msg asking "
-                        f"to install, then end the plan. The wrapper task goes in a "
-                        f"future plan after the user approves and the wrapper is installed."
-                    )
 
     return errors
 
@@ -1025,19 +732,15 @@ async def build_planner_messages(
     install_approved: bool = False,
     investigate: bool = False,
     mcp_catalog_text: str | None = None,
-) -> tuple[list[dict], list[str], list[dict]]:
+) -> list[dict]:
     """Build the message list for the planner LLM call.
 
     Assembles context from session summary, facts, pending questions,
-    system environment, wrappers, and recent messages.
+    system environment, skills/MCP catalogs, and recent messages.
 
     When ``briefer_enabled`` is True in config, calls the briefer LLM to
-    select prompt modules, filter wrappers, and synthesize context. Falls
-    back to full context on briefer failure.
-
-    Returns (messages, installed_wrapper_names, installed_wrappers_info) — the
-    caller can reuse the wrapper names list for plan validation and the
-    tools_info list for args validation without rescanning the filesystem.
+    select prompt modules and synthesize context. Falls back to full
+    context on briefer failure.
     """
     planner_state = await _gather_planner_context(
         db, config, session, user_role, new_message, paraphrased_context,
@@ -1055,17 +758,6 @@ async def build_planner_messages(
     # briefer context pool to reduce redundant tokens.
     if is_replan:
         context_pool.pop("system_env", None)
-
-    # Wrapper discovery — rescan on each planner call
-    installed = discover_wrappers()
-    installed_names = [s["name"] for s in installed]
-    if installed_names:
-        log.info("discover_wrappers() found: %s", ", ".join(installed_names))
-
-    # Build the wrapper list text for context pool
-    full_wrapper_list = build_planner_wrapper_list(installed, user_role, user_wrappers)
-    if full_wrapper_list:
-        context_pool["wrappers"] = full_wrapper_list
 
     # Skill discovery — populate context_pool["skills"] so the briefer can
     # select. Metadata-only (name + description + when_to_use); M1540 wires
@@ -1114,31 +806,15 @@ async def build_planner_messages(
 
     msg_lower = new_message.lower()
 
-    # Uploaded files hint — only when docreader is NOT installed
-    if "[uploaded files:" in msg_lower and "docreader" not in installed_names:
+    if "[uploaded files:" in msg_lower:
         context_pool["upload_hint"] = (
             "The user's message references uploaded files. "
             "Use exec tasks (cat, head, python) to read them from the uploads/ directory."
         )
 
-    _sysenv_registry_hint_names = _parse_registry_hint_names(
-        (get_system_env(config) or {}).get("registry_hints", "")
-    )
-
-    # --- Registry: show available-but-not-installed wrappers ---
-    # Show uninstalled registry wrappers so the planner knows what's available
-    # for install.  Filtered by installed_names, so returns empty when all
-    # wrappers are installed.  Skip on replans — wrappers won't change mid-replan.
-    registry_text = ""
-    if not is_replan:
-        registry_text = await asyncio.to_thread(
-            get_registry_wrappers, set(installed_names),
-        )
     install_route = _classify_install_mode(
         new_message,
         get_system_env(config),
-        installed_wrapper_names=installed_names,
-        registry_hint_names=_sysenv_registry_hint_names,
     )
     install_mode_ctx = _build_install_mode_context(install_route, get_system_env(config))
 
@@ -1161,34 +837,17 @@ async def build_planner_messages(
     _has_session_files = "session_files" in context_pool
 
     if briefing:
-        # Briefer path: modules selected by the briefer LLM.
-        # Safety net: force kiso_native (install decision rules) when no wrappers.
-        # Note: plugin_install NOT forced here — it has "curl registry" advice
-        # that conflicts with the core "not in hints → apt-get" rule. The
-        # briefer selects plugin_install when actually needed.
         modules = list(briefing["modules"])
-        if not installed or registry_text:
-            if "kiso_native" not in modules:
-                modules.append("kiso_native")
+        if "kiso_native" not in modules:
+            modules.append("kiso_native")
         if _has_session_files and "session_files" not in modules:
             modules.append("session_files")
-        # planning_rules contains fundamental task-ordering and
-        # expect rules that must always be present (matches fallback path).
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        # wrappers_rules needed when any wrappers are installed — contains
-        # "use directly" rule and args/guide validation.  Broader than
-        # briefing-driven selection because the briefer sometimes skips
-        # wrapper selection even when wrappers are relevant.
-        if installed and "wrappers_rules" not in modules:
-            modules.append("wrappers_rules")
-        # investigate mode injects the read-only diagnose-first
-        # contract into the planner system prompt.
         if investigate and "investigate" not in modules:
             modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
-        # Fallback path: keyword-based module selection (no briefer).
         fallback_modules: list[str] = list(BRIEFER_MODULES - {
             "kiso_commands", "user_mgmt", "plugin_install",
         })
@@ -1202,18 +861,13 @@ async def build_planner_messages(
             or "not installed" in msg_lower
             or "registry" in msg_lower
         )
-        if _plugin_kw_hit or not installed or registry_text:
+        if _plugin_kw_hit:
             fallback_modules.append("plugin_install")
         if _has_session_files:
             fallback_modules.append("session_files")
-        # investigate mode injects the read-only diagnose-first
-        # contract into the planner system prompt.
         if investigate:
             fallback_modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
-
-    if not installed:
-        log.warning("discover_wrappers() returned empty — no wrappers available for planner")
 
     is_admin = user_role == "admin"
 
@@ -1335,8 +989,10 @@ async def build_planner_messages(
     # whole body when no role headings are present). When the briefer is
     # bypassed / absent, inject all installed skills.
     if briefing and briefing.get("skills"):
+        wanted = set(briefing["skills"])
         selected_skills = [
-            s for s in installed_skills if s.name in set(briefing["skills"])
+            s for s in installed_skills
+            if (s.name if hasattr(s, "name") else s.get("name")) in wanted
         ]
     else:
         selected_skills = installed_skills
@@ -1365,26 +1021,6 @@ async def build_planner_messages(
             f"## MCP Methods\n{context_pool['mcp_methods']}"
         )
 
-    # warn planner when web module is active but browser isn't installed.
-    # Emphasise that built-in search works without any wrapper for research queries.
-    if "web" in (modules if briefing else fallback_modules) and "browser" not in installed_names:
-        context_parts.append(
-            "## Browser Availability\n"
-            "The browser wrapper is NOT installed. "
-            "For web research and reading page content, use the built-in `search` task type — "
-            "it requires no wrapper and works immediately. "
-            "The browser wrapper is only needed for interactive browsing (navigate to a specific URL, "
-            "click, fill forms, take screenshots). "
-            "If interactive browsing is required: single msg asking to install, end plan.\n"
-            "Note: if the user also asks to create/write a file, an exec task is still "
-            "required — search alone cannot create files."
-        )
-
-    # always-inject available registry wrappers (not gated by briefer) so the
-    # planner knows what wrappers can be installed via `kiso wrapper install`.
-    if registry_text:
-        context_parts.append(f"## Available wrappers (not installed)\n{registry_text}")
-
     # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
     _add_section(context_parts, "Safety Rules (MUST OBEY)",
@@ -1399,13 +1035,9 @@ async def build_planner_messages(
     if install_approved:
         context_parts.append(
             "## Install Status\n"
-            "A prior plan proposed wrapper installation and the user approved. "
+            "A prior plan proposed installation and the user approved. "
             "Do NOT set needs_install — the user has already approved. "
-            "Plan exec tasks to install directly via the kiso CLI "
-            "(e.g., exec 'kiso wrapper install browser'), then replan as last task. "
-            "Do NOT add wrapper tasks for uninstalled wrappers — they become "
-            "available after the replan. "
-            "For wrappers already installed: use them directly."
+            "Plan exec tasks to install directly, then replan as the last task."
         )
 
     context_parts.append(f"## Caller Role\n{user_role}")
@@ -1413,7 +1045,7 @@ async def build_planner_messages(
 
     context_block = "\n\n".join(context_parts)
 
-    return _build_messages(system_prompt, context_block), installed_names, installed
+    return _build_messages(system_prompt, context_block)
 
 
 async def run_planner(
@@ -1453,7 +1085,7 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     _mcp_catalog_text = format_mcp_catalog(mcp_manager) if mcp_manager else None
-    messages, installed_names, installed_info = await build_planner_messages(
+    messages = await build_planner_messages(
         db, config, session, user_role, new_message, user_wrappers=user_wrappers,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
@@ -1461,19 +1093,10 @@ async def run_planner(
     )
     if on_context_ready:
         await on_context_ready()
-    tools_by_name = {s["name"]: s for s in installed_info}
 
     max_tasks = max_tasks_override if max_tasks_override is not None else int(config.settings["max_plan_tasks"])
 
-    # Extract registry hint names for install validation.
-    _sysenv = get_system_env(config)
-    _reg_hint_names = _parse_registry_hint_names(_sysenv.get("registry_hints", ""))
-    install_route = _classify_install_mode(
-        new_message,
-        _sysenv,
-        installed_wrapper_names=installed_names,
-        registry_hint_names=_reg_hint_names,
-    )
+    install_route = _classify_install_mode(new_message, get_system_env(config))
 
     # inject task budget into planner context so LLM knows the limit.
     budget_line = f"\n\n## Task Budget\nMaximum tasks: {max_tasks}."
@@ -1484,24 +1107,15 @@ async def run_planner(
     else:
         log.warning("No user message found for budget injection")
 
-    # track whether a wrapper was rejected as not-in-registry across
-    # validation retries.  Once triggered, subsequent retries must produce
-    # a msg-only plan (prevents the planner from circumventing via exec).
     _force_msg = False
 
     def _validate_plan(p: dict) -> list[str]:
-        nonlocal _force_msg
-        errs = validate_plan(
-            p, installed_skills=installed_names, max_tasks=max_tasks,
-            installed_skills_info=tools_by_name, is_replan=is_replan,
+        return validate_plan(
+            p, max_tasks=max_tasks, is_replan=is_replan,
             install_approved=install_approved,
-            registry_hint_names=_reg_hint_names,
             force_msg_only=_force_msg,
             install_route=install_route,
         )
-        if any(_WRAPPER_UNAVAILABLE_MARKER in e for e in errs):
-            _force_msg = True
-        return errs
 
     fallback = config.settings.get("planner_fallback_model") or None
     plan = await _retry_llm_with_validation(
@@ -1512,32 +1126,7 @@ async def run_planner(
         on_retry=on_retry,
         fallback_model=fallback,
     )
-    # detect install proposal from two sources:
-    # 1. Planner explicitly declared needs_install (preferred, direct)
-    # 2. Validation saw uninstalled-wrapper errors (backup, indirect)
-    saw_uninstalled = plan.pop("_saw_uninstalled_wrapper", False)
-    tasks = plan.get("tasks") or []
-    if (
-        tasks
-        and all(t.get("type") == TASK_TYPE_MSG for t in tasks)
-        and (
-            _force_msg
-            or install_route.get("mode") == _INSTALL_MODE_UNKNOWN_KISO_WRAPPER
-        )
-    ):
-        plan["msg_only_fallback"] = "unavailable_named_tool"
-
-    # Filter needs_install: remove wrappers that are already installed.
-    # The LLM sometimes lists installed wrappers in needs_install by mistake.
-    needs = plan.get("needs_install") or []
-    if needs and installed_names:
-        needs = [n for n in needs if n not in installed_names]
-        plan["needs_install"] = needs or None
-
-    plan["install_proposal"] = (
-        bool(plan.get("needs_install"))
-        or saw_uninstalled
-    )
+    plan["install_proposal"] = bool(plan.get("needs_install"))
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",
              plan["goal"], len(plan["tasks"]), plan["install_proposal"])
