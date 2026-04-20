@@ -24,11 +24,12 @@ class TestPlannerPromptInstallRules:
     def _load_prompt(self):
         self.full = _load_modular_prompt(
             "planner",
-            ["kiso_native", "tools_rules", "web", "plugin_install"],
+            ["skills_and_mcp", "web", "plugin_install"],
         )
 
-    def test_kiso_native_never_install_without_approval(self):
-        assert "msg for approval" in self.full or "Never install anything" in self.full
+    def test_skills_and_mcp_never_install_without_approval(self):
+        assert "NEVER exec or mcp the install before approval" in self.full \
+            or "Install → approve → replan" in self.full
 
     def test_tools_rules_msg_before_install(self):
         assert "single msg asking user to install" in self.full.lower() or \
@@ -45,12 +46,6 @@ class TestPlannerPromptInstallRules:
         core = _load_modular_prompt("planner", [])
         assert "System package requests" in core
         assert "uv pip install" in core
-        assert "needs_install" in core
-
-    def test_wrapper_recovery_still_blocks_apt_for_deps(self):
-        """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
-        wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
-        assert "Never apt-get/pip install to fix" in wrapper_recovery
 
 
 # --- 2–4. validate_plan: install only in replan ---

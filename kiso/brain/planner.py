@@ -839,8 +839,8 @@ async def build_planner_messages(
 
     if briefing:
         modules = list(briefing["modules"])
-        if "kiso_native" not in modules:
-            modules.append("kiso_native")
+        if "skills_and_mcp" not in modules:
+            modules.append("skills_and_mcp")
         if _has_session_files and "session_files" not in modules:
             modules.append("session_files")
         if "planning_rules" not in modules:
@@ -910,18 +910,19 @@ async def build_planner_messages(
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
         # inject essential system env always (~60 tok). Full version
         # (~400 tok) only when briefer selected install/system modules.
-        # Check briefer's raw selection — force-added modules (kiso_native
-        # safety net) don't count since they're added unconditionally.
+        # Check briefer's raw selection — force-added modules (the
+        # skills_and_mcp safety net) don't count since they're added
+        # unconditionally.
         _SYSENV_MODULES = {"plugin_install", "kiso_commands", "user_mgmt"}
         _needs_full_sysenv = bool(set(briefing["modules"]) & _SYSENV_MODULES)
         if _needs_full_sysenv:
             context_parts.append(f"## System Environment\n{sys_env_full}")
         else:
             context_parts.append(f"## System Environment\n{sys_env_essential}")
-            # when kiso_native is loaded (install-decision rules) but
+            # when skills_and_mcp is loaded (install-decision rules) but
             # full sysenv isn't warranted, inject just the install-critical
             # fields so the planner can route install commands correctly.
-            if "kiso_native" in modules and install_ctx:
+            if "skills_and_mcp" in modules and install_ctx:
                 _add_section(context_parts, "Install Context", install_ctx)
         # suppress generic routing when approved — Install Status
         # section (added later) has the authoritative instructions.

@@ -939,21 +939,19 @@ _MIN_PROMOTED_FACT_LEN = 10
 # Available prompt modules that the briefer can select.
 # core is always included and NOT listed here — these are optional additions.
 BRIEFER_MODULES: frozenset[str] = frozenset({
-    "planning_rules", "kiso_native", "wrappers_rules",
-    "web", "replan", "wrapper_recovery", "data_flow",
+    "planning_rules", "skills_and_mcp",
+    "web", "replan", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
 })
 _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "planning_rules": "task ordering, expect rules, multi-step plans",
-    "kiso_native": "kiso-first policy, registry checking",
-    "wrappers_rules": "wrapper usage rules, atomic operations",
-    "web": "URLs, websites, browser wrapper rules",
+    "skills_and_mcp": "skill/MCP routing, no-registry, install-from-URL",
+    "web": "URLs, websites, search and browser MCP routing",
     "data_flow": "file-based data flow for large outputs",
     "replan": "re-planning after failure, extend flag",
-    "wrapper_recovery": "broken wrapper reinstall procedure",
-    "kiso_commands": "kiso CLI (wrapper/connector/env/user mgmt)",
+    "kiso_commands": "kiso CLI (mcp/skill/connector/env/user mgmt)",
     "user_mgmt": "user/alias management, role permissions",
-    "plugin_install": "plugin discovery and installation",
+    "plugin_install": "capability discovery and installation",
 }
 _BRIEFER_MODULES_STR = "\n".join(
     f"- {name}: {_BRIEFER_MODULE_DESCRIPTIONS[name]}"

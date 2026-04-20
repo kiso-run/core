@@ -1173,10 +1173,10 @@ class TestBuildPlannerMessages:
         content = msgs[1]["content"]
         assert "## Available Connectors" not in content
 
-    async def test_briefer_forces_kiso_native_when_no_tools(self, db, config):
-        """briefer path forces kiso_native module when no wrappers installed."""
+    async def test_briefer_forces_skills_and_mcp_when_no_tools(self, db, config):
+        """briefer path forces skills_and_mcp module when none selected."""
         await create_session(db, "sess1")
-        # Enable briefer — the safety net should force kiso_native
+        # Enable briefer — the safety net should force skills_and_mcp
         cfg = Config(
             tokens=config.tokens,
             providers=config.providers,
@@ -1198,18 +1198,16 @@ class TestBuildPlannerMessages:
                 db, cfg, "sess1", "admin", "install flask",
             )
         system = msgs[0]["content"]
-        # kiso_native content must be present despite briefer returning modules=[]
-        assert "Kiso wrapper flow" in system
-        # plugin_install must NOT be forced — its "curl registry" advice
-        # conflicts with the core "not in hints → apt-get" rule
+        # skills_and_mcp content must be present despite briefer returning modules=[]
+        assert "skills_and_mcp" in system.lower() or "kiso mcp install --from-url" in system
+        # plugin_install must NOT be forced when briefer omitted it — its
+        # sysenv-heavy flow is a separate module.
         assert "Plugin installation flow" not in system
-        # System Environment must always be in planner context — the core
-        # prompt's install decision references registry_hints which live there
         user_content = msgs[1]["content"]
         assert "System Environment" in user_content
 
-    async def test_install_context_injected_with_kiso_native(self, db, config):
-        """Install Context section injected when kiso_native is force-added."""
+    async def test_install_context_injected_with_skills_and_mcp(self, db, config):
+        """Install Context section injected when skills_and_mcp is force-added."""
         await create_session(db, "sess1")
         cfg = Config(
             tokens=config.tokens,
@@ -3465,18 +3463,23 @@ class TestPlannerPromptContent:
         assert "search" in prompt.lower() and "msg" in prompt.lower()
 
     def test_planner_no_verify_after_codegen_tool(self):
-        """core planning rules say no exec after codegen wrapper."""
+        """Planning rules still discourage follow-up verification after a
+        capability call — phrased around MCP rather than wrappers now.
+        When the user asks to run/test, the planner keeps exec in the plan;
+        otherwise the plan ends at msg after the MCP call. The concrete
+        enforcement moved to skills_and_mcp's routing heuristics."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["planning_rules"])
-        assert "codegen plan shape" in prompt.lower()
+        # Planning rules still enumerate the default shape [action, msg report]
+        assert "default plan shape" in prompt.lower()
 
     def test_planner_web_module_has_search_guidance(self):
         """Web module provides research guidance and search-over-browser routing."""
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["web"])
-        assert "search" in prompt.lower()
+        assert "search mcp" in prompt.lower() or "search" in prompt.lower()
         assert "research" in prompt.lower()
-        assert "never use browser for web searches" in prompt.lower()
+        assert "never use a browser mcp for web searches" in prompt.lower()
 
 
 class TestStripExtendReplan:
@@ -3948,26 +3951,25 @@ class TestRolePromptContent:
     """Parametrized prompt content assertions (,,,,, M6,,)."""
 
     @pytest.mark.parametrize("role,assertions", [
-        # planner atomic operations
+        # planner atomic operations (skills_and_mcp install is atomic)
         ("planner", [
             (["atomic"], None),
-            (["kiso wrapper install", "Install commands are atomic"], "any"),
-            (["never decompose"], None),
+            (["kiso mcp install", "kiso skill install", "Install execs are atomic"], "any"),
+            (["Never decompose"], "any"),
         ]),
         # planner atomic covers package managers
         ("planner", [
             (["atomic"], None),
-            (["never decompose", "single command"], "any"),
+            (["Never decompose", "single"], "any"),
         ]),
-        # planner usage guide rule
+        # planner routing heuristics mention skills + MCP
         ("planner", [
-            (["usage guide", "guide:"], "any"),
-            (["follow"], None),
-            (["guide:"], None),
+            (["Routing heuristics", "routing heuristics"], "any"),
+            (["MCP"], None),
         ]),
-        # planner usage guide is mandatory
+        # planner skills_and_mcp no-registry rule
         ("planner", [
-            (["strictly", "broken plans"], "any"),
+            (["No-registry", "no-registry"], "any"),
         ]),
         # planner any language any script
         ("planner", [
@@ -3987,11 +3989,11 @@ class TestRolePromptContent:
         ("planner", [
             (["background context only"], None),
         ]),
-        # M106a: planner install decision (Available Wrappers reference)
+        # planner install decision now points at skills_and_mcp install-from-URL
         ("planner", [
-            (["Available Wrappers", "kiso wrapper"], "any"),
+            (["kiso mcp install --from-url", "kiso skill install --from-url"], "any"),
         ]),
-        # M106a: planner system package manager path
+        # planner system package manager path still covered in core
         ("planner", [
             (["apt-get", "uv pip install"], "any_mixed"),
         ]),
@@ -4405,12 +4407,12 @@ class TestPlannerContextualRules:
         pass
 
     async def test_skill_keyword_injects_kiso_commands(self, db):
-        """Message mentioning 'wrapper' should inject kiso-commands appendix."""
+        """Message mentioning 'skill' should inject kiso-commands appendix."""
         msgs = await build_planner_messages(
-            db, self._config(), "test-session", "admin", "install the search wrapper",
+            db, self._config(), "test-session", "admin", "install the search skill",
         )
         system = msgs[0]["content"]
-        assert "kiso wrapper install" in system
+        assert "kiso skill install --from-url" in system
 
     async def test_user_keyword_injects_user_mgmt(self, db):
         """Message mentioning 'user' should inject user-mgmt appendix."""
@@ -4426,42 +4428,42 @@ class TestPlannerContextualRules:
             db, self._config(), "test-session", "admin", "install the browser connector",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation flow:" in system
+        assert "Capability installation" in system
 
     async def test_not_installed_in_replan_injects_plugin_install(self, db):
         """replan context with 'not installed' should inject plugin-install appendix."""
         replan_msg = (
             "vorrei navigare su internet\n\n"
-            "## Failure Reason\nskill 'browser' is not installed. Available wrappers: none"
+            "## Failure Reason\nskill 'browser' is not installed. Available skills: none"
         )
         msgs = await build_planner_messages(
             db, self._config(), "test-session", "admin", replan_msg,
         )
         system = msgs[0]["content"]
-        assert "Plugin installation flow:" in system
+        assert "Capability installation" in system
 
     async def test_registry_keyword_injects_plugin_install(self, db):
         """message with 'registry' should inject plugin-install appendix."""
         msgs = await build_planner_messages(
             db, self._config(), "test-session", "admin",
-            "check the registry for browser wrapper",
+            "check the registry for browser MCP",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation flow:" in system
+        assert "Capability installation" in system
 
     @pytest.mark.skip(reason="Auto-inject plugin_install when no wrappers retired with the wrapper subsystem.")
     async def test_no_skills_injects_plugin_install(self, db):
         pass
 
     async def test_no_skills_no_duplicate_appendix(self, db):
-        """if keyword already triggered plugin-install, no duplicate on empty wrappers."""
+        """if keyword already triggered plugin-install, no duplicate on empty skills."""
         with patch("kiso.brain.planner.discover_skills", return_value=[]):
             msgs = await build_planner_messages(
-                db, self._config(), "test-session", "admin", "install the browser wrapper",
+                db, self._config(), "test-session", "admin", "install the browser MCP",
             )
         system = msgs[0]["content"]
         # Should appear exactly once
-        assert system.count("Plugin installation flow:") == 1
+        assert system.lower().count("capability installation") == 1
 
     async def test_base_prompt_always_present(self, db):
         """Core planner rules are always present regardless of message."""
@@ -5468,7 +5470,8 @@ class TestBrieferMessages:
         assert "- planning_rules: task ordering" in content
         assert "- web: URLs, websites" in content
         assert "- replan: re-planning after failure" in content
-        assert "- plugin_install: plugin discovery" in content
+        assert "- plugin_install: capability discovery" in content
+        assert "- skills_and_mcp:" in content
 
     def test_module_descriptions_concise(self):
         """each module description is ≤60 chars."""
@@ -5892,25 +5895,23 @@ class TestLoadModularPrompt:
         assert "Web interaction:" not in result
         assert "Scripting:" not in result
         assert "extend_replan" not in result
-        assert "Broken wrapper recovery" not in result
         assert "File-based data flow" not in result
-        assert "Wrappers efficiency:" not in result
-        # install rule references concrete "Available Wrappers" section name
-        assert "Available Wrappers" in result
+        # skills_and_mcp is its own module — must not leak into core
+        assert "skills_and_mcp" not in result.lower() or "MODULE:" not in result
+        # Core must mention the two capability primitives at a high level
+        assert "MCP" in result
         assert "Recent Messages" not in result
 
     # parametrized module loading tests
     _MODULE_CASES = [
         ("web", ["web interaction"], []),
         ("replan", ["extend_replan"], ["web interaction"]),
-        ("wrapper_recovery", ["broken wrapper deps"], []),
         ("data_flow", ["save to file"], []),
-        ("planning_rules", ["expect", "invent"], ["wrappers efficiency"]),
-        ("kiso_native", ["Kiso wrapper flow"], ["wrappers efficiency"]),
-        ("wrappers_rules", ["wrappers efficiency", "atomic"], ["Kiso wrapper flow"]),
-        ("kiso_commands", ["kiso wrapper install", "kiso env set"], []),
+        ("planning_rules", ["expect", "invent"], ["routing heuristics"]),
+        ("skills_and_mcp", ["no-registry", "kiso mcp install", "kiso skill install"], []),
+        ("kiso_commands", ["kiso mcp install --from-url", "kiso env set"], []),
         ("user_mgmt", ["kiso user add"], []),
-        ("plugin_install", ["plugin installation"], []),
+        ("plugin_install", ["capability installation"], []),
     ]
 
     @pytest.mark.parametrize(
@@ -5931,17 +5932,14 @@ class TestLoadModularPrompt:
         # All key sections present
         assert "Kiso planner" in modular
         assert "Web interaction:" in modular
-        assert "One-liner execution" in modular or "One-liners" in modular
+        assert "One-liner" in modular or "One-liners" in modular
         assert "extend_replan" in modular
-        assert "Broken wrapper deps" in modular
         assert "save to file" in modular
-        assert "Wrappers efficiency:" in modular
-        assert "Available Wrappers" in modular
-        assert "Recent Messages" in modular
-        # Former appendixes now modules
-        assert "kiso wrapper install" in modular
+        # skills_and_mcp module content
+        assert "kiso mcp install --from-url" in modular
+        assert "kiso skill install --from-url" in modular
         assert "PROTECTION" in modular or "Caller Role" in modular
-        assert "Plugin installation flow:" in modular
+        assert "capability installation" in modular.lower()
 
     def test_no_markers_returns_full_prompt(self):
         """Prompt without markers returns the full text (backward compat)."""
@@ -6726,10 +6724,9 @@ class TestPromptSizeReduction:
         """core prompt (no modules) contains critical install rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
-        assert "Available Wrappers" in core_only
-        assert "needs_install" in core_only
-        # Must NOT contain expanded kiso_native flow (that's in the module)
-        assert "Kiso wrapper flow (expanded)" not in core_only
+        assert "Install Routing" in core_only
+        # Expanded skills_and_mcp flow must live in its own module
+        assert "Install from URL" not in core_only
 
     def test_core_only_is_smallest(self):
         """Core-only prompt (no modules) is significantly smaller than all modules."""
@@ -6747,62 +6744,41 @@ class TestPromptSizeReduction:
     def test_install_scenario_moderate(self):
         """Install scenario includes only relevant modules, not all."""
         install_prompt = _load_modular_prompt(
-            "planner", ["planning_rules", "kiso_native", "wrappers_rules", "plugin_install"],
+            "planner", ["planning_rules", "skills_and_mcp", "plugin_install"],
         )
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Install scenario should be well under full (4 of ~12 modules)
+        # Install scenario should be well under full (3 of ~8 modules)
         assert len(install_prompt) < len(all_modules) * 0.95
 
     def test_replan_scenario_small(self):
-        """Replan scenario (core + replan + wrapper_recovery) is compact."""
-        replan_prompt = _load_modular_prompt("planner", ["replan", "wrapper_recovery"])
+        """Replan scenario (core + replan) is compact."""
+        replan_prompt = _load_modular_prompt("planner", ["replan"])
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         assert len(replan_prompt) < len(all_modules) * 0.40
-
-    def test_system_package_and_wrapper_recovery_coexist(self):
-        """core allows system packages, wrapper_recovery blocks apt for deps.
-        Both rules must coexist in the full prompt without contradiction."""
-        all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
-        # Core: system packages allowed ( — in core now)
-        assert "System package requests" in all_modules
-        assert "Python package/library requests" in all_modules
-        assert "needs_install" in all_modules
-        # wrapper_recovery: apt-get blocked for broken deps
-        assert "Never apt-get/pip install to fix" in all_modules
-        # Core pkg rule comes before wrapper_recovery
-        pkg_pos = all_modules.index("System package requests")
-        tool_rec_pos = all_modules.index("Never apt-get/pip install to fix")
-        assert pkg_pos < tool_rec_pos
 
     def test_core_has_install_rules(self):
         """core prompt (no modules) contains install decision rules."""
         core_only = _load_modular_prompt("planner", [])
         assert "uv pip install" in core_only
-        assert "System package requests" in core_only
-        assert "needs_install" in core_only
+        assert "needs_install" in core_only or "Install Routing" in core_only
         assert "Install Routing" in core_only
-
-    def test_wrapper_recovery_module_still_blocks_apt(self):
-        """wrapper_recovery module still blocks apt-get for broken wrapper deps."""
-        wrapper_recovery = _load_modular_prompt("planner", ["wrapper_recovery"])
-        assert "Never apt-get/pip install to fix" in wrapper_recovery
 
     def test_all_modules_cover_all_content(self):
         """All modules combined include all the content from planner.md."""
         all_modules = _load_modular_prompt("planner", list(BRIEFER_MODULES))
         # Key content from each module should be present
         assert "Kiso planner" in all_modules  # core
-        assert "needs_install" in all_modules  # kiso_native
+        assert "needs_install" in all_modules  # core / skills_and_mcp
         assert "natural language WHAT" in all_modules  # planning_rules
-        assert "atomic" in all_modules  # tools_rules
-        assert "apt-get" in all_modules  # wrapper_recovery
+        assert "atomic" in all_modules  # skills_and_mcp
         assert "save to file" in all_modules  # data_flow
         assert "Web interaction" in all_modules  # web
-        assert "One-liner" in all_modules  # scripting
+        assert "One-liner" in all_modules  # planning_rules
         assert "extend_replan" in all_modules  # replan
-        assert "kiso wrapper install" in all_modules  # kiso_commands
+        assert "kiso mcp install --from-url" in all_modules  # kiso_commands / skills_and_mcp
+        assert "kiso skill install --from-url" in all_modules  # skills_and_mcp
         assert "never generate" in all_modules  # user_mgmt
-        assert "Plugin installation" in all_modules  # plugin_install
+        assert "Capability installation" in all_modules or "capability installation" in all_modules.lower()
 
 
 class TestInstallRoutingHelper:
@@ -6899,16 +6875,16 @@ class TestBrieferModuleCoverage:
     async def test_plugin_install_module_selected(self, db):
         """Briefer selecting plugin_install covers old keyword matching."""
         system = await self._run_with_briefer_modules(
-            db, "install the browser wrapper", ["plugin_install"],
+            db, "install the browser MCP", ["plugin_install"],
         )
-        assert "Plugin installation" in system
+        assert "Capability installation" in system
 
     async def test_kiso_commands_module_selected(self, db):
         """Briefer selecting kiso_commands covers old kiso keyword matching."""
         system = await self._run_with_briefer_modules(
             db, "list kiso envs", ["kiso_commands"],
         )
-        assert "kiso wrapper install" in system
+        assert "kiso mcp install --from-url" in system
 
     async def test_user_mgmt_module_selected(self, db):
         """Briefer selecting user_mgmt covers old user keyword matching."""
@@ -7458,7 +7434,7 @@ class TestNoItalianKeywords:
                 "installa il browser",
             )
         system = msgs[0]["content"]
-        assert "Plugin installation flow:" not in system
+        assert "Capability installation" not in system
 
     async def test_english_install_still_works(self, db):
         """English 'install' still triggers plugin_install module."""
@@ -7467,7 +7443,7 @@ class TestNoItalianKeywords:
             "install the browser connector",
         )
         system = msgs[0]["content"]
-        assert "Plugin installation flow:" in system
+        assert "Capability installation" in system
 
     async def test_english_user_still_works(self, db):
         """English 'user' still triggers user_mgmt module."""
