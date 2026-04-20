@@ -324,6 +324,7 @@ async def run_reviewer(
     success: bool | None = None,
     exit_code: int | None = None,
     safety_rules: list[str] | None = None,
+    selected_skills: "list | None" = None,
 ) -> dict:
     """Run the reviewer on a task output.
 
@@ -334,6 +335,7 @@ async def run_reviewer(
         goal, detail, expect, output, user_message,
         success=success, exit_code=exit_code,
         safety_rules=safety_rules,
+        selected_skills=selected_skills,
     )
     review = await _retry_llm_with_validation(
         config, "reviewer", messages, REVIEW_SCHEMA,

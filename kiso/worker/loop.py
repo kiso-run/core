@@ -546,6 +546,7 @@ async def _review_task(
     goal: str,
     task_row: dict,
     user_message: str,
+    selected_skills: "list | None" = None,
 ) -> dict:
     """Review an exec/wrapper task. Returns review dict. Stores learning if present."""
     return await _review_task_impl(
@@ -557,6 +558,7 @@ async def _review_task(
         user_message,
         run_reviewer_fn=run_reviewer,
         audit_mod=audit,
+        selected_skills=selected_skills,
     )
 
 
@@ -588,6 +590,7 @@ class _PlanCtx:
     plan_outputs: list[dict] = field(default_factory=list)  # mutated in place by handlers
     task_contracts: dict[int, dict] = field(default_factory=dict)
     mcp_manager: "Any | None" = None  # kiso.mcp.MCPManager when MCP is enabled
+    selected_skills: list = field(default_factory=list)  # briefer-selected Skill objects
 
 
 @dataclass
@@ -777,7 +780,8 @@ async def _run_review_step(
     idx = get_usage_index()
     try:
         review = await _review_task(
-            ctx.config, ctx.db, ctx.session, ctx.goal, task_row, ctx.user_message
+            ctx.config, ctx.db, ctx.session, ctx.goal, task_row, ctx.user_message,
+            selected_skills=ctx.selected_skills,
         )
     except ReviewError as e:
         log.error("Review failed for task %d: %s", task_id, e)
@@ -1050,6 +1054,7 @@ async def _handle_exec_task(
                 plan_outputs_text=outputs_text, session=ctx.session,
                 retry_context=retry_context,
                 workspace_files=_ws_files,
+                selected_skills=ctx.selected_skills,
             )
         except ExecTranslatorError as e:
             error_output = f"Translation failed: {e}"
@@ -1251,6 +1256,7 @@ async def _execute_plan(
     response_lang: str = "en",
     install_approved: bool = False,
     plan_has_needs_install: bool = False,
+    selected_skills: "list | None" = None,
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -1293,6 +1299,7 @@ async def _execute_plan(
         cancel_event=cancel_event,
         sandbox_uid=None,
         task_contracts={},
+        selected_skills=list(selected_skills or []),
     )
     for task in tasks:
         ctx.task_contracts[task["id"]] = task["contract"]
@@ -1910,6 +1917,7 @@ async def _run_planning_loop(
     total_extensions = 0
 
     _current_needs_install = bool(plan.get("needs_install"))
+    _current_selected_skills = list(plan.get("_selected_skills") or [])
 
     while True:
         success, replan_reason, stuck_reason, completed, remaining, plan_outputs = await _execute_plan(
@@ -1920,6 +1928,7 @@ async def _run_planning_loop(
             response_lang=response_lang,
             install_approved=install_approved,
             plan_has_needs_install=_current_needs_install,
+            selected_skills=_current_selected_skills,
         )
 
         if success:
@@ -2198,6 +2207,7 @@ async def _run_planning_loop(
         current_plan_id = new_plan_id
         current_goal = new_plan["goal"]
         _current_needs_install = bool(new_plan.get("needs_install"))
+        _current_selected_skills = list(new_plan.get("_selected_skills") or [])
         _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
 
     return current_plan_id

@@ -29,6 +29,7 @@ async def _review_task_impl(
     user_message: str,
     run_reviewer_fn=run_reviewer,
     audit_mod=audit,
+    selected_skills: "list | None" = None,
 ) -> dict:
     """Review an exec/wrapper task. Returns review dict. Stores learning if present."""
     output = task_row.get("output") or ""
@@ -51,6 +52,7 @@ async def _review_task_impl(
         success=success,
         exit_code=exit_code,
         safety_rules=safety_rules,
+        selected_skills=selected_skills,
     )
 
     learn_raw = review.get("learn")

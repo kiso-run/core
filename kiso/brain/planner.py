@@ -732,6 +732,7 @@ async def build_planner_messages(
     install_approved: bool = False,
     investigate: bool = False,
     mcp_catalog_text: str | None = None,
+    out_state: "dict | None" = None,
 ) -> list[dict]:
     """Build the message list for the planner LLM call.
 
@@ -996,6 +997,8 @@ async def build_planner_messages(
         ]
     else:
         selected_skills = installed_skills
+    if out_state is not None:
+        out_state["selected_skills"] = list(selected_skills)
     if selected_skills:
         skill_blocks = []
         for skill in selected_skills:
@@ -1085,11 +1088,13 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     _mcp_catalog_text = format_mcp_catalog(mcp_manager) if mcp_manager else None
+    planner_out_state: dict = {}
     messages = await build_planner_messages(
         db, config, session, user_role, new_message, user_wrappers=user_wrappers,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
         mcp_catalog_text=_mcp_catalog_text,
+        out_state=planner_out_state,
     )
     if on_context_ready:
         await on_context_ready()
@@ -1127,6 +1132,7 @@ async def run_planner(
         fallback_model=fallback,
     )
     plan["install_proposal"] = bool(plan.get("needs_install"))
+    plan["_selected_skills"] = planner_out_state.get("selected_skills", [])
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",
              plan["goal"], len(plan["tasks"]), plan["install_proposal"])

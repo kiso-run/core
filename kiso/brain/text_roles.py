@@ -516,6 +516,7 @@ async def run_worker(
     session: str = "",
     retry_context: str = "",
     workspace_files: str = "",
+    selected_skills: "list | None" = None,
 ) -> str:
     """Translate a natural-language exec task detail into a shell command.
 
@@ -529,6 +530,7 @@ async def run_worker(
             config, detail, sys_env_text, plan_outputs_text,
             retry_context=current_retry_context,
             workspace_files=workspace_files,
+            selected_skills=selected_skills,
         )
         raw = await _call_role(
             config, "worker", messages, ExecTranslatorError, session,
