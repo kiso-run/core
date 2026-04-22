@@ -152,7 +152,6 @@ def _validate_plan_tasks(
     installed_skills: list[str] | None,
     installed_skills_info: dict[str, dict] | None,
     install_approved: bool = False,
-    registry_hint_names: frozenset[str] | None = None,
     mcp_methods_pool: dict[str, list] | None = None,
 ) -> list[str]:
     """Check per-task rules: type, detail, expect, args, wrapper validation."""
@@ -204,19 +203,6 @@ def _validate_plan_tasks(
                 f"Action tasks should do the work only; use a final msg task "
                 f"to tell/send results to the user."
             )
-        # kiso plugin install for names not in registry (without git URL)
-        if t == TASK_TYPE_EXEC and registry_hint_names is not None:
-            name_match = _INSTALL_NAME_RE.search(detail)
-            if name_match and not _GIT_URL_RE.search(detail):
-                install_name = _normalize_install_target_token(name_match.group(1))
-                if not install_name:
-                    continue
-                if install_name not in registry_hint_names:
-                    errors.append(
-                        f"Task {i}: '{install_name}' is not in the kiso plugin registry. "
-                        f"For system packages use the package manager (e.g. apt-get install), "
-                        f"for Python libraries use uv pip install."
-                    )
         if t == TASK_TYPE_MSG:
             for field in ("expect", "wrapper", "args"):
                 if task.get(field) is not None:
@@ -441,7 +427,6 @@ def validate_plan(
     installed_skills_info: dict[str, dict] | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
-    registry_hint_names: frozenset[str] | None = None,
     force_msg_only: bool = False,
     install_route: dict[str, str] | None = None,
     mcp_methods_pool: dict[str, list] | None = None,
@@ -450,8 +435,6 @@ def validate_plan(
 
     If max_tasks is provided, plans with more tasks are rejected.
     If is_replan is False, extend_replan is stripped.
-    If registry_hint_names is provided, exec tasks with ``kiso plugin install``
-    are validated: the name must be in the registry (or a git URL).
     If force_msg_only is True, only msg tasks are allowed — all other task
     types are rejected.
     """
@@ -469,7 +452,6 @@ def validate_plan(
     errors.extend(_validate_plan_tasks(
         tasks, installed_skills, installed_skills_info,
         install_approved=install_approved,
-        registry_hint_names=registry_hint_names,
         mcp_methods_pool=mcp_methods_pool,
     ))
     errors.extend(_validate_plan_ordering(

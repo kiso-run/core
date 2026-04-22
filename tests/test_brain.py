@@ -8763,38 +8763,13 @@ class TestPipToUvValidation:
         assert not any("uv pip install" in e for e in errors)
 
 
+@pytest.mark.skip(
+    reason="registry_hint_names validation retired in v0.10: "
+           "there is no kiso-maintained plugin registry anymore "
+           "(MCP servers and skills install from concrete URLs)"
+)
 class TestRegistryInstallValidation:
-    """kiso plugin install for names not in registry."""
-
-    _HINTS = frozenset({"websearch", "aider", "browser"})
-
-    def _plan(self, detail):
-        return {"tasks": [
-            {"type": "exec", "detail": detail, "expect": "done"},
-            {"type": "msg", "detail": "Answer in English. result"},
-        ]}
-
-    def test_kiso_connector_install_unknown_rejected(self):
-        errors = validate_plan(self._plan("kiso connector install slack"),
-                               registry_hint_names=self._HINTS)
-        assert any("not in the kiso plugin registry" in e for e in errors)
-
-    def test_kiso_connector_install_known_accepted(self):
-        errors = validate_plan(self._plan("kiso connector install browser"),
-                               registry_hint_names=self._HINTS)
-        assert not any("not in the kiso plugin registry" in e for e in errors)
-
-    def test_kiso_connector_install_with_git_url_accepted(self):
-        errors = validate_plan(
-            self._plan("kiso connector install https://github.com/someone/my-connector.git"),
-            registry_hint_names=self._HINTS,
-        )
-        assert not any("not in the kiso plugin registry" in e for e in errors)
-
-    def test_no_registry_hints_skips_check(self):
-        """When registry_hint_names is None, check is skipped."""
-        errors = validate_plan(self._plan("kiso connector install slack"))
-        assert not any("not in the kiso plugin registry" in e for e in errors)
+    pass
 
 
 class TestSystemPackageInstallSemantics:
@@ -8809,7 +8784,6 @@ class TestSystemPackageInstallSemantics:
     def test_system_package_exec_accepted(self):
         errors = validate_plan(
             self._plan("Use the system package manager to install timg"),
-            registry_hint_names=frozenset({"browser", "aider", "websearch"}),
         )
         assert not any("not in the kiso plugin registry" in e for e in errors)
         assert not any("needs_install" in e for e in errors)
@@ -8817,7 +8791,6 @@ class TestSystemPackageInstallSemantics:
     def test_system_package_exec_not_treated_as_kiso_wrapper_install(self):
         errors = validate_plan(
             self._plan("Install timg with apt-get"),
-            registry_hint_names=frozenset({"browser", "aider", "websearch"}),
         )
         assert not any("msg task asking whether to install" in e for e in errors)
         assert not any("not in the kiso plugin registry" in e for e in errors)
