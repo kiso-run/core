@@ -387,8 +387,8 @@ class TestFenceContent:
 def _perm_config(**user_overrides) -> Config:
     users = {
         "alice": User(role="admin"),
-        "bob": User(role="user", wrappers=["search", "deploy"]),
-        "charlie": User(role="user", wrappers="*"),
+        "bob": User(role="user", mcp=["search:web", "deploy:run"]),
+        "charlie": User(role="user", mcp="*"),
     }
     users.update(user_overrides)
     return Config(
@@ -398,6 +398,10 @@ def _perm_config(**user_overrides) -> Config:
 
 
 class TestRevalidatePermissions:
+    """revalidate_permissions checks that the username still resolves
+    to a known user; per-tool allowlist enforcement lives at the
+    catalog-build layer (kiso.brain.common.filter_*_by_user)."""
+
     def test_revalidate_user_exists(self):
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "alice", "exec")
@@ -410,70 +414,17 @@ class TestRevalidatePermissions:
         assert result.allowed is False
         assert "no longer exists" in result.reason
 
-    def test_revalidate_skill_allowed(self):
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "wrapper", wrapper_name="search")
-        assert result.allowed is True
-
-    def test_revalidate_skill_denied(self):
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "wrapper", wrapper_name="forbidden")
-        assert result.allowed is False
-        assert "not in user's allowed wrappers" in result.reason
-
-    def test_revalidate_admin_all_skills(self):
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "alice", "wrapper", wrapper_name="anything")
-        assert result.allowed is True
-
-    def test_revalidate_no_username(self):
+    def test_revalidate_no_username_trusted(self):
         cfg = _perm_config()
         result = revalidate_permissions(cfg, None, "exec")
         assert result.allowed is True
         assert result.role == "admin"
 
-    def test_revalidate_wildcard_skills(self):
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "charlie", "wrapper", wrapper_name="anything")
-        assert result.allowed is True
-
-    def test_revalidate_exec_allowed_for_user_role(self):
-        """exec tasks allowed for user role (wrapper check only triggers for wrapper tasks)."""
+    def test_revalidate_user_role_allowed(self):
         cfg = _perm_config()
         result = revalidate_permissions(cfg, "bob", "exec")
         assert result.allowed is True
         assert result.role == "user"
-
-    def test_revalidate_skill_name_none_skips_check(self):
-        """wrapper_name=None with task_type='wrapper' skips wrapper-level check."""
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "wrapper", wrapper_name=None)
-        assert result.allowed is True
-
-    def test_revalidate_returns_tools_field(self):
-        """PermissionResult.wrappers populated from user config."""
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "exec")
-        assert result.wrappers == ["search", "deploy"]
-
-    def test_revalidate_msg_allowed_for_user_role(self):
-        """msg tasks allowed for user role."""
-        cfg = _perm_config()
-        result = revalidate_permissions(cfg, "bob", "msg")
-        assert result.allowed is True
-
-    def test_revalidate_search_always_allowed(self):
-        """search task type is always allowed, no matter the user role."""
-        cfg = _perm_config()
-        # Admin
-        result = revalidate_permissions(cfg, "alice", "search")
-        assert result.allowed is True
-        assert result.role == "admin"
-        # Regular user
-        result = revalidate_permissions(cfg, "bob", "search")
-        assert result.allowed is True
-        assert result.role == "user"
-        assert result.wrappers == ["search", "deploy"]
 
 
 # --- Double masking proof ---

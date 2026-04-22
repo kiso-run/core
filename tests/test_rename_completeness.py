@@ -68,12 +68,14 @@ class TestWrapperRenameRuntimeInvariants:
         assert "wrapper" in sig.parameters
         assert "skill" not in sig.parameters
 
-    def test_cli_user_wrappers_flag(self):
-        """: CLI user command uses --wrappers flag, not --skills."""
+    def test_cli_user_skills_and_mcp_flags(self):
+        """CLI user command exposes --skills and --mcp, not --wrappers."""
         import cli.user as user_mod
         src = inspect.getsource(user_mod)
-        assert "--wrappers" in src
-        assert "--skills" not in src
+        assert '"skills"' in src
+        assert '"mcp"' in src
+        # The retired --wrappers flag must not be referenced.
+        assert "--wrappers" not in src
 
     def test_install_detect_regex_matches_install_commands(self):
         from kiso.brain.common import _INSTALL_CMD_RE

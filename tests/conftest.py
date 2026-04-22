@@ -209,7 +209,8 @@ role = "admin"
 
 [users.testuser]
 role = "user"
-wrappers = "*"
+mcp = "*"
+skills = "*"
 
 [users.testuser.aliases]
 discord = "TestUser#1234"

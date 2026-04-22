@@ -548,7 +548,7 @@ async def run_message(func_config, func_db, func_session):
             "id": msg_id,
             "content": content,
             "user_role": "admin",
-            "user_wrappers": "*",
+            "user_mcp": "*", "user_skills": "*",
             "username": "testadmin",
             "base_url": base_url,
         }

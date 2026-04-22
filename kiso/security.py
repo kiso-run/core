@@ -209,7 +209,6 @@ class PermissionResult:
     allowed: bool
     reason: str = ""
     role: str = ""
-    wrappers: str | list[str] | None = None
 
 
 def revalidate_permissions(
@@ -220,7 +219,6 @@ def revalidate_permissions(
 ) -> PermissionResult:
     """Re-check user permissions against current config."""
     if username is None:
-        # System/anonymous — allow (trusted at entry)
         return PermissionResult(allowed=True, role="admin")
 
     user = config.users.get(username)
@@ -230,16 +228,4 @@ def revalidate_permissions(
             reason=f"User '{username}' no longer exists in config",
         )
 
-    # search tasks are safe (no shell execution, no sandbox) — always allowed
-    if task_type == "search":
-        return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)
-
-    if task_type == "wrapper" and wrapper_name and user.role == "user":
-        if user.wrappers != "*":
-            if wrapper_name not in (user.wrappers or []):
-                return PermissionResult(
-                    allowed=False,
-                    reason=f"Wrapper '{wrapper_name}' not in user's allowed wrappers",
-                )
-
-    return PermissionResult(allowed=True, role=user.role, wrappers=user.wrappers)
+    return PermissionResult(allowed=True, role=user.role)

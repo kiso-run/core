@@ -9,7 +9,7 @@ import tomli_w
 
 _MINIMAL_USERS = {
     "boss": {"role": "admin"},
-    "alice": {"role": "user", "wrappers": ["skill1", "skill2"]},
+    "alice": {"role": "user", "skills": ["skill1", "skill2"]},
 }
 
 _MINIMAL_CONFIG = {

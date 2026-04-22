@@ -45,12 +45,12 @@ def _write_raw(raw: dict, path: Path | None = None) -> None:
         tomli_w.dump(raw, f)
 
 
-def _parse_wrappers(wrappers_arg: str) -> list[str]:
-    """Parse a comma-separated wrappers string; exits on empty result."""
-    wrappers_list = [s.strip() for s in wrappers_arg.split(",") if s.strip()]
-    if not wrappers_list:
-        die("--wrappers contains no valid wrapper names")
-    return wrappers_list
+def _parse_allowlist(arg: str, flag_name: str) -> list[str]:
+    """Parse a comma-separated allowlist (for --mcp or --skills)."""
+    items = [s.strip() for s in arg.split(",") if s.strip()]
+    if not items:
+        die(f"--{flag_name} contains no valid names")
+    return items
 
 
 def _other_admins(users: dict, exclude: str) -> list[str]:
@@ -85,7 +85,7 @@ def _system_user_exists(username: str) -> bool:
 
 
 def _user_list(args) -> None:
-    """List all users with their role, wrappers, and aliases."""
+    """List all users with role, mcp allowlist, skills allowlist, and aliases."""
     require_admin()
 
     raw = _read_raw()
@@ -101,24 +101,27 @@ def _user_list(args) -> None:
 
     for name, udata in users.items():
         role = udata.get("role", "?")
-        wrappers = udata.get("wrappers", None)
         aliases = udata.get("aliases", {})
 
-        if wrappers == "*":
-            wrappers_str = "*"
-        elif isinstance(wrappers, list):
-            wrappers_str = ", ".join(wrappers)
-        else:
-            wrappers_str = "-"
-
+        mcp_str = _fmt_allowlist(udata.get("mcp"))
+        skills_str = _fmt_allowlist(udata.get("skills"))
         aliases_str = (
             ", ".join(f"{k}:{v}" for k, v in aliases.items()) if aliases else "-"
         )
 
         print(f"  {name}")
-        print(f"    role:    {role}")
-        print(f"    wrappers:  {wrappers_str}")
-        print(f"    aliases: {aliases_str}")
+        print(f"    role:     {role}")
+        print(f"    mcp:      {mcp_str}")
+        print(f"    skills:   {skills_str}")
+        print(f"    aliases:  {aliases_str}")
+
+
+def _fmt_allowlist(value) -> str:
+    if value == "*":
+        return "*"
+    if isinstance(value, list):
+        return ", ".join(value) if value else "-"
+    return "-"
 
 
 def _user_add(args) -> None:
@@ -127,13 +130,13 @@ def _user_add(args) -> None:
 
     username = args.username
     role = args.role
-    wrappers_arg = args.wrappers
+    mcp_arg = getattr(args, "mcp", None)
+    skills_arg = getattr(args, "skills", None)
     alias_pairs = args.alias or []
 
     if not NAME_RE.match(username):
         die(f"invalid user '{username}' (must match {NAME_RE.pattern})")
 
-    # Check if the Linux system user exists; warn with instructions if not
     if not _system_user_exists(username):
         print(
             f"warning: Linux user '{username}' does not exist on this system.\n"
@@ -146,9 +149,6 @@ def _user_add(args) -> None:
 
     if role not in ("admin", "user"):
         die("--role must be 'admin' or 'user'")
-
-    if role == "user" and not wrappers_arg:
-        die("--wrappers required for role=user (use '*' or a comma-separated list of wrapper names)")
 
     aliases: dict[str, str] = {}
     for pair in alias_pairs:
@@ -165,11 +165,10 @@ def _user_add(args) -> None:
         die(f"user '{username}' already exists")
 
     user_entry: dict = {"role": role}
-    if role == "user":
-        if wrappers_arg == "*":
-            user_entry["wrappers"] = "*"
-        else:
-            user_entry["wrappers"] = _parse_wrappers(wrappers_arg)
+    if mcp_arg is not None:
+        user_entry["mcp"] = _coerce_allowlist(mcp_arg, "mcp")
+    if skills_arg is not None:
+        user_entry["skills"] = _coerce_allowlist(skills_arg, "skills")
     if aliases:
         user_entry["aliases"] = aliases
 
@@ -179,16 +178,21 @@ def _user_add(args) -> None:
     print(f"User '{username}' added.")
 
 
+def _coerce_allowlist(value: str, flag_name: str):
+    return "*" if value == "*" else _parse_allowlist(value, flag_name)
+
+
 def _user_edit(args) -> None:
-    """Edit role and/or wrappers of an existing user."""
+    """Edit role, mcp allowlist, and/or skills allowlist of an existing user."""
     require_admin()
 
     username = args.username
     new_role = args.role
-    wrappers_arg = args.wrappers
+    mcp_arg = getattr(args, "mcp", None)
+    skills_arg = getattr(args, "skills", None)
 
-    if new_role is None and wrappers_arg is None:
-        die("at least one of --role or --wrappers must be provided")
+    if new_role is None and mcp_arg is None and skills_arg is None:
+        die("at least one of --role, --mcp, or --skills must be provided")
 
     raw = _read_raw()
     users = raw.get("users", {})
@@ -200,23 +204,15 @@ def _user_edit(args) -> None:
     current_role = entry.get("role")
     final_role = new_role if new_role is not None else current_role
 
-    # Guard: demoting the only admin
     if current_role == "admin" and final_role == "user":
         if not _other_admins(users, username):
             die("cannot demote the last admin")
 
-    # Wrappers handling
-    if wrappers_arg is not None:
-        new_wrappers = "*" if wrappers_arg == "*" else _parse_wrappers(wrappers_arg)
-    else:
-        new_wrappers = entry.get("wrappers")
-
-    if final_role == "user" and not new_wrappers:
-        die("--wrappers required when role is 'user' and no existing wrappers are set")
-
     entry["role"] = final_role
-    if final_role == "user":
-        entry["wrappers"] = new_wrappers
+    if mcp_arg is not None:
+        entry["mcp"] = _coerce_allowlist(mcp_arg, "mcp")
+    if skills_arg is not None:
+        entry["skills"] = _coerce_allowlist(skills_arg, "skills")
 
     _write_raw(raw)
     _maybe_reload(args)

@@ -112,7 +112,7 @@ class TestUserDataclassMcpField:
         cfg = self._parse(
             '[tokens]\ncli = "t"\n'
             '[providers.openrouter]\nbase_url = "http://x"\n'
-            '[users.bob]\nrole = "user"\nwrappers = "*"\n'
+            '[users.bob]\nrole = "user"\n'
             'mcp = ["search:web_search", "github:list_issues"]\n'
         )
         assert cfg.users["bob"].mcp == [
@@ -123,7 +123,7 @@ class TestUserDataclassMcpField:
         cfg = self._parse(
             '[tokens]\ncli = "t"\n'
             '[providers.openrouter]\nbase_url = "http://x"\n'
-            '[users.carol]\nrole = "user"\nwrappers = "*"\nmcp = "*"\n'
+            '[users.carol]\nrole = "user"\nmcp = "*"\n'
         )
         assert cfg.users["carol"].mcp == "*"
 
@@ -132,6 +132,5 @@ class TestUserDataclassMcpField:
             self._parse(
                 '[tokens]\ncli = "t"\n'
                 '[providers.openrouter]\nbase_url = "http://x"\n'
-                '[users.dave]\nrole = "user"\nwrappers = "*"\n'
-                'mcp = 42\n'
+                '[users.dave]\nrole = "user"\nmcp = 42\n'
             )

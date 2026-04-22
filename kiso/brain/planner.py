@@ -710,8 +710,8 @@ async def build_planner_messages(
     session: str,
     user_role: str,
     new_message: str,
-    user_wrappers: str | list[str] | None = None,
     user_mcp: str | list[str] | None = None,
+    user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
@@ -749,12 +749,30 @@ async def build_planner_messages(
     # select. Metadata-only (name + description + when_to_use); M1540 wires
     # role-scoped skill bodies into planner/worker/reviewer prompts.
     installed_skills = discover_skills()
-    # M1538: deterministic activation_hints pre-filter narrows the catalog
+    # Deterministic activation_hints pre-filter narrows the catalog
     # before the briefer ever sees it. Replan bypasses to avoid filtering
     # out a skill the new plan needs but the original message didn't hint at.
     installed_skills = filter_by_activation_hints(
         installed_skills, new_message, is_replan=is_replan,
     )
+    # Per-user skill allowlist — runs after activation_hints so the
+    # pre-filter still narrows the superset, then the user-permission
+    # layer removes anything the user is not allowed to see.
+    if installed_skills:
+        from kiso.brain.common import filter_skills_by_user
+
+        names = [getattr(s, "name", None) for s in installed_skills]
+        names = [n for n in names if n is not None]
+        if names:
+            allowed = set(
+                filter_skills_by_user(
+                    names, role=user_role, allowlist=user_skills,
+                )
+            )
+            installed_skills = [
+                s for s in installed_skills
+                if getattr(s, "name", None) in allowed
+            ]
     if installed_skills:
         skill_lines = []
         for skill in installed_skills:
@@ -1043,7 +1061,8 @@ async def run_planner(
     session: str,
     user_role: str,
     new_message: str,
-    user_wrappers: str | list[str] | None = None,
+    user_mcp: str | list[str] | None = None,
+    user_skills: str | list[str] | None = None,
     paraphrased_context: str | None = None,
     on_context_ready: Callable | None = None,
     on_retry: Callable[[int, int, str], None] | None = None,
@@ -1076,7 +1095,8 @@ async def run_planner(
     _mcp_catalog_text = format_mcp_catalog(mcp_manager) if mcp_manager else None
     planner_out_state: dict = {}
     messages = await build_planner_messages(
-        db, config, session, user_role, new_message, user_wrappers=user_wrappers,
+        db, config, session, user_role, new_message,
+        user_mcp=user_mcp, user_skills=user_skills,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
         mcp_catalog_text=_mcp_catalog_text,

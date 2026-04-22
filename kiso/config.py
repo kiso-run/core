@@ -258,8 +258,8 @@ class Provider:
 @dataclass(frozen=True)
 class User:
     role: str  # "admin" | "user"
-    wrappers: str | list[str] | None = None  # None for admin, "*" or list for user
     mcp: str | list[str] | None = None  # None = default (admin: all; user: none), "*" = all, list = allowlist of "server:method"
+    skills: str | list[str] | None = None  # None = default (admin: all; user: none), "*" = all, list = allowlist of skill names
     aliases: dict[str, str] = field(default_factory=dict)
 
 
@@ -389,20 +389,28 @@ def _build_config(path: Path, on_error) -> Config:
         if role not in ("admin", "user"):
             on_error(f"user '{uname}': role must be 'admin' or 'user', got '{role}'")
 
-        wrappers = udata.get("wrappers")
-        if role == "user":
-            if wrappers is None:
-                on_error(f"user '{uname}' has role=user but no 'wrappers' field")
-            if wrappers != "*" and not isinstance(wrappers, list):
-                on_error(f"user '{uname}': wrappers must be '*' or a list of wrapper names")
+        if "wrappers" in udata:
+            on_error(
+                f"user '{uname}': 'wrappers' field was removed in v0.10; "
+                f"use 'mcp = [\"server:method\", ...]' and/or "
+                f"'skills = [\"skill-name\", ...]' (or '*' for all)"
+            )
 
-        # M1539: per-user MCP method allowlist (optional). Parallel to
-        # wrappers: "*" = all methods, list = qualified "server:method"
-        # names, absent = default (admin: all, user: none).
+        # Per-user MCP method allowlist: "*" = all methods, list =
+        # qualified "server:method" names, absent = default
+        # (admin: all, user: none).
         mcp_allow = udata.get("mcp")
         if mcp_allow is not None and mcp_allow != "*" and not isinstance(mcp_allow, list):
             on_error(
                 f"user '{uname}': mcp must be '*', a list of 'server:method' names, or absent"
+            )
+
+        # Per-user skill allowlist: "*" = all skills, list = skill
+        # names, absent = default (admin: all, user: none).
+        skills_allow = udata.get("skills")
+        if skills_allow is not None and skills_allow != "*" and not isinstance(skills_allow, list):
+            on_error(
+                f"user '{uname}': skills must be '*', a list of skill names, or absent"
             )
 
         # aliases
@@ -420,7 +428,7 @@ def _build_config(path: Path, on_error) -> Config:
             all_aliases[key] = uname
             aliases[connector] = platform_id
 
-        users[uname] = User(role=role, wrappers=wrappers, mcp=mcp_allow, aliases=aliases)
+        users[uname] = User(role=role, mcp=mcp_allow, skills=skills_allow, aliases=aliases)
 
     # --- models: all roles required ---
     models_raw = raw.get("models", {})

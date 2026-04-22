@@ -1169,15 +1169,40 @@ _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+def filter_skills_by_user(
+    skill_names: list[str],
+    *,
+    role: str,
+    allowlist: str | list[str] | None,
+) -> list[str]:
+    """Apply per-user skill allowlist to a list of discovered skill names.
+
+    Parallel to :func:`filter_mcp_catalog_by_user`:
+
+    - ``role="admin"`` + ``allowlist=None`` → all pass
+    - ``role="user"``  + ``allowlist=None`` → default deny (empty)
+    - ``"*"`` → all pass regardless of role
+    - ``list[str]`` → allowlist; order of the input list is preserved
+    """
+    if allowlist == "*":
+        return list(skill_names)
+    if allowlist is None:
+        return list(skill_names) if role == "admin" else []
+    if not isinstance(allowlist, list):
+        return list(skill_names)
+    allowed = {n for n in allowlist if isinstance(n, str)}
+    return [n for n in skill_names if n in allowed]
+
+
 def filter_mcp_catalog_by_user(
     catalog_text: str,
     *,
     user_role: str,
     user_mcp_allow: str | list[str] | None,
 ) -> str:
-    """Apply per-user MCP method allowlist to a rendered catalog (M1539).
+    """Apply per-user MCP method allowlist to a rendered catalog.
 
-    Semantics mirror ``[users.<name>.wrappers]``:
+    Semantics:
 
     - ``user_role="admin"`` + ``user_mcp_allow=None`` → all methods pass
     - ``user_role="user"`` + ``user_mcp_allow=None`` → default deny (empty)

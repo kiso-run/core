@@ -46,7 +46,7 @@ role = "admin"
 
 [users.testuser]
 role = "user"
-wrappers = "*"
+mcp = "*"
 
 [users.testuser.aliases]
 connector = "TestUser"

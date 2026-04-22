@@ -3742,25 +3742,12 @@ class TestPermissionRevalidation:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "no longer exists" in tasks[0]["output"]
 
+    @pytest.mark.skip(
+        reason="wrapper task type retired in v0.10; per-method access "
+               "control now lives at catalog-build time via filter_mcp_catalog_by_user"
+    )
     async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
-        """Wrapper removed from user's allowed list → fails."""
-        config = make_config(users={"bob": User(role="user", wrappers=["search"])})
-        plan_id = await create_plan(db, "sess1", 1, "Test")
-        await create_task(db, plan_id, "sess1", type="wrapper", detail="deploy",
-                          wrapper="deploy", args="{}", expect="ok")
-        await create_task(db, plan_id, "sess1", type="msg", detail="done")
-
-        # Reload returns config where bob only has "search"
-        with patch("kiso.worker.loop.reload_config", return_value=config), \
-             _patch_kiso_dir(tmp_path):
-            success, reason, _stuck, completed, remaining, _po = await _execute_plan(
-                db, config, "sess1", plan_id, "Test", "msg", 5,
-                username="bob",
-            )
-
-        assert success is False
-        tasks = await get_tasks_for_plan(db, plan_id)
-        assert "not in user's allowed wrappers" in tasks[0]["output"]
+        pass
 
     async def test_config_reload_failure_uses_cached(self, db, tmp_path):
         """ConfigError → falls back to cached config, execution continues."""
@@ -3896,7 +3883,7 @@ class TestPermissionRevalidationEdgeCases:
 
     async def test_exec_allowed_for_user_role(self, db, tmp_path):
         """User role can run exec tasks (permission check only blocks removed users/wrappers)."""
-        config = make_config(users={"bob": User(role="user", wrappers=["search"])})
+        config = make_config(users={"bob": User(role="user", mcp=["search:web"])})
 
         plan_id = await create_plan(db, "sess1", 1, "Test")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -4675,7 +4662,7 @@ class TestSandboxWorkspaceInExecutePlan:
         """When revalidate_permissions returns role='user' and sandbox UID is set,
         _session_workspace is called with sandbox_uid."""
         config = make_config(
-            users={"bob": User(role="user", wrappers="*")},
+            users={"bob": User(role="user", mcp="*")},
         )
         plan_id = await create_plan(db, "sess1", 1, "Test sandbox")
         await create_task(db, plan_id, "sess1", type="exec", detail="echo ok", expect="ok")
@@ -6223,7 +6210,7 @@ class TestFastPathIntegration:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_mcp": None, "user_skills": None, "username": "u1"}
 
     async def test_chat_message_skips_planner(self, db, tmp_path):
         """When classifier returns 'chat', planner should not be called."""
@@ -7702,7 +7689,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", msg_id, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7724,7 +7711,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7745,7 +7732,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7776,7 +7763,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 0, None, None,
             )
 
@@ -7814,7 +7801,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, initial_plan, "admin", None, 30,
+                plan_id, initial_plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7839,7 +7826,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7870,7 +7857,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7901,7 +7888,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, plan, "admin", None, 30,
+                plan_id, plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -7977,7 +7964,7 @@ class TestRunPlanningLoop:
              _patch_kiso_dir(tmp_path):
             returned_id = await _run_planning_loop(
                 db, config, "sess1", 0, "hello",
-                plan_id, fail_plan, "admin", None, 30,
+                plan_id, fail_plan, "admin", None, None, 30,
                 {}, None, 3, None, None,
             )
 
@@ -8841,7 +8828,7 @@ class TestProcessMessagePhaseCallback:
         await conn.close()
 
     def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": "u1"}
+        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_mcp": None, "user_skills": None, "username": "u1"}
 
     @pytest.mark.asyncio
     async def test_phase_transitions_for_chat(self, db, tmp_path):
@@ -8879,7 +8866,7 @@ class TestProcessMessagePhaseCallback:
         config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
         # Use username=None to bypass runtime permission re-validation
         # (test config has no users defined)
-        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_wrappers": None, "username": None}
+        msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_mcp": None, "user_skills": None, "username": None}
         phases = []
 
         fail_plan = {
@@ -10213,7 +10200,7 @@ class TestPhase13Integration:
             await _run_planning_loop(
                 db, config, "sess1", 0, "test", plan_id,
                 {"goal": "Test goal", "tasks": []},
-                "user", None, 120, {}, None, 5, None, None,
+                "user", None, None, 120, {}, None, 5, None, None,
             )
 
         # During msg composition: plan was "replanning" (set before replan attempt),
@@ -10251,7 +10238,7 @@ class TestPhase13Integration:
             await _run_planning_loop(
                 db, config, "sess1", 0, "test", plan_id,
                 {"goal": "Test goal", "tasks": []},
-                "user", None, 120, {}, None, 5, None, None,
+                "user", None, None, 120, {}, None, 5, None, None,
             )
 
         assert len(planner_kwargs_captured) == 1
