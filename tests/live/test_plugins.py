@@ -23,7 +23,7 @@ OFFICIAL_ORG = "kiso-run"
 def _clean_subprocess_env() -> dict[str, str]:
     """Build a minimal env for plugin subprocess calls.
 
-    Prevents host secrets (KISO_LLM_API_KEY, KISO_WRAPPER_* etc.) from leaking
+    Prevents host secrets (OPENROUTER_API_KEY, KISO_WRAPPER_* etc.) from leaking
     into plugin test suites, which could mask missing-key test assertions.
     """
     env: dict[str, str] = {

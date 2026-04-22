@@ -168,12 +168,12 @@ class TestGetProvider:
 
 class TestGetApiKey:
     def test_returns_key_when_set(self):
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-secret"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-secret"}):
             assert _get_api_key() == "sk-secret"
 
     def test_returns_none_when_unset(self):
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("KISO_LLM_API_KEY", None)
+            os.environ.pop("OPENROUTER_API_KEY", None)
             assert _get_api_key() is None
 
 
@@ -189,14 +189,14 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_structured_role_without_format_raises(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with pytest.raises(LLMError, match="requires structured output"):
                 await call_llm(config, "planner", [{"role": "user", "content": "hi"}])
 
     @pytest.mark.asyncio
     async def test_non_structured_role_without_format_ok(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("response text"))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -206,7 +206,7 @@ class TestCallLlm:
     async def test_successful_call_returns_content(self):
         config = make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream('{"goal":"test"}'))
                 result = await call_llm(config, "planner", [{"role": "user", "content": "hi"}], response_format=schema)
@@ -215,7 +215,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_timeout_raises(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.TimeoutException("timeout")
@@ -225,7 +225,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_request_error_raises(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.ConnectError("refused")
@@ -236,7 +236,7 @@ class TestCallLlm:
     async def test_request_error_empty_message_includes_class_name(self):
         """empty str(e) should still show error class and 'no detail'."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RemoteProtocolError("")
@@ -248,7 +248,7 @@ class TestCallLlm:
         """transient RequestError retried, success on second attempt."""
         config = make_config()
         ok = _ok_stream()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, ok)
                 # First call raises, second succeeds (returns the context manager)
@@ -264,7 +264,7 @@ class TestCallLlm:
     async def test_transport_retry_exhausted_raises(self):
         """after max transport retries, raises LLMError."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 # All 3 calls raise (1 initial + 2 retries)
@@ -280,7 +280,7 @@ class TestCallLlm:
         import ssl
         config = make_config()
         ok = _ok_stream()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, ok)
                 mock_client.stream.side_effect = [
@@ -301,7 +301,7 @@ class TestCallLlm:
         as an LLMError citing the SSL class name."""
         import ssl
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = ssl.SSLError(
@@ -320,7 +320,7 @@ class TestCallLlm:
         Must fail fast, no retry budget consumed."""
         import ssl
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = ssl.SSLCertVerificationError(
@@ -336,7 +336,7 @@ class TestCallLlm:
     async def test_non_200_non_retryable_raises(self):
         """Non-retryable status (e.g. 400) raises immediately."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _error_stream(400, "bad request"))
                 with pytest.raises(LLMError, match="400"):
@@ -347,7 +347,7 @@ class TestCallLlm:
     async def test_429_retried_then_raises(self):
         """429 is retried up to _MAX_RATE_RETRIES, then raises."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(429, "rate limited"))
                 with pytest.raises(LLMError, match="429.*rate limited"):
@@ -357,7 +357,7 @@ class TestCallLlm:
     async def test_429_recovers_on_retry(self):
         """429 on first attempt, success on second → returns content."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream = MagicMock(side_effect=[
@@ -377,7 +377,7 @@ class TestCallLlm:
     async def test_529_retried(self):
         """529 (overloaded) is retried same as 429."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream = MagicMock(side_effect=[
@@ -392,7 +392,7 @@ class TestCallLlm:
     async def test_429_retry_after_header_honored(self):
         """Retry-After header is read and used as wait time."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream = MagicMock(side_effect=[
@@ -410,7 +410,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_400_error_hint(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(400, ""))
                 with pytest.raises(LLMError, match="400.*model may be unavailable"):
@@ -419,7 +419,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_401_error_hint(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(401, "unauthorized"))
                 with pytest.raises(LLMError, match="401.*check your API key"):
@@ -428,7 +428,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_402_error_hint(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(402, "payment required"))
                 with pytest.raises(LLMError, match="402.*insufficient credits"):
@@ -443,7 +443,7 @@ class TestCallLlm:
             'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
             "data: [DONE]",
         ]
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _StreamCM(_MockStreamResp(200, lines)))
                 with pytest.raises(LLMError, match="Empty response"):
@@ -452,7 +452,7 @@ class TestCallLlm:
     @pytest.mark.asyncio
     async def test_auth_header_sent_when_api_key(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -475,7 +475,7 @@ class TestCallLlm:
     async def test_response_format_in_payload(self):
         config = make_config()
         schema = {"type": "json_schema", "json_schema": {"name": "plan"}}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream('{}'))
                 await call_llm(config, "planner", [{"role": "user", "content": "hi"}], response_format=schema)
@@ -500,7 +500,7 @@ class TestCallLlm:
     async def test_stream_true_in_payload(self):
         """payload always includes stream=True and stream_options."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -517,7 +517,7 @@ class TestCallLlmAudit:
     async def test_audit_logged_on_success(self):
         config = make_config()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 _setup_mock(mock_cls, _ok_stream("ok", usage=usage))
@@ -536,7 +536,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_error(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -550,7 +550,7 @@ class TestCallLlmAudit:
     @pytest.mark.asyncio
     async def test_audit_logged_on_non_200(self):
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 _setup_mock(mock_cls, _error_stream(500, "error"))
@@ -564,7 +564,7 @@ class TestCallLlmAudit:
     async def test_audit_logged_on_request_error(self):
         """audit logged on each transport attempt (initial + retries)."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
@@ -587,7 +587,7 @@ class TestCallLlmAudit:
             'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
             "data: [DONE]",
         ]
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 _setup_mock(mock_cls, _StreamCM(_MockStreamResp(200, lines)))
@@ -601,7 +601,7 @@ class TestCallLlmAudit:
     async def test_audit_defaults_tokens_to_zero(self):
         """When no usage in stream, tokens default to 0."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 _setup_mock(mock_cls, _ok_stream("ok"))  # no usage
@@ -619,7 +619,7 @@ class TestTimeoutConfig:
     async def test_timeout_uses_config_value(self):
         """Verify stream request receives timeout from llm_timeout config."""
         config = make_config(settings={"llm_timeout": 42})
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -632,7 +632,7 @@ class TestTimeoutConfig:
         config = make_config(settings={"llm_timeout": 99})
         # Test non-structured roles (structured roles require response_format)
         for role in ("messenger", "worker", "summarizer"):
-            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
                 with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                     mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                     await call_llm(config, role, [{"role": "user", "content": "hi"}])
@@ -659,7 +659,7 @@ class TestLLMBudget:
     async def test_budget_increments_on_call(self):
         config = make_config()
         set_llm_budget(10)
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -674,7 +674,7 @@ class TestLLMBudget:
     async def test_budget_exceeded_raises(self):
         config = make_config()
         set_llm_budget(1)
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("ok"))
                 # First call succeeds (uses the 1 allowed call)
@@ -689,7 +689,7 @@ class TestLLMBudget:
         """When no budget is set, calls are unlimited."""
         config = make_config()
         clear_llm_budget()  # Ensure no budget
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("ok"))
                 for i in range(5):
@@ -702,7 +702,7 @@ class TestLLMBudget:
         """Budget check happens before making any HTTP request."""
         config = make_config()
         set_llm_budget(0)  # Zero budget — no calls allowed
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 with pytest.raises(LLMBudgetExceeded):
@@ -729,7 +729,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 100, "completion_tokens": 50}
         usage2 = {"prompt_tokens": 200, "completion_tokens": 80}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usage1))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -763,7 +763,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         usage1 = {"prompt_tokens": 10, "completion_tokens": 5}
         usage2 = {"prompt_tokens": 20, "completion_tokens": 8}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usage1))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -783,7 +783,7 @@ class TestUsageTracking:
             {"prompt_tokens": 200, "completion_tokens": 20},
             {"prompt_tokens": 300, "completion_tokens": 30},
         ]
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("r1", usage=usages[0]))
                 await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -822,7 +822,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         messages = [{"role": "user", "content": "hi there"}]
         usage = {"prompt_tokens": 50, "completion_tokens": 25}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("hello back", usage=usage))
                 await call_llm(config, "worker", messages)
@@ -842,7 +842,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         messages = [{"role": "user", "content": "hi"}]
         usage = {"prompt_tokens": 10, "completion_tokens": 5}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("ok", usage=usage))
                 await call_llm(config, "worker", messages)
@@ -862,7 +862,7 @@ class TestUsageTracking:
         reset_usage_tracking()
         messages = [{"role": "user", "content": "test prompt"}]
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("test response", usage=usage))
                 await call_llm(config, "worker", messages)
@@ -890,7 +890,7 @@ class TestSharedHttpClient:
         prev = llm_mod._http_client
         try:
             llm_mod._http_client = mock_client
-            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
                  patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
                 # Shared client was used — AsyncClient constructor NOT called
@@ -908,7 +908,7 @@ class TestSharedHttpClient:
         prev = llm_mod._http_client
         try:
             llm_mod._http_client = None
-            with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
                  patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("fallback response"))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -964,7 +964,7 @@ class TestThinkingExtraction:
         config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream(
                     "final answer", usage=usage, reasoning_content="step by step",
@@ -983,7 +983,7 @@ class TestThinkingExtraction:
         config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream(
                     "<think>reasoning here</think>clean answer", usage=usage,
@@ -1002,7 +1002,7 @@ class TestThinkingExtraction:
         config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream(
                     "<think>tag thinking</think>answer",
@@ -1022,7 +1022,7 @@ class TestThinkingExtraction:
         config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("plain answer", usage=usage))
                 result = await call_llm(config, "worker", [{"role": "user", "content": "hi"}])
@@ -1038,7 +1038,7 @@ class TestThinkingExtraction:
         config = make_config()
         reset_usage_tracking()
         usage = {"prompt_tokens": 100, "completion_tokens": 50}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream(
                     "answer", usage=usage, reasoning_content="deep thought",
@@ -1059,7 +1059,7 @@ class TestMaxTokensParam:
     async def test_max_tokens_in_payload(self):
         """When max_tokens is set, it appears in the request payload."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
                 await call_llm(
@@ -1075,7 +1075,7 @@ class TestMaxTokensParam:
         """classifier role gets CLASSIFIER_MAX_TOKENS when max_tokens is None."""
         from kiso.config import CLASSIFIER_MAX_TOKENS
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("plan"))
                 await call_llm(
@@ -1089,7 +1089,7 @@ class TestMaxTokensParam:
     async def test_max_tokens_none_non_classifier_no_limit(self):
         """non-classifier roles get no max_tokens when None is passed."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream("echo hi"))
                 await call_llm(
@@ -1115,7 +1115,7 @@ class TestInflightCallTracking:
             captured_inflight.update(_inflight_calls.get("test-sess", {}))
             return _ok_stream("done")
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _capture_stream
@@ -1134,7 +1134,7 @@ class TestInflightCallTracking:
     async def test_inflight_cleared_after_success(self):
         """After a successful call, inflight entry is removed."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream("done"))
                 await call_llm(
@@ -1149,7 +1149,7 @@ class TestInflightCallTracking:
     async def test_inflight_cleared_on_timeout(self):
         """Inflight entry is cleaned up even when the call times out."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.TimeoutException("timed out")
@@ -1166,7 +1166,7 @@ class TestInflightCallTracking:
     async def test_inflight_cleared_on_http_error(self):
         """Inflight entry is cleaned up on HTTP errors."""
         config = make_config()
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = httpx.RequestError("connection failed")
@@ -1193,7 +1193,7 @@ class TestInflightCallTracking:
             captured_keys.extend(_inflight_calls.keys())
             return _ok_stream("done")
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _capture_stream
@@ -1239,7 +1239,7 @@ class TestJsonSchemaFallback:
             assert rf.get("type") == "json_object"
             return _ok_stream('{"status":"ok"}')
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _mock_stream
@@ -1264,7 +1264,7 @@ class TestJsonSchemaFallback:
             payloads.append(kwargs.get("json", {}))
             return _ok_stream('{"status":"ok"}')
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _mock_stream
@@ -1282,7 +1282,7 @@ class TestJsonSchemaFallback:
         """400 without 'response_format' in body raises normally."""
         config = make_config()
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(
                     400, '{"error":{"message":"Invalid model specified"}}',
@@ -1301,7 +1301,7 @@ class TestJsonSchemaFallback:
         """400 on non-structured call doesn't trigger fallback logic."""
         config = make_config()
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _error_stream(
                     400, '{"error":{"message":"response_format is invalid"}}',
@@ -1318,7 +1318,7 @@ class TestJsonSchemaFallback:
         config = make_config()
         json_object_format = {"type": "json_object"}
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 _setup_mock(mock_cls, _ok_stream('{"result": true}'))
                 result = await call_llm(
@@ -1346,7 +1346,7 @@ class TestReasoningDefaults:
             captured_payload.append(kwargs.get("json", {}))
             return _ok_stream("Hello user")
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _capture
@@ -1366,7 +1366,7 @@ class TestReasoningDefaults:
             return _ok_stream('{"goal":"test","secrets":null,"tasks":[]}')
 
         schema = {"type": "json_schema", "json_schema": {"name": "test"}}
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
                 mock_client = _setup_mock(mock_cls, _ok_stream())
                 mock_client.stream.side_effect = _capture
@@ -1532,7 +1532,7 @@ class TestStallDetection:
             captured_stall.append(stall_timeout)
             return await _orig_read(resp, stall_timeout=stall_timeout, inflight_dict=inflight_dict)
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm._read_sse_stream", side_effect=_capturing_read):
                 _setup_mock(mock_cls, _ok_stream("ok"))
@@ -1558,7 +1558,7 @@ class TestStallDetection:
         stall_cm = _StreamCM(_StallingResp())
 
         config = make_config(settings={"stall_timeout": 0, "llm_timeout": 600})
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
             with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
                  patch("kiso.llm.audit.log_llm_call") as mock_audit:
                 _setup_mock(mock_cls, stall_cm)
@@ -1694,7 +1694,7 @@ class TestPartialContent:
             return await original_read(resp, stall_timeout=stall_timeout, inflight_dict=inflight_dict)
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "test-key"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}), \
              patch("kiso.llm.audit"), \
              patch.object(_llm_module, "_read_sse_stream", side_effect=_capturing_read):
             _setup_mock(mock_cls, stream_cm)
@@ -1743,7 +1743,7 @@ class TestReasoningFallback:
         fmt = {"type": "json_object"}
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             _setup_mock(mock_cls, stream)
             result = await call_llm(config, "planner", [{"role": "user", "content": "hi"}],
@@ -1758,7 +1758,7 @@ class TestReasoningFallback:
         fmt = {"type": "json_object"}
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             _setup_mock(mock_cls, stream)
             with pytest.raises(LLMError, match="Empty response"):
@@ -1772,7 +1772,7 @@ class TestReasoningFallback:
         stream = _reasoning_only_stream('{"command": "ls"}')
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             _setup_mock(mock_cls, stream)
             with pytest.raises(LLMError, match="Empty response"):
@@ -1785,7 +1785,7 @@ class TestReasoningFallback:
         stream = _empty_stream()
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             _setup_mock(mock_cls, stream)
             with pytest.raises(LLMError, match="Empty response"):
@@ -1799,7 +1799,7 @@ class TestReasoningFallback:
         stream = _reasoning_only_stream(review_json, {"prompt_tokens": 5, "completion_tokens": 3})
 
         with patch("kiso.llm.httpx.AsyncClient") as mock_cls, \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             _setup_mock(mock_cls, stream)
             result = await call_llm(config, "reviewer", [{"role": "user", "content": "hi"}],
@@ -1870,7 +1870,7 @@ class TestCircuitBreaker:
         for _ in range(kiso.llm._CB_FAILURE_THRESHOLD):
             kiso.llm._cb_record_failure()
 
-        with patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             with pytest.raises(LLMError, match="Circuit breaker open"):
                 await call_llm(config, "worker",
@@ -1890,7 +1890,7 @@ class TestCircuitBreaker:
         )
 
         with patch("kiso.llm.httpx.AsyncClient", return_value=mock_client), \
-             patch.dict(os.environ, {"KISO_LLM_API_KEY": "sk-test"}), \
+             patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}), \
              patch("kiso.llm.audit"):
             with pytest.raises(LLMError, match="ReadError"):
                 await call_llm(config, "worker",

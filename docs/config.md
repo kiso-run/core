@@ -201,7 +201,7 @@ Each client gets its own named token. The token name identifies the connector fo
 
 ## Providers
 
-All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a section to config. The API key is read from the `KISO_LLM_API_KEY` environment variable (shared across all providers).
+All providers are OpenAI-compatible HTTP endpoints. Adding a provider = adding a section to config. The API key is read from the `OPENROUTER_API_KEY` environment variable (shared across all providers).
 
 ```toml
 [providers.openrouter]
@@ -212,7 +212,7 @@ base_url = "http://localhost:11434/v1"
 ```
 
 - `base_url`: **required**. No implicit default.
-- API key: set `KISO_LLM_API_KEY` in `~/.kiso/instances/{name}/.env`. Optional for local providers (e.g. Ollama).
+- API key: set `OPENROUTER_API_KEY` in `~/.kiso/instances/{name}/.env`. Optional for local providers (e.g. Ollama).
 
 **Structured output requirement**: Planner, Reviewer, and Curator require `response_format` with strict `json_schema`. If the provider doesn't support it, the call fails with a clear error — no fallback. Worker, Summarizer, and Paraphraser produce free-form text and work with any provider.
 

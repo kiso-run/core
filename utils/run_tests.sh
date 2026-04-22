@@ -49,9 +49,6 @@ source "$_REPO_ROOT/utils/_load_env.sh"
 _load_env_file "$_REPO_ROOT/.env"
 _ENV_FILE="${KISO_ENV_FILE:-$HOME/.kiso/instances/kiso/.env}"
 _load_env_file "$_ENV_FILE"
-if [[ -z "${OPENROUTER_API_KEY:-}" && -n "${KISO_LLM_API_KEY:-}" ]]; then
-    export OPENROUTER_API_KEY="$KISO_LLM_API_KEY"
-fi
 
 # ---------------------------------------------------------------------------
 # Availability checks

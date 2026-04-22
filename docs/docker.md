@@ -191,7 +191,7 @@ Two ways to provide deploy secrets:
 **1. `kiso env`** (recommended): manages `~/.kiso/instances/{name}/.env`. Secrets persist across restarts and can be hot-reloaded via `kiso env reload`.
 
 ```bash
-kiso env set KISO_LLM_API_KEY sk-or-...
+kiso env set OPENROUTER_API_KEY sk-or-...
 kiso env reload
 ```
 

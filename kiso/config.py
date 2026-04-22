@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 KISO_DIR = Path(os.environ.get("KISO_HOME", str(Path.home() / ".kiso")))
 CONFIG_PATH = KISO_DIR / "config.toml"
 SKILLS_DIR = KISO_DIR / "skills"
-LLM_API_KEY_ENV = "KISO_LLM_API_KEY"
+LLM_API_KEY_ENV = "OPENROUTER_API_KEY"
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 

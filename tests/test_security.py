@@ -73,14 +73,14 @@ _DENY_LIST_CASES = [
     ("echo hello", False, None),
     ("git status", False, None),
     # --- .kiso config file write protection ---
-    ("echo KISO_LLM_API_KEY=sk-x > ~/.kiso/.env", True, "kiso env set"),
+    ("echo OPENROUTER_API_KEY=sk-x > ~/.kiso/.env", True, "kiso env set"),
     ("printf 'KEY=%s\\n' val > ~/.kiso/.env", True, None),
     ("cat > ~/.kiso/.env << 'EOF'", True, None),
     ("echo KEY=val >> ~/.kiso/.env", True, None),
     ("echo KEY=val > /root/.kiso/.env", True, None),
     ("cat > ~/.kiso/config.toml << 'EOF'", True, None),
     ("echo '[settings]' > /root/.kiso/config.toml", True, None),
-    ("kiso env set KISO_LLM_API_KEY sk-or-v1-abc", False, None),
+    ("kiso env set OPENROUTER_API_KEY sk-or-v1-abc", False, None),
     ("echo hello > ~/.kiso/sessions/abc/output.txt", False, None),
     ("echo KEY=val > /tmp/myproject/.env", False, None),
     # --- M84j: deny list bypass fixes ---
@@ -298,15 +298,15 @@ class TestCollectDeploySecrets:
         }
 
     def test_llm_api_key(self):
-        env = {"KISO_LLM_API_KEY": "sk-test-key"}
+        env = {"OPENROUTER_API_KEY": "sk-test-key"}
         with patch.dict(os.environ, env, clear=True):
             secrets = collect_deploy_secrets()
-        assert secrets["KISO_LLM_API_KEY"] == "sk-test-key"
+        assert secrets["OPENROUTER_API_KEY"] == "sk-test-key"
 
     def test_missing_llm_api_key_skipped(self):
         with patch.dict(os.environ, {}, clear=True):
             secrets = collect_deploy_secrets()
-        assert "KISO_LLM_API_KEY" not in secrets
+        assert "OPENROUTER_API_KEY" not in secrets
 
     def test_accepts_no_arguments(self):
         """M66d: collect_deploy_secrets takes no parameters (config param removed)."""

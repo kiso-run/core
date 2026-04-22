@@ -46,7 +46,7 @@ bats tests/bash/                   # bash tests only
 ./utils/run_tests.sh --auto --unit --live   # flags are combinable
 ```
 
-The script reads `<repo>/.env` first, then `~/.kiso/instances/kiso/.env`, and maps `KISO_LLM_API_KEY` to `OPENROUTER_API_KEY` automatically. Precedence: **parent shell > repo `.env` > instance `.env`**. Override the instance path with `KISO_ENV_FILE=/path/to/.env` if needed.
+The script reads `<repo>/.env` first, then `~/.kiso/instances/kiso/.env`, and maps `OPENROUTER_API_KEY` to `OPENROUTER_API_KEY` automatically. Precedence: **parent shell > repo `.env` > instance `.env`**. Override the instance path with `KISO_ENV_FILE=/path/to/.env` if needed.
 
 ### Refreshing the menu's test counts and time estimates
 
@@ -104,10 +104,10 @@ tests/
 |---|---|---|---|---|
 | Unit tests | ~3 300 | All code, fully mocked | Host | No |
 | Bash tests | 60 | kiso-host.sh + install.sh (bats-core) | Host | No |
-| L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
-| L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `KISO_LLM_API_KEY` |
-| L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |
-| L4 practical | 7 | Realistic scenarios, **executes LLM-generated commands** | **Docker** | `KISO_LLM_API_KEY` |
+| L1 role isolation | 8 | Single brain function + real LLM | Host or Docker | `OPENROUTER_API_KEY` |
+| L2 partial flows | 4 | 2-3 connected components + real LLM | Host or Docker | `OPENROUTER_API_KEY` |
+| L3 e2e | 4 | Full pipeline, **executes LLM-generated commands** | **Docker** | `OPENROUTER_API_KEY` |
+| L4 practical | 7 | Realistic scenarios, **executes LLM-generated commands** | **Docker** | `OPENROUTER_API_KEY` |
 | L5 CLI lifecycle | 5 | Registry fetch + git clone | Host or Docker | No |
 | L6 plugin tests | varies | Clone each official wrapper/connector, run their internal tests | Host or Docker | No |
 | Sandbox | 2 | Per-session Linux user isolation | Docker (root) | No |
@@ -121,7 +121,7 @@ tests/
 cp .env.example .env
 
 # 2. Add your OpenRouter API key (get one at https://openrouter.ai/keys)
-#    KISO_LLM_API_KEY=sk-or-v1-...
+#    OPENROUTER_API_KEY=sk-or-v1-...
 
 # 3. Build the test image (once, or after code changes)
 docker compose -f docker-compose.test.yml build
@@ -162,7 +162,7 @@ docker compose -f docker-compose.test.yml build test-live && \
 docker compose -f docker-compose.test.yml run --rm test-live
 ```
 
-Reads `.env` for `KISO_LLM_API_KEY`. LLM-generated exec commands run inside the container, isolated from the host.
+Reads `.env` for `OPENROUTER_API_KEY`. LLM-generated exec commands run inside the container, isolated from the host.
 
 ### Live tests on host (L1/L2/L5 only — no exec)
 
@@ -181,7 +181,7 @@ uv run pytest tests/live/test_cli_live.py --live-network -v
 uv run pytest tests/live/test_plugins.py --live-network -v
 ```
 
-If `KISO_LLM_API_KEY` is not set, `--collect-only` is still useful to catch
+If `OPENROUTER_API_KEY` is not set, `--collect-only` is still useful to catch
 import/registration breakage in `tests/live/` and `tests/functional/`, but it
 is only a wiring check. Do not treat a successful collection run as evidence
 that provider timing, prompt behavior, or end-to-end runtime semantics are
@@ -256,9 +256,9 @@ jobs:
 
       - name: Live tests (Docker)
         env:
-          KISO_LLM_API_KEY: ${{ secrets.KISO_LLM_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          echo "KISO_LLM_API_KEY=$KISO_LLM_API_KEY" > .env
+          echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" > .env
           docker compose -f docker-compose.test.yml run --rm test-live
 ```
 

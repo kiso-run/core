@@ -4,7 +4,7 @@ F-proj-1: Project-scoped fact visible to bound session
 F-proj-2: Project-scoped fact invisible to other project's session
 F-proj-3: Global fact visible to all sessions
 
-Requires ``--functional`` flag and KISO_LLM_API_KEY.
+Requires ``--functional`` flag and OPENROUTER_API_KEY.
 """
 
 from __future__ import annotations

@@ -976,20 +976,20 @@ if [[ "$NEED_ENV" == true ]]; then
     if [[ -f "$ENV_FILE" ]]; then
         bold "Updating $ENV_FILE..."
         tmpfile="$(mktemp)"
-        grep -v '^KISO_LLM_API_KEY=' "$ENV_FILE" > "$tmpfile" || true
-        printf 'KISO_LLM_API_KEY=%s\n' "$API_KEY" >> "$tmpfile"
+        grep -v '^OPENROUTER_API_KEY=' "$ENV_FILE" > "$tmpfile" || true
+        printf 'OPENROUTER_API_KEY=%s\n' "$API_KEY" >> "$tmpfile"
         mv "$tmpfile" "$ENV_FILE"
         green "  .env updated (other entries preserved)"
     else
         bold "Creating $ENV_FILE..."
-        printf 'KISO_LLM_API_KEY=%s\n' "$API_KEY" > "$ENV_FILE"
+        printf 'OPENROUTER_API_KEY=%s\n' "$API_KEY" > "$ENV_FILE"
         green "  .env created"
     fi
 
-    # Safe read — extract only KISO_LLM_API_KEY without executing the file as a script
-    _api_key_check="$(grep -E '^KISO_LLM_API_KEY=' "$ENV_FILE" | cut -d= -f2- | head -1)"
+    # Safe read — extract only OPENROUTER_API_KEY without executing the file as a script
+    _api_key_check="$(grep -E '^OPENROUTER_API_KEY=' "$ENV_FILE" | cut -d= -f2- | head -1)"
     if [[ -z "$_api_key_check" ]]; then
-        yellow "  warning: KISO_LLM_API_KEY is empty in $ENV_FILE"
+        yellow "  warning: OPENROUTER_API_KEY is empty in $ENV_FILE"
     fi
     unset _api_key_check
 

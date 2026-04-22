@@ -26,9 +26,9 @@ dev = ["pytest>=8", "pytest-asyncio>=0.25", "pytest-xdist>=3.6", "httpx>=0.28", 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
-    "llm_live: tests that call real LLMs (requires --llm-live and KISO_LLM_API_KEY)",
+    "llm_live: tests that call real LLMs (requires --llm-live and OPENROUTER_API_KEY)",
     "live_network: tests that call external services (requires --live-network)",
-    "functional: full pipeline functional tests (requires --functional and KISO_LLM_API_KEY)",
+    "functional: full pipeline functional tests (requires --functional and OPENROUTER_API_KEY)",
     "destructive: functional tests with irreversible side effects (requires --destructive)",
     "integration: connector protocol integration tests (requires --integration)",
     "interactive: tests requiring real human interaction (requires --interactive)",

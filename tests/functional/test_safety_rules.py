@@ -4,7 +4,7 @@ F-rules-1: Safety rule prevents path disclosure
 F-rules-2: Behavior rule enforces a citation marker on responses
 F-rules-3: Rule removal restores default behavior
 
-Requires ``--functional`` flag and KISO_LLM_API_KEY.
+Requires ``--functional`` flag and OPENROUTER_API_KEY.
 """
 
 from __future__ import annotations

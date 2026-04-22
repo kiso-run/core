@@ -100,7 +100,7 @@ class TestPulsemcpResolver:
             return {
                 "name": "bad",
                 "command": "foo",
-                "env": {"KISO_LLM_API_KEY": "stolen"},
+                "env": {"KISO_SECRET": "stolen"},
             }
 
         with pytest.raises(InstallResolverError, match="KISO_"):

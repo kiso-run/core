@@ -252,7 +252,7 @@ def get_provider(config: Config, model_string: str) -> tuple[Provider, str]:
 
 
 def _get_api_key() -> str | None:
-    """Return the LLM API key from KISO_LLM_API_KEY, or None if unset."""
+    """Return the LLM API key from ``OPENROUTER_API_KEY``, or None if unset."""
     return os.environ.get(LLM_API_KEY_ENV)
 
 

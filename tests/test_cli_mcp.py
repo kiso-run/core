@@ -139,7 +139,7 @@ class TestAdd:
                     command="foo",
                     args=[],
                     cwd=None,
-                    env=["KISO_LLM_API_KEY=stolen"],
+                    env=["KISO_SECRET=stolen"],
                     url=None,
                     header=[],
                     timeout_s=60.0,
@@ -228,7 +228,7 @@ class TestEnv:
                 _ns(
                     mcp_env_command="set",
                     name="github",
-                    key="KISO_LLM_API_KEY",
+                    key="KISO_SECRET",
                     value="stolen",
                 )
             )

@@ -23,7 +23,7 @@ from kiso.store import init_db
 def pytest_addoption(parser):
     parser.addoption(
         "--llm-live", action="store_true", default=False,
-        help="Run live LLM integration tests (requires KISO_LLM_API_KEY)",
+        help="Run live LLM integration tests (requires OPENROUTER_API_KEY)",
     )
     parser.addoption(
         "--live-network", action="store_true", default=False,
@@ -31,7 +31,7 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--functional", action="store_true", default=False,
-        help="Run full pipeline functional tests (requires KISO_LLM_API_KEY)",
+        help="Run full pipeline functional tests (requires OPENROUTER_API_KEY)",
     )
     parser.addoption(
         "--destructive", action="store_true", default=False,
@@ -54,8 +54,8 @@ def pytest_addoption(parser):
 def pytest_collection_modifyitems(config, items):
     # --- llm_live gating ---
     if config.getoption("--llm-live"):
-        if not os.environ.get("KISO_LLM_API_KEY"):
-            skip = pytest.mark.skip(reason="KISO_LLM_API_KEY not set")
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            skip = pytest.mark.skip(reason="OPENROUTER_API_KEY not set")
             for item in items:
                 if "llm_live" in item.keywords:
                     item.add_marker(skip)
@@ -80,8 +80,8 @@ def pytest_collection_modifyitems(config, items):
         return next(item.iter_markers(name), None) is not None
 
     if config.getoption("--functional"):
-        if not os.environ.get("KISO_LLM_API_KEY"):
-            skip = pytest.mark.skip(reason="KISO_LLM_API_KEY not set")
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            skip = pytest.mark.skip(reason="OPENROUTER_API_KEY not set")
             for item in items:
                 if _has_marker(item, "functional"):
                     item.add_marker(skip)

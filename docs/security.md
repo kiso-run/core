@@ -196,7 +196,7 @@ API keys and tokens that wrappers/connectors need to function. Belong to the *de
 
 **Storage**: `~/.kiso/instances/{name}/.env` file, loaded into process environment at startup. Hot-reloadable via `POST /admin/reload-env`. **Never** in config files, never in the database.
 
-**Naming**: `KISO_TOOL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `KISO_LLM_API_KEY` for the LLM provider.
+**Naming**: `KISO_TOOL_{NAME}_{KEY}`, `KISO_CONNECTOR_{NAME}_{KEY}`, and `OPENROUTER_API_KEY` for the LLM provider.
 
 **Declaration** in `kiso.toml`:
 

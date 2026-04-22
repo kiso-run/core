@@ -287,7 +287,7 @@ the test there instead.
 
 ### Live and functional rerun limits
 
-When `KISO_LLM_API_KEY` is unavailable locally, use `--collect-only` only as a
+When `OPENROUTER_API_KEY` is unavailable locally, use `--collect-only` only as a
 suite-wiring check:
 
 - collection proves the tests still import, parse, and register correctly
