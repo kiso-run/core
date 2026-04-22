@@ -24,14 +24,18 @@ bypass it.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _TRANSPORTS = ("stdio", "http")
 _ENV_REF_RE = re.compile(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
+_SESSION_REF_RE = re.compile(r"\$\{session:([A-Za-z_][A-Za-z0-9_]*)\}")
+_SESSION_TOKEN_KINDS = ("workspace", "id")
 
 
 class MCPConfigError(Exception):
@@ -71,6 +75,80 @@ class MCPServer:
     # common
     enabled: bool = True
     timeout_s: float = 60.0
+
+    @property
+    def is_session_scoped(self) -> bool:
+        """True if any string field still contains a ``${session:*}`` token."""
+        return any(
+            _SESSION_REF_RE.search(s) is not None
+            for s in _iter_string_fields(self)
+        )
+
+
+def _iter_string_fields(server: MCPServer):
+    if server.command:
+        yield server.command
+    yield from server.args
+    yield from server.env.values()
+    if server.cwd:
+        yield server.cwd
+    if server.url:
+        yield server.url
+    yield from server.headers.values()
+    if server.auth:
+        for v in server.auth.values():
+            if isinstance(v, str):
+                yield v
+
+
+def resolve_session_tokens(
+    server: MCPServer, session_id: str, workspace: Path | str
+) -> MCPServer:
+    """Substitute ``${session:workspace}`` / ``${session:id}`` per session.
+
+    Returns the original object unchanged when the server has no
+    session tokens, so the manager can rely on identity to detect
+    shared (global-scope) clients.
+    """
+    if not server.is_session_scoped:
+        return server
+
+    mapping = {"workspace": str(workspace), "id": session_id}
+
+    def sub(value: str, field_path: str) -> str:
+        def _sub(match: re.Match[str]) -> str:
+            kind = match.group(1)
+            if kind not in _SESSION_TOKEN_KINDS:
+                raise MCPConfigError(
+                    f"[mcp.{server.name}]: {field_path} references "
+                    f"${{session:{kind}}} but only "
+                    f"${{session:workspace}} and ${{session:id}} are supported"
+                )
+            return mapping[kind]
+
+        return _SESSION_REF_RE.sub(_sub, value)
+
+    def sub_dict(d: dict[str, str], prefix: str) -> dict[str, str]:
+        return {k: sub(v, f"{prefix}.{k}") for k, v in d.items()}
+
+    def sub_auth(auth: dict[str, Any] | None) -> dict[str, Any] | None:
+        if auth is None:
+            return None
+        out: dict[str, Any] = {}
+        for k, v in auth.items():
+            out[k] = sub(v, f"auth.{k}") if isinstance(v, str) else v
+        return out
+
+    return dataclasses.replace(
+        server,
+        command=sub(server.command, "command") if server.command else None,
+        args=[sub(a, f"args[{i}]") for i, a in enumerate(server.args)],
+        env=sub_dict(server.env, "env"),
+        cwd=sub(server.cwd, "cwd") if server.cwd else None,
+        url=sub(server.url, "url") if server.url else None,
+        headers=sub_dict(server.headers, "headers"),
+        auth=sub_auth(server.auth),
+    )
 
 
 def parse_mcp_section(raw: dict | None) -> dict[str, MCPServer]:

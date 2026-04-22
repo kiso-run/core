@@ -42,8 +42,10 @@ class FakeManager:
     def is_available(self, name: str) -> bool:
         return self._available
 
-    async def call_method(self, server: str, method: str, args: dict):
-        self.call_args = (server, method, args)
+    async def call_method(
+        self, server: str, method: str, args: dict, *, session: str | None = None
+    ):
+        self.call_args = (server, method, args, session)
         if self._exc is not None:
             raise self._exc
         return self._return_value
@@ -134,7 +136,8 @@ class TestHappyPath:
         ctx = await _make_ctx(db, mgr)
         task_row = await _make_mcp_task_row(db)
         handler_result = await handler(ctx, task_row, 0, True, 0)
-        assert mgr.call_args == ("github", "create_issue", {"title": "bug", "body": "x"})
+        assert mgr.call_args[:3] == ("github", "create_issue", {"title": "bug", "body": "x"})
+        assert mgr.call_args[3] is not None
         assert handler_result.stop is False or handler_result.stop_success is not False
         # Task marked done in DB
         rows = await get_tasks_for_plan(db, task_row["plan_id"])

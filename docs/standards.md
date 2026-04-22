@@ -56,7 +56,8 @@ layer in kiso/core.
 **Kiso adds on top (the *Kiso MCP Runtime Policy*):**
 
 - Per-session client pool so concurrent sessions never share state
-  (M1512)
+  (keyed on `(server, scope)`; session-scoped servers use
+  `${session:workspace}` / `${session:id}` tokens resolved per call)
 - Scoped secret delivery through `~/.kiso/mcp/<name>.env` with
   strict 0600 permissions
 - Install, test, trust, and health CLI: `kiso mcp

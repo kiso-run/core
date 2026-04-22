@@ -109,7 +109,7 @@ async def _handle_mcp_task(
 
     try:
         raw_result = await ctx.mcp_manager.call_method(
-            server_name, method_name, args
+            server_name, method_name, args, session=ctx.session
         )
         # Some managers return a CallResult directly; some return the
         # raw dict. Adapter: both are supported. The test stubs return

@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import signal
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -63,16 +64,62 @@ CLIENT_VERSION = "0.9.0"
 _STDERR_RING_MAX_BYTES = 1 * 1024 * 1024  # 1 MB per server in memory
 _SHUTDOWN_GRACE_S = 5.0
 
+_WORLD_READABLE_BITS = stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
+
+
+def _read_env_file(server_name: str) -> dict[str, str]:
+    """Read ``~/.kiso/mcp/<server_name>.env`` if present and mode 0600.
+
+    Returns an empty dict on missing file or insecure mode (world-readable
+    files are refused — a stray 0644 creds file never reaches the
+    subprocess). ``KISO_*`` keys are dropped with a warning.
+    """
+    from kiso.mcp.envfile import env_file_path, parse_env_file_text
+
+    path = env_file_path(server_name)
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    if st.st_mode & _WORLD_READABLE_BITS:
+        log.warning(
+            "mcp[%s] refusing to load %s: mode 0%o is not 0600",
+            server_name, path, stat.S_IMODE(st.st_mode),
+        )
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        log.warning("mcp[%s] cannot read %s: %s", server_name, path, e)
+        return {}
+
+    out: dict[str, str] = {}
+    for key, value in parse_env_file_text(text).items():
+        if key.startswith("KISO_"):
+            log.warning(
+                "mcp[%s] %s sets reserved key %s — dropping",
+                server_name, path, key,
+            )
+            continue
+        out[key] = value
+    return out
+
 
 class MCPStdioClient(MCPClient):
     """Concrete MCP client over a local subprocess stdio transport."""
 
-    def __init__(self, server: MCPServer) -> None:
+    def __init__(
+        self,
+        server: MCPServer,
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
         if server.transport != "stdio":
             raise ValueError(
                 f"MCPStdioClient requires transport='stdio', got {server.transport!r}"
             )
         self._server = server
+        self._extra_env = dict(extra_env or {})
         self._proc: asyncio.subprocess.Process | None = None
         self._stdout_reader_task: asyncio.Task | None = None
         self._stderr_reader_task: asyncio.Task | None = None
@@ -309,15 +356,21 @@ class MCPStdioClient(MCPClient):
         )
 
     def _build_env(self) -> dict[str, str]:
-        """Inherit os.environ minus KISO_* secrets, overlay server env."""
+        """Assemble the subprocess env.
+
+        Layers (later wins):
+        1. ``os.environ`` minus ``KISO_*`` (kiso-internal secrets).
+        2. Server ``env`` from the config (already denied ``KISO_*`` at parse).
+        3. Session-scoped extra env (``MCPManager.set_session_env``).
+        4. ``~/.kiso/mcp/<name>.env`` — the user's persistent credential
+           file. It wins so ``kiso mcp env set`` is the authoritative
+           override.
+        5. ``OAUTH_TOKEN`` when the manager has resolved an OAuth token.
+        """
         base = {k: v for k, v in os.environ.items() if not k.startswith("KISO_")}
-        # Preserve explicit non-secret KISO_ vars if any exist (none today).
-        # Overlay server-specific env (already denied KISO_* at parse time).
         base.update(self._server.env)
-        # Inject resolved OAuth token (M1374) so the MCP server can
-        # read it from env. Convention: OAUTH_TOKEN is not standardized
-        # by the MCP spec but is the most common pattern for stdio
-        # servers that need auth.
+        base.update(self._extra_env)
+        base.update(_read_env_file(self._server.name))
         if self._auth_token:
             base["OAUTH_TOKEN"] = self._auth_token
         return base

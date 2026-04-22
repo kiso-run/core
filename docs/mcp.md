@@ -188,8 +188,22 @@ kiso mcp env <server> show             # show keys AND values (WARNING: secrets 
 ```
 
 Files live at `~/.kiso/mcp/<server>.env` with `0600` permissions.
-They are merged into the MCP subprocess environment at spawn time,
-layered on top of `os.environ` minus the `KISO_*` deny-list.
+They are merged into the MCP subprocess environment at spawn time
+and take precedence over the server's TOML `env` block — the `kiso
+mcp env` file is the authoritative user-owned credential store.
+
+Env layering (each later layer overrides the earlier):
+
+1. `os.environ` minus `KISO_*` (kiso-internal secrets).
+2. The server's `env` table in `[mcp.<name>]`.
+3. Session-scoped env (per-session secrets; injected only into
+   session-scoped clients — see below).
+4. `~/.kiso/mcp/<name>.env`.
+5. `OAUTH_TOKEN` when the manager has resolved an OAuth token.
+
+A present-but-insecure `<name>.env` (mode other than 0600) is
+skipped with a warning — the client refuses to load world-readable
+creds files.
 
 If a user pastes a secret in a chat message, Kiso's planner and
 messenger refuse to store it and redirect the user to the CLI.
@@ -222,6 +236,55 @@ When a server falls into category 3 and you're running Kiso on a
 machine without browser access, that specific server is not
 usable in your deployment. Look for a static-token alternative
 or ask the server author to add device-flow support.
+
+## Per-session client pool
+
+Kiso runs one MCP subprocess per `(server, scope)` pair. Two scopes
+exist:
+
+- **Global** — the default. Every session shares one subprocess.
+  Used for any server whose config has no `${session:*}` tokens.
+- **Per-session** — used for servers whose config references
+  `${session:workspace}` or `${session:id}` in any string field
+  (`command`, `args[*]`, `cwd`, `env.*`, `url`, `headers.*`,
+  `auth.*`). The tokens are resolved per call against the calling
+  session, so session A and session B get independent subprocesses
+  with independent workspaces and credentials.
+
+Example — a filesystem server that isolates per session:
+
+```toml
+[mcp.fs]
+transport = "stdio"
+command = "mcp-filesystem"
+args = ["--root", "${session:workspace}"]
+env = { SESSION_ID = "${session:id}" }
+```
+
+### Session secrets
+
+For rare cases where a session contributes a one-off secret that
+must NOT leak to other sessions (e.g. a scoped API key supplied in
+a user message), the per-session scope is the safety boundary.
+Setting a session env via `MCPManager.set_session_env(session,
+env)` reaches only the session-scoped clients spawned for that
+session. Global-scope clients never receive session env by
+construction — the pool key isolates them.
+
+### Eviction
+
+Two policies keep the per-session pool bounded:
+
+- **Idle** — a session-scoped client unused for
+  `mcp_session_idle_timeout` seconds (default 1800, clamp
+  60-7200) is gracefully shut down.
+- **LRU** — adding a new session-scoped client that would exceed
+  `mcp_max_session_clients_per_server` (default 32, clamp 1-256)
+  evicts the least-recently-used session client for that server
+  first.
+
+Global clients are never evicted — there is only one per server
+and the daemon needs it alive for config-driven liveness.
 
 ## Security
 

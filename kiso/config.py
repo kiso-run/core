@@ -100,6 +100,9 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     ("briefer_wrapper_filter_threshold", 10),
     ("briefer_mcp_method_filter_threshold", 10),
     ("briefer_skill_filter_threshold", 10),
+    # MCP per-session pool
+    ("mcp_session_idle_timeout", 1800),
+    ("mcp_max_session_clients_per_server", 32),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -234,6 +237,10 @@ briefer_enabled           = true     # LLM-based context selection for each pipe
 briefer_wrapper_filter_threshold = 10   # only invoke the briefer's wrapper-filtering pass when this many wrappers are available
 briefer_mcp_method_filter_threshold = 10   # only invoke the briefer's MCP method filtering pass when this many methods are exposed across all configured servers
 briefer_skill_filter_threshold = 10     # when the post-activation_hints catalog exceeds this count, delegate final skill selection to the briefer; below, pass all eligible skills through
+
+# --- MCP per-session client pool ---
+mcp_session_idle_timeout  = 1800     # shut down a per-session MCP client idle for this many seconds (60-7200)
+mcp_max_session_clients_per_server = 32  # LRU bound on per-session clients for a single MCP server (1-256)
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

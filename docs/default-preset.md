@@ -35,8 +35,10 @@ Tier 1 = Anthropic / Microsoft / GitHub upstream. Tier 2 =
 Reads and writes files under `${HOME}` by default. The path arg is
 hardcoded to `${env:HOME}` in the preset; edit
 `config.toml → [mcp.filesystem]` to restrict the accessible root.
-Per-session workspace scoping (so each kiso session sees only its
-own workspace) lands with M1512.
+For per-session workspace isolation, replace `${env:HOME}` with
+`${session:workspace}` — kiso then spawns a separate subprocess
+per session, each rooted in its own workspace directory. See
+`docs/mcp.md` under *Per-session client pool*.
 
 ### `memory`
 

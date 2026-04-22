@@ -449,18 +449,11 @@ def _env_file(name: str) -> Path:
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
+    from kiso.mcp.envfile import parse_env_file_text
+
     if not path.exists():
         return {}
-    out: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        out[k.strip()] = v
-    return out
+    return parse_env_file_text(path.read_text(encoding="utf-8"))
 
 
 def _write_env_file(path: Path, values: dict[str, str]) -> None:
