@@ -1217,21 +1217,36 @@ def filter_mcp_catalog_by_user(
     return "\n".join(kept_lines)
 
 
+_MCP_CATALOG_LINE_BUDGET = 200
+
+_MCP_TYPE_LABELS = {
+    "string": "string",
+    "integer": "int",
+    "number": "number",
+    "boolean": "bool",
+    "array": "list",
+    "object": "dict",
+    "null": "null",
+}
+
+
 def format_mcp_catalog(manager: "Any") -> str:
     """Render an MCPManager-like object's *cached* catalog as briefer text.
 
-    Produces a flat string with one ``- server:method — description`` line
-    per known method, suitable for direct inclusion under the briefer's
-    ``## Available MCP Methods`` section. The bullet-then-qualified-name
-    format is intentional: it matches the regex used by
+    Produces one ``- server:method(args) — description`` line per known
+    method, where ``(args)`` is a compact summary of the ``input_schema``
+    — required args first, optional args marked ``?``. The bullet-then-
+    qualified-name format matches the regex used by
     ``_filter_briefer_names`` so the same text is both the prompt input
     and the post-validation pool.
 
-    *Cached only*: this function never spawns a server. It calls
-    ``available_servers()`` then ``list_methods_cached_only(name)`` per
-    server. A server with no cached methods (never queried, or empty
-    response) contributes no lines. This makes the call cheap enough to
-    invoke on every plan without paying connection setup costs.
+    Each line is bounded at ``_MCP_CATALOG_LINE_BUDGET`` chars; the
+    args segment truncates with ``...`` when it would overflow. Methods
+    without a cached schema, or with an empty-properties schema, render
+    the legacy ``- server:method — description`` form.
+
+    *Cached only*: never spawns a server. Calls ``available_servers()``
+    and ``list_methods_cached_only(name)`` per server.
     """
     if manager is None:
         return ""
@@ -1246,12 +1261,56 @@ def format_mcp_catalog(manager: "Any") -> str:
         except Exception:  # pragma: no cover — defensive
             continue
         for m in methods:
-            qualified = f"{server}:{m.name}"
-            if m.description:
-                lines.append(f"- {qualified} — {m.description}")
-            else:
-                lines.append(f"- {qualified}")
+            lines.append(_format_mcp_method_line(server, m))
     return "\n".join(lines)
+
+
+def _format_mcp_method_line(server: str, method: "Any") -> str:
+    qualified = f"{server}:{method.name}"
+    args_str = _format_schema_summary(method.input_schema)
+    head = f"- {qualified}{args_str}"
+    if method.description:
+        line = f"{head} — {method.description}"
+    else:
+        line = head
+    if len(line) <= _MCP_CATALOG_LINE_BUDGET:
+        return line
+    return line[: _MCP_CATALOG_LINE_BUDGET - 3] + "..."
+
+
+def _format_schema_summary(schema: Any) -> str:
+    if not isinstance(schema, dict):
+        return ""
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or not properties:
+        return ""
+    required = schema.get("required")
+    required_set = set(required) if isinstance(required, list) else set()
+
+    required_parts: list[str] = []
+    optional_parts: list[str] = []
+    for name, prop in properties.items():
+        type_label = _format_type_label(prop)
+        if name in required_set:
+            required_parts.append(f"{name}:{type_label}")
+        else:
+            optional_parts.append(f"{name}:{type_label}?")
+    all_parts = required_parts + optional_parts
+    if not all_parts:
+        return ""
+    return f"({', '.join(all_parts)})"
+
+
+def _format_type_label(prop: Any) -> str:
+    if not isinstance(prop, dict):
+        return "any"
+    t = prop.get("type")
+    if isinstance(t, list):
+        labels = [_MCP_TYPE_LABELS.get(tt, tt) for tt in t if isinstance(tt, str)]
+        return "|".join(labels) if labels else "any"
+    if isinstance(t, str):
+        return _MCP_TYPE_LABELS.get(t, t)
+    return "any"
 
 
 def _prefilter_context_pool(

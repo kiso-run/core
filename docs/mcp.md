@@ -237,6 +237,49 @@ machine without browser access, that specific server is not
 usable in your deployment. Look for a static-token alternative
 or ask the server author to add device-flow support.
 
+## Argument schema visibility and pre-flight validation
+
+Each MCP method ships an `inputSchema` describing the arguments
+it accepts. Kiso surfaces a compact summary of that schema to the
+planner and uses the full schema to validate args *before* calling
+the server.
+
+### What the planner sees
+
+The MCP catalog — rendered under `## Available MCP Methods` in the
+briefer/planner prompt — shows one line per method of the form:
+
+```
+- <server>:<method>(arg:type, optional_arg:type?) — description
+```
+
+Required args are listed first; optional args are marked with `?`.
+Types collapse to readable labels: `string`, `int`, `number`,
+`bool`, `list` (from `array`), `dict` (from `object`). The whole
+line truncates at 200 characters with `...` if it would overflow,
+so a chatty server cannot blow the budget.
+
+A method with an empty schema or no `properties` renders the
+legacy form `- <server>:<method> — description` without parens.
+
+### Pre-flight validation
+
+Before dispatching an MCP task, the worker compares the task's
+`args` against the cached `inputSchema` for that method. Schema-
+bad args never reach the subprocess — they fail the task with a
+concrete error like `'body' is required` or
+`labels must be array (got str)`, and the reviewer routes to
+replan with that error as the reason.
+
+This replaces the previous "burn a full replan on an opaque
+subprocess error" path: the planner gets precise, schema-
+anchored feedback and usually fixes the args on the next plan.
+The planner's own `validate_plan` also runs this check so bad
+args are caught even earlier when the schema is already cached.
+
+The gate is permissive when no schema is cached (server hasn't
+been queried yet) or the schema is empty — same as today.
+
 ## Per-session client pool
 
 Kiso runs one MCP subprocess per `(server, scope)` pair. Two scopes

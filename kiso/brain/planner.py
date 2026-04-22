@@ -278,9 +278,8 @@ def _validate_plan_tasks(
                             f"(known methods: {sorted(known)[:5]})"
                         )
                     else:
-                        # Validate args against the method's inputSchema
-                        # via jsonschema. Failure yields a precise error
-                        # naming the offending property.
+                        from kiso.mcp.validate import validate_mcp_args
+
                         target = next(m for m in methods if m.name == method)
                         args_raw = task.get("args")
                         if args_raw is None:
@@ -292,25 +291,11 @@ def _validate_plan_tasks(
                                 f"Task {i}: mcp args must be a JSON object"
                             )
                             args_dict = None  # type: ignore[assignment]
-                        if args_dict is not None and target.input_schema:
-                            try:
-                                import jsonschema  # runtime dep
-                                jsonschema.validate(
-                                    instance=args_dict,
-                                    schema=target.input_schema,
-                                )
-                            except jsonschema.ValidationError as e:
-                                # Drop newlines so the retry feedback stays
-                                # on a single line.
-                                msg = str(e).replace("\n", " ")
+                        if args_dict is not None:
+                            for msg in validate_mcp_args(target.input_schema, args_dict):
                                 errors.append(
                                     f"Task {i}: mcp args invalid against "
                                     f"{server}:{method} inputSchema: {msg}"
-                                )
-                            except Exception as e:  # noqa: BLE001
-                                errors.append(
-                                    f"Task {i}: mcp args schema validation "
-                                    f"failed: {e}"
                                 )
 
     if replan_count > 1:

@@ -32,7 +32,22 @@ from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPTransportError,
 )
+from kiso.mcp.validate import validate_mcp_args
 from kiso.worker.utils import _session_workspace
+
+
+def _preflight_validate(
+    manager: Any, server: str, method: str, args: dict
+) -> list[str]:
+    """Validate ``args`` against the cached schema for ``server:method``.
+
+    Returns ``[]`` when the schema is absent or the args satisfy it;
+    otherwise one error string per violation.
+    """
+    for m in manager.list_methods_cached_only(server):
+        if m.name == method:
+            return validate_mcp_args(m.input_schema, args)
+    return []
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +117,17 @@ async def _handle_mcp_task(
         return await _fail_task_and_audit(
             ctx, task_id, "mcp", detail, setup_error, i + 1,
             replan_reason=f"MCP task setup failed: {setup_error}",
+        )
+
+    schema_errors = _preflight_validate(ctx.mcp_manager, server_name, method_name, args)
+    if schema_errors:
+        joined = "; ".join(schema_errors)
+        msg = (
+            f"MCP {server_name}:{method_name} args invalid: {joined}"
+        )
+        return await _fail_task_and_audit(
+            ctx, task_id, "mcp", detail, msg, i + 1,
+            replan_reason=msg,
         )
 
     t0 = time.perf_counter()

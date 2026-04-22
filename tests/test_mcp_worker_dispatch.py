@@ -42,6 +42,9 @@ class FakeManager:
     def is_available(self, name: str) -> bool:
         return self._available
 
+    def list_methods_cached_only(self, name: str) -> list:
+        return []
+
     async def call_method(
         self, server: str, method: str, args: dict, *, session: str | None = None
     ):
