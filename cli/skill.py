@@ -26,8 +26,20 @@ from kiso.skill_loader import (
     invalidate_skills_cache,
     parse_skill_file,
 )
+from kiso.skill_install import (
+    ResolvedSkill,
+    SkillInstallError,
+    install_resolved,
+    resolve_from_url,
+)
 
 SKILLS_DIR: Path = _DEFAULT_SKILLS_DIR
+
+# Test hooks — overridden by tests to inject offline fetchers.
+_http_fetcher = None
+_git_cloner = None
+_zip_fetcher = None
+_agentskills_resolver = None
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +72,30 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
     rm.add_argument("name", help="skill name")
     rm.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
 
+    install = s.add_parser(
+        "install",
+        help="install an Agent Skill from a URL (github / raw SKILL.md / zip / agentskills.io)",
+    )
+    install.add_argument("--from-url", dest="from_url", required=True, help="source URL")
+    install.add_argument("--name", default=None, help="override the sanitized name")
+    install.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="print the install plan without executing",
+    )
+    install.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="skip confirmation prompts",
+    )
+    install.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing skill of the same name",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Dispatcher
@@ -69,7 +105,7 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
 def handle(args: argparse.Namespace) -> int:
     cmd = getattr(args, "skill_command", None)
     if cmd is None:
-        print("usage: kiso skill {list|info|add|remove}")
+        print("usage: kiso skill {list|info|add|remove|install}")
         return 2
     if cmd == "list":
         return _cmd_list()
@@ -79,6 +115,8 @@ def handle(args: argparse.Namespace) -> int:
         return _cmd_add(args)
     if cmd == "remove":
         return _cmd_remove(args)
+    if cmd == "install":
+        return _cmd_install(args)
     die(f"unknown skill subcommand: {cmd}")
     return 2  # unreachable
 
@@ -243,6 +281,57 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     invalidate_skills_cache()
     print(f"removed skill {args.name!r}")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# install --from-url
+# ---------------------------------------------------------------------------
+
+
+def _cmd_install(args: argparse.Namespace) -> int:
+    try:
+        resolved = resolve_from_url(
+            args.from_url,
+            name_hint=args.name,
+            agentskills_resolver=_agentskills_resolver,
+        )
+    except SkillInstallError as exc:
+        die(str(exc))
+
+    _print_install_plan(resolved)
+    if args.dry_run:
+        print("(dry run; no changes written)")
+        return 0
+
+    try:
+        path = install_resolved(
+            resolved,
+            target_dir=SKILLS_DIR,
+            http_fetcher=_http_fetcher,
+            git_cloner=_git_cloner,
+            zip_fetcher=_zip_fetcher,
+            force=args.force,
+        )
+    except SkillInstallError as exc:
+        die(str(exc))
+
+    invalidate_skills_cache()
+    print(f"installed skill → {path.parent}")
+    return 0
+
+
+def _print_install_plan(resolved: ResolvedSkill) -> None:
+    print(f"Resolved skill: {resolved.staging_name}")
+    print(f"  source: {resolved.source_url}")
+    print(f"  type: {resolved.source_type}")
+    if resolved.clone_url:
+        print(f"  clone: {resolved.clone_url}")
+    if resolved.ref:
+        print(f"  ref: {resolved.ref}")
+    if resolved.subpath:
+        print(f"  subpath: {resolved.subpath}")
+    if resolved.local_path:
+        print(f"  local: {resolved.local_path}")
 
 
 # ---------------------------------------------------------------------------

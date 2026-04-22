@@ -122,6 +122,11 @@ kiso skill add <path>                 # copy a local dir or .md into ~/.kiso/ski
 kiso skill add <path> --yes           # overwrite an existing skill of the same name
 kiso skill remove <name>              # remove an installed skill
 kiso skill remove <name> --yes        # skip the confirmation prompt
+
+kiso skill install --from-url <url>                 # install from a URL
+kiso skill install --from-url <url> --name foo      # override the skill name
+kiso skill install --from-url <url> --dry-run       # print plan, don't fetch
+kiso skill install --from-url <url> --force         # overwrite if already installed
 ```
 
 `add` accepts either a skill directory (with `SKILL.md` inside)
@@ -129,10 +134,41 @@ or a single `.md` file. The canonical loader validates naming
 and frontmatter before copying, so anything that installs cleanly
 will also parse cleanly at runtime.
 
-URL-based install (`kiso skill install --from-url …`) and
-`kiso skill test` are handled by separate subcommands layered on
-the trust tiers; see `docs/recommended-skills.md` for curated
-sources once those land.
+## URL forms for `install --from-url`
+
+All URL forms are resolved offline into a normalised plan; network
+calls happen only when the plan is executed (skip with `--dry-run`).
+
+- **Github repo** — `https://github.com/<owner>/<repo>`: git-clone
+  the whole repo. If there's a top-level `SKILL.md`, the entire
+  repo becomes the skill (sibling files come along); if there's
+  exactly one `skills/<name>/SKILL.md`, that subdirectory is
+  installed. A repo with multiple `skills/*` entries fails with a
+  hint to narrow the URL.
+- **Github tree subpath** — `https://github.com/<owner>/<repo>/tree/<ref>/<path>`:
+  clone at `<ref>`, install the named subpath. Use this when a
+  kit repo ships multiple skills.
+- **Raw `SKILL.md`** — any URL whose path ends `SKILL.md` or
+  `skill.md`, e.g. `https://raw.githubusercontent.com/.../SKILL.md`:
+  fetch the single file; the install becomes `<name>/SKILL.md`
+  where `<name>` is taken from the skill's own frontmatter.
+- **Zip archive** — `*.zip` URL: download + unpack; the archive
+  must contain either a top-level `SKILL.md` or exactly one
+  `skills/<name>/SKILL.md`.
+- **`agentskills.io`** — `https://agentskills.io/skills/<slug>`:
+  the resolver follows the redirect to the backing Github URL
+  and re-runs the install from there.
+- **Local path** — a path that exists on disk: delegates to the
+  same copy path as `kiso skill add`.
+
+Every URL install writes `<name>/.provenance.json` recording the
+source URL, source type, optional git ref + subpath, and install
+timestamp. Inspect with `kiso skill info <name>` once M1530's
+metadata surface lands; for now the file is visible on disk.
+
+The trust-tier surface (`kiso skill test`, untrusted-source
+warnings, recommended-skills registry) is covered by M1515; this
+milestone wires the hook point.
 
 ## See also
 

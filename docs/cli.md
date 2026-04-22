@@ -425,11 +425,22 @@ kiso skill add <path>                 # copy a local skill dir or .md into ~/.ki
 kiso skill add <path> --yes           # overwrite an existing skill of the same name
 kiso skill remove <name>              # remove an installed skill
 kiso skill remove <name> --yes        # skip the confirmation prompt
+
+kiso skill install --from-url <url>             # install from URL
+kiso skill install --from-url <url> --dry-run   # print plan, don't fetch
+kiso skill install --from-url <url> --force     # overwrite if already installed
 ```
 
 `add` validates the skill's naming convention and YAML frontmatter
 via the same loader the runtime uses, so a skill that installs
 cleanly will also parse cleanly at runtime.
+
+`install --from-url` accepts github repo URLs, github
+`/tree/<ref>/<path>` URLs, raw `SKILL.md` URLs, `*.zip` URLs,
+`agentskills.io/skills/<slug>`, or a local path. Every URL
+install writes a `.provenance.json` next to the skill recording
+the source URL, type, and install time. See
+`docs/skills.md → URL forms` for the full matrix.
 
 ## Connector Management
 
