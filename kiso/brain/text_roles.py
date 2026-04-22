@@ -216,6 +216,7 @@ def build_messenger_messages(
     briefing_context: str | None = None,
     behavior_rules: list[str] | None = None,
     memory_pack: MemoryPack | None = None,
+    selected_skills: list | None = None,
 ) -> list[dict]:
     """Build the message list for the messenger LLM call.
 
@@ -276,6 +277,25 @@ def build_messenger_messages(
         _add_section(context_parts, "Behavior Guidelines (follow these preferences)",
                      "\n".join(f"- {r}" for r in behavior_rules))
     _add_section(context_parts, "Preceding Task Outputs", plan_outputs_text)
+
+    # Skill-projected ## Messenger sections — populated when the
+    # briefer / planner selected a skill with messenger-role guidance.
+    if selected_skills:
+        skill_lines: list[str] = []
+        for skill in selected_skills:
+            body = None
+            sections = getattr(skill, "role_sections", None)
+            if isinstance(sections, dict):
+                body = sections.get("messenger")
+            if not body:
+                continue
+            skill_lines.append(f"### {getattr(skill, 'name', 'skill')}")
+            skill_lines.append(body.strip())
+        if skill_lines:
+            context_parts.append(
+                "## Skills (output style)\n" + "\n\n".join(skill_lines)
+            )
+
     context_parts.append(f"## Task\n{detail}")
     return _build_messages_from_sections(system_prompt, context_parts)
 
@@ -290,6 +310,7 @@ async def run_messenger(
     include_recent: bool = False,
     user_message: str = "",
     briefing_context: str | None = None,
+    selected_skills: "list | None" = None,
 ) -> str:
     """Run the messenger: generate a user-facing response.
 
@@ -332,7 +353,7 @@ async def run_messenger(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
         recent_messages=recent or None, user_message=user_message,
         briefing_context=briefing_context, behavior_rules=behavior_rules,
-        memory_pack=memory_pack,
+        memory_pack=memory_pack, selected_skills=selected_skills,
     )
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
     return await _run_text_role(

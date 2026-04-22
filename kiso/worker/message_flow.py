@@ -143,6 +143,7 @@ async def _msg_task_impl(
     briefer_timeout: float = _BRIEFER_MSG_TIMEOUT,
     run_briefer_fn=run_briefer,
     run_messenger_fn=run_messenger,
+    selected_skills: list | None = None,
 ) -> str:
     """Generate a user-facing message via the messenger brain role."""
     if response_lang:
@@ -235,6 +236,7 @@ async def _msg_task_impl(
         include_recent=include_recent,
         user_message=user_message,
         briefing_context=briefing_context,
+        selected_skills=selected_skills,
     )
 
 

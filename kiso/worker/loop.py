@@ -299,6 +299,7 @@ async def _msg_task(
     user_message: str = "",
     on_briefer_done: "Callable | None" = None,
     response_lang: str = "",
+    selected_skills: list | None = None,
 ) -> str:
     """Generate a user-facing message via the messenger brain role."""
     return await _msg_task_impl(
@@ -315,6 +316,7 @@ async def _msg_task(
         briefer_timeout=_BRIEFER_MSG_TIMEOUT,
         run_briefer_fn=run_briefer,
         run_messenger_fn=run_messenger,
+        selected_skills=selected_skills,
     )
 
 
@@ -845,6 +847,7 @@ async def _handle_msg_task(
                     user_message=ctx.user_message,
                     on_briefer_done=_flush_briefer,
                     response_lang=ctx.response_lang,
+                    selected_skills=ctx.selected_skills,
                 ),
                 timeout=ctx.messenger_timeout,
             )
