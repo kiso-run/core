@@ -410,6 +410,27 @@ concrete URLs (`uvx --from git+https://…`, `npx -y @org/…`) and
 live in `~/.kiso/mcp/<name>.json` with optional
 `~/.kiso/mcp/<name>.env` for secrets.
 
+## Skill Management
+
+Agent Skills are the role-scoped instruction primitive for kiso's
+planner / worker / reviewer / messenger. They live under
+`~/.kiso/skills/` either as a directory (`<name>/SKILL.md` plus
+optional `scripts/`, `references/`, `assets/`) or as a single
+`<name>.md` file. See `docs/skills.md` for the authoring guide.
+
+```bash
+kiso skill list                       # list installed skills
+kiso skill info <name>                # show metadata + role sections
+kiso skill add <path>                 # copy a local skill dir or .md into ~/.kiso/skills/
+kiso skill add <path> --yes           # overwrite an existing skill of the same name
+kiso skill remove <name>              # remove an installed skill
+kiso skill remove <name> --yes        # skip the confirmation prompt
+```
+
+`add` validates the skill's naming convention and YAML frontmatter
+via the same loader the runtime uses, so a skill that installs
+cleanly will also parse cleanly at runtime.
+
 ## Connector Management
 
 Only admins can install, update, and remove connectors.

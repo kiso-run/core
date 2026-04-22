@@ -414,6 +414,12 @@ def build_parser() -> argparse.ArgumentParser:
     mcp = sub.add_parser("mcp", help="manage MCP servers (consumer-only)")
     _add_mcp_subcommands(mcp)
 
+    # Skill — Agent Skills in ~/.kiso/skills/
+    from cli.skill import add_subcommands as _add_skill_subcommands
+
+    skill = sub.add_parser("skill", help="manage Agent Skills")
+    _add_skill_subcommands(skill)
+
     # Init — create ~/.kiso/config.toml from a bundled preset
     init_p = sub.add_parser(
         "init",
@@ -445,6 +451,10 @@ def main() -> None:
         from cli.mcp import handle as run_mcp_command
 
         sys.exit(run_mcp_command(args))
+    elif args.command == "skill":
+        from cli.skill import handle as run_skill_command
+
+        sys.exit(run_skill_command(args))
     elif args.command == "init":
         from cli.init import run_init_command
 
