@@ -1597,8 +1597,26 @@ async def run_worker(
     if config.mcp_servers:
         try:
             from kiso.mcp.manager import MCPManager
+            from kiso.mcp.warmup import warm_catalog
             _mcp_manager = MCPManager(config.mcp_servers)
             log.info("MCPManager constructed for %d server(s)", len(config.mcp_servers))
+            # Fire-and-forget catalog warm-up so the first message's
+            # planner sees a non-empty MCP catalog. Bounded by
+            # mcp_warmup_concurrency + mcp_warmup_deadline_s.
+            _warmup_concurrency = setting_int(
+                config.settings, "mcp_warmup_concurrency", lo=1, hi=16,
+            )
+            _warmup_deadline = float(setting_int(
+                config.settings, "mcp_warmup_deadline_s", lo=1, hi=120,
+            ))
+            asyncio.create_task(
+                warm_catalog(
+                    _mcp_manager,
+                    concurrency=_warmup_concurrency,
+                    deadline_s=_warmup_deadline,
+                ),
+                name=f"mcp-warmup-{session}",
+            )
         except Exception as exc:
             log.warning("Failed to construct MCPManager: %s", exc)
 

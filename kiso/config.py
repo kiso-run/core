@@ -103,6 +103,9 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     # MCP per-session pool
     ("mcp_session_idle_timeout", 1800),
     ("mcp_max_session_clients_per_server", 32),
+    # MCP catalog warm-up (daemon boot)
+    ("mcp_warmup_concurrency", 3),
+    ("mcp_warmup_deadline_s", 10),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -241,6 +244,8 @@ briefer_skill_filter_threshold = 10     # when the post-activation_hints catalog
 # --- MCP per-session client pool ---
 mcp_session_idle_timeout  = 1800     # shut down a per-session MCP client idle for this many seconds (60-7200)
 mcp_max_session_clients_per_server = 32  # LRU bound on per-session clients for a single MCP server (1-256)
+mcp_warmup_concurrency    = 3        # parallelism for daemon-boot MCP catalog warm-up (1-16)
+mcp_warmup_deadline_s     = 10       # total wall-clock deadline for warm-up to complete (1-120)
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check
