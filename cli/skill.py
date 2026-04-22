@@ -16,6 +16,7 @@ plugin types expose the same ergonomics.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 from pathlib import Path
 
@@ -72,6 +73,17 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
     rm.add_argument("name", help="skill name")
     rm.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
 
+    trust = s.add_parser("trust", help="manage install-time trust prefixes")
+    t = trust.add_subparsers(dest="skill_trust_command")
+    t.add_parser("list", help="list hardcoded + custom trust prefixes")
+    ta = t.add_parser("add", help="add a user trust prefix")
+    ta.add_argument("prefix", help="prefix (literal or glob ending with *)")
+    tr = t.add_parser("remove", help="remove a user trust prefix")
+    tr.add_argument("prefix", help="prefix to remove")
+
+    tst = s.add_parser("test", help="audit an installed skill")
+    tst.add_argument("name", help="skill name")
+
     install = s.add_parser(
         "install",
         help="install an Agent Skill from a URL (github / raw SKILL.md / zip / agentskills.io)",
@@ -117,6 +129,10 @@ def handle(args: argparse.Namespace) -> int:
         return _cmd_remove(args)
     if cmd == "install":
         return _cmd_install(args)
+    if cmd == "trust":
+        return _cmd_trust(args)
+    if cmd == "test":
+        return _cmd_test(args)
     die(f"unknown skill subcommand: {cmd}")
     return 2  # unreachable
 
@@ -289,6 +305,8 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
+    from kiso import skill_trust
+
     try:
         resolved = resolve_from_url(
             args.from_url,
@@ -303,6 +321,22 @@ def _cmd_install(args: argparse.Namespace) -> int:
         print("(dry run; no changes written)")
         return 0
 
+    source_key = skill_trust.source_key_for_url(args.from_url)
+    tier = skill_trust.is_trusted(source_key)
+    if tier == "untrusted" and not args.yes:
+        print(f"\n⚠  untrusted source: {source_key}")
+        print(
+            "   Tier 1 prefixes are hardcoded (Anthropic / kiso-run);"
+            " add your own via `kiso skill trust add`."
+        )
+        confirm = input("Install anyway? [y/N] ").strip().lower()
+        if confirm != "y":
+            print("aborted")
+            return 1
+    trust_tier_for_provenance = (
+        tier if tier != "untrusted" else "untrusted-user-approved"
+    )
+
     try:
         path = install_resolved(
             resolved,
@@ -311,9 +345,16 @@ def _cmd_install(args: argparse.Namespace) -> int:
             git_cloner=_git_cloner,
             zip_fetcher=_zip_fetcher,
             force=args.force,
+            trust_tier=trust_tier_for_provenance,
         )
     except SkillInstallError as exc:
         die(str(exc))
+
+    risks = skill_trust.detect_risk_factors(path.parent)
+    if risks:
+        print("risk factors detected:")
+        for r in risks:
+            print(f"  - {r}")
 
     invalidate_skills_cache()
     print(f"installed skill → {path.parent}")
@@ -335,6 +376,106 @@ def _print_install_plan(resolved: ResolvedSkill) -> None:
 
 
 # ---------------------------------------------------------------------------
+# trust — user-extensible install-time allowlist
+# ---------------------------------------------------------------------------
+
+
+def _cmd_trust(args: argparse.Namespace) -> int:
+    from kiso.skill_trust import SKILL_TIER1_PREFIXES
+    from kiso.trust_store import add_prefix, load_trust_store, remove_prefix
+
+    sub = getattr(args, "skill_trust_command", None)
+    if sub is None or sub == "list":
+        print("tier1 (hardcoded):")
+        for p in SKILL_TIER1_PREFIXES:
+            print(f"  {p}")
+        store = load_trust_store()
+        if store.skill:
+            print("custom (user):")
+            for p in store.skill:
+                print(f"  {p}")
+        else:
+            print("custom (user): (none)")
+        return 0
+    if sub == "add":
+        add_prefix("skill", args.prefix)
+        print(f"added skill trust prefix: {args.prefix}")
+        return 0
+    if sub == "remove":
+        remove_prefix("skill", args.prefix)
+        print(f"removed skill trust prefix: {args.prefix}")
+        return 0
+    die(f"unknown trust subcommand: {sub}")
+    return 2
+
+
+# ---------------------------------------------------------------------------
+# test — local skill audit
+# ---------------------------------------------------------------------------
+
+
+def _cmd_test(args: argparse.Namespace) -> int:
+    skill_path = _resolve_skill_path(args.name)
+    if skill_path is None:
+        die(f"no such skill: {args.name!r}")
+
+    skill_md = skill_path / "SKILL.md" if skill_path.is_dir() else skill_path
+    parsed = parse_skill_file(skill_md)
+    if parsed is None:
+        print(f"✗ {args.name}: frontmatter invalid or missing required fields")
+        return 1
+
+    warnings: list[str] = []
+    warnings.extend(_check_referenced_paths(skill_md, skill_path))
+    warnings.extend(_check_allowed_tools(parsed))
+
+    print(f"✓ {args.name}: frontmatter ok (name={parsed.name})")
+    if parsed.role_sections:
+        roles = ", ".join(sorted(parsed.role_sections.keys()))
+        print(f"  role sections: {roles}")
+    if warnings:
+        print("warnings:")
+        for w in warnings:
+            print(f"  - {w}")
+    else:
+        print("  no warnings")
+    return 0
+
+
+_MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+
+def _check_referenced_paths(skill_md: Path, skill_root: Path) -> list[str]:
+    warnings: list[str] = []
+    body = skill_md.read_text(encoding="utf-8", errors="replace")
+    for match in _MARKDOWN_LINK_RE.finditer(body):
+        link = match.group(1).strip()
+        if link.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        if skill_root.is_dir():
+            target = (skill_root / link).resolve()
+            if not target.exists():
+                warnings.append(f"broken relative link: {link}")
+    return warnings
+
+
+def _check_allowed_tools(skill) -> list[str]:
+    if not skill.allowed_tools:
+        return []
+    warnings: list[str] = []
+    for tok in _ALLOWED_TOOLS_BASH_RE.findall(skill.allowed_tools):
+        binary = tok.split()[0]
+        if binary and binary != "*" and shutil.which(binary) is None:
+            warnings.append(
+                f"allowed-tools references '{binary}' which is not on PATH"
+            )
+    return warnings
+
+
+_ALLOWED_TOOLS_BASH_RE = re.compile(r"Bash\(\s*([^)]+?)\s*\)")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -343,4 +484,14 @@ def _find_skill(name: str):
     for s in discover_skills(SKILLS_DIR):
         if s.name == name:
             return s
+    return None
+
+
+def _resolve_skill_path(name: str) -> Path | None:
+    dir_target = SKILLS_DIR / name
+    file_target = SKILLS_DIR / f"{name}.md"
+    if dir_target.is_dir():
+        return dir_target
+    if file_target.is_file():
+        return file_target
     return None

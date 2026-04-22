@@ -402,7 +402,11 @@ install and runtime guide.
 ```bash
 kiso mcp list                                                       # list installed servers
 kiso mcp install --from-url <uvx-or-npx-command>                    # install from URL
+kiso mcp install --from-url <url> --yes                             # skip the untrusted-source prompt
 kiso mcp remove <name>
+kiso mcp trust list                                                 # tier1 + user-custom prefixes
+kiso mcp trust add <prefix>                                         # extend the user allowlist
+kiso mcp trust remove <prefix>
 ```
 
 No Kiso-maintained wrapper registry exists. Servers install from
@@ -429,6 +433,12 @@ kiso skill remove <name> --yes        # skip the confirmation prompt
 kiso skill install --from-url <url>             # install from URL
 kiso skill install --from-url <url> --dry-run   # print plan, don't fetch
 kiso skill install --from-url <url> --force     # overwrite if already installed
+kiso skill install --from-url <url> --yes       # skip the untrusted-source prompt
+
+kiso skill test <name>                          # audit an installed skill
+kiso skill trust list                           # tier1 + user-custom prefixes
+kiso skill trust add <prefix>                   # extend the user allowlist
+kiso skill trust remove <prefix>
 ```
 
 `add` validates the skill's naming convention and YAML frontmatter

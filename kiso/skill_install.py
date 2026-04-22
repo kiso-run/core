@@ -252,6 +252,7 @@ def install_resolved(
     git_cloner: Callable[[str, Path, str | None], None] | None = None,
     zip_fetcher: Callable[[str], bytes] | None = None,
     force: bool = False,
+    trust_tier: str | None = None,
 ) -> Path:
     """Perform the fetch described by *resolved* and install into ``target_dir``.
 
@@ -259,6 +260,9 @@ def install_resolved(
     directory name comes from the skill's own frontmatter ``name``,
     not the URL — this mirrors ``kiso skill add`` and guarantees
     runtime lookup consistency.
+
+    *trust_tier*, when provided, is recorded in ``.provenance.json``
+    alongside the source metadata.
     """
     target_root = target_dir if target_dir is not None else _DEFAULT_SKILLS_DIR
     target_root.mkdir(parents=True, exist_ok=True)
@@ -290,7 +294,7 @@ def install_resolved(
             skill_root = skill_md.parent
             shutil.copytree(skill_root, dest_dir)
 
-        write_provenance(dest_dir, resolved)
+        write_provenance(dest_dir, resolved, trust_tier=trust_tier)
         return dest_dir / "SKILL.md"
 
 
@@ -385,11 +389,16 @@ def _locate_skill_md_in_repo(
 # ---------------------------------------------------------------------------
 
 
-def write_provenance(skill_dir: Path, resolved: ResolvedSkill) -> None:
+def write_provenance(
+    skill_dir: Path,
+    resolved: ResolvedSkill,
+    *,
+    trust_tier: str | None = None,
+) -> None:
     """Write ``.provenance.json`` next to ``SKILL.md``.
 
-    Captures the source URL, type, and install time so users (and
-    future ``kiso skill info``) can tell where a skill came from.
+    Captures the source URL, type, trust tier, and install time so
+    users (and ``kiso skill info``) can tell where a skill came from.
     """
     data: dict = {
         "source_url": resolved.source_url,
@@ -400,6 +409,8 @@ def write_provenance(skill_dir: Path, resolved: ResolvedSkill) -> None:
         data["ref"] = resolved.ref
     if resolved.subpath:
         data["subpath"] = resolved.subpath
+    if trust_tier is not None:
+        data["trust_tier"] = trust_tier
     (skill_dir / PROVENANCE_FILE).write_text(
         json.dumps(data, indent=2) + "\n",
         encoding="utf-8",

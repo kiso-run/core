@@ -77,6 +77,7 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
     install.add_argument("--from-url", required=True, help="pulsemcp / github / npm: / pypi: / server.json URL")
     install.add_argument("--name", default=None, help="override server config name")
     install.add_argument("--dry-run", action="store_true", help="print the install plan without executing")
+    install.add_argument("--yes", "-y", action="store_true", help="skip the untrusted-source confirmation prompt")
 
     rm = s.add_parser("remove", help="remove an MCP server from config")
     rm.add_argument("name", help="server name")
@@ -88,6 +89,14 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
     logs = s.add_parser("logs", help="tail the server stderr log")
     logs.add_argument("name", help="server name")
     logs.add_argument("--tail", type=int, default=50, help="number of lines")
+
+    trust = s.add_parser("trust", help="manage install-time trust prefixes")
+    t = trust.add_subparsers(dest="mcp_trust_command")
+    t.add_parser("list", help="list hardcoded + custom trust prefixes")
+    ta = t.add_parser("add", help="add a user trust prefix")
+    ta.add_argument("prefix", help="prefix (literal or glob ending with *)")
+    tr = t.add_parser("remove", help="remove a user trust prefix")
+    tr.add_argument("prefix", help="prefix to remove")
 
     env = s.add_parser("env", help="manage per-server credential env vars")
     e = env.add_subparsers(dest="mcp_env_command")
@@ -128,6 +137,8 @@ def handle(args: argparse.Namespace) -> int:
         return _cmd_logs(args)
     if cmd == "env":
         return _cmd_env(args)
+    if cmd == "trust":
+        return _cmd_trust(args)
     die(f"unknown mcp subcommand: {cmd}")
     return 2  # unreachable
 
@@ -289,6 +300,22 @@ def _cmd_install(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("(dry run; no changes written)")
         return 0
+
+    from kiso.mcp import trust as mcp_trust
+
+    source_key = mcp_trust.source_key_for_url(args.from_url)
+    tier = mcp_trust.is_trusted(source_key)
+    if tier == "untrusted" and not getattr(args, "yes", False):
+        print(f"\n⚠  untrusted source: {source_key}")
+        print(
+            "   Tier 1 prefixes are hardcoded (modelcontextprotocol /"
+            " playwright / github / kiso-run); add your own via"
+            " `kiso mcp trust add`."
+        )
+        confirm = input("Install anyway? [y/N] ").strip().lower()
+        if confirm != "y":
+            print("aborted")
+            return 1
 
     # Execute pre-install steps (git clone, uv venv, uv pip install)
     import subprocess as _sp
@@ -511,4 +538,38 @@ def _cmd_env(args: argparse.Namespace) -> int:
             print(f"{k}={values[k]}")
         return 0
     die(f"unknown env subcommand: {sub}")
+    return 2
+
+
+# ---------------------------------------------------------------------------
+# trust (user-extensible install-time allowlist)
+# ---------------------------------------------------------------------------
+
+
+def _cmd_trust(args: argparse.Namespace) -> int:
+    from kiso.mcp.trust import MCP_TIER1_PREFIXES
+    from kiso.trust_store import add_prefix, load_trust_store, remove_prefix
+
+    sub = getattr(args, "mcp_trust_command", None)
+    if sub is None or sub == "list":
+        print("tier1 (hardcoded):")
+        for p in MCP_TIER1_PREFIXES:
+            print(f"  {p}")
+        store = load_trust_store()
+        if store.mcp:
+            print("custom (user):")
+            for p in store.mcp:
+                print(f"  {p}")
+        else:
+            print("custom (user): (none)")
+        return 0
+    if sub == "add":
+        add_prefix("mcp", args.prefix)
+        print(f"added mcp trust prefix: {args.prefix}")
+        return 0
+    if sub == "remove":
+        remove_prefix("mcp", args.prefix)
+        print(f"removed mcp trust prefix: {args.prefix}")
+        return 0
+    die(f"unknown trust subcommand: {sub}")
     return 2
