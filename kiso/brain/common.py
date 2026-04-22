@@ -1242,6 +1242,33 @@ def filter_mcp_catalog_by_user(
     return "\n".join(kept_lines)
 
 
+_X_KISO_EXT_RE = re.compile(
+    r"<x-kiso:\s*(\{[^}]*\})\s*>\s*\Z",
+    re.DOTALL,
+)
+
+
+def parse_x_kiso_extension(description: str) -> dict:
+    """Extract the kiso extension block from the tail of an MCP tool description.
+
+    Returns the parsed JSON object on success, or ``{}`` when the
+    description carries no extension or the block is malformed.
+    Never raises.
+    """
+    if not description:
+        return {}
+    match = _X_KISO_EXT_RE.search(description.rstrip())
+    if not match:
+        return {}
+    try:
+        payload = json.loads(match.group(1))
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
 _MCP_CATALOG_LINE_BUDGET = 200
 
 _MCP_TYPE_LABELS = {
@@ -1265,10 +1292,11 @@ def format_mcp_catalog(manager: "Any") -> str:
     ``_filter_briefer_names`` so the same text is both the prompt input
     and the post-validation pool.
 
-    Each line is bounded at ``_MCP_CATALOG_LINE_BUDGET`` chars; the
-    args segment truncates with ``...`` when it would overflow. Methods
-    without a cached schema, or with an empty-properties schema, render
-    the legacy ``- server:method — description`` form.
+    When any method carries a ``<x-kiso: {"consumes": [...]}>``
+    extension in its description, a "File processing" summary groups
+    those methods by consumed content type ahead of the main catalog —
+    the planner can then route file inputs to the right method
+    deterministically.
 
     *Cached only*: never spawns a server. Calls ``available_servers()``
     and ``list_methods_cached_only(name)`` per server.
@@ -1280,6 +1308,7 @@ def format_mcp_catalog(manager: "Any") -> str:
     except Exception:  # pragma: no cover — defensive
         return ""
     lines: list[str] = []
+    consumers: dict[str, list[str]] = {}
     for server in sorted(servers):
         try:
             methods = manager.list_methods_cached_only(server)
@@ -1287,20 +1316,42 @@ def format_mcp_catalog(manager: "Any") -> str:
             continue
         for m in methods:
             lines.append(_format_mcp_method_line(server, m))
-    return "\n".join(lines)
+            ext = parse_x_kiso_extension(m.description or "")
+            for kind in ext.get("consumes") or []:
+                if isinstance(kind, str):
+                    consumers.setdefault(kind, []).append(
+                        f"{server}:{m.name}"
+                    )
+
+    if not consumers:
+        return "\n".join(lines)
+
+    header: list[str] = ["## File processing"]
+    for kind in sorted(consumers):
+        names = ", ".join(sorted(consumers[kind]))
+        header.append(f"- {kind}: {names}")
+    header.append("")
+    return "\n".join(header + lines)
 
 
 def _format_mcp_method_line(server: str, method: "Any") -> str:
     qualified = f"{server}:{method.name}"
     args_str = _format_schema_summary(method.input_schema)
     head = f"- {qualified}{args_str}"
-    if method.description:
-        line = f"{head} — {method.description}"
+    description = _strip_x_kiso_extension(method.description or "")
+    if description:
+        line = f"{head} — {description}"
     else:
         line = head
     if len(line) <= _MCP_CATALOG_LINE_BUDGET:
         return line
     return line[: _MCP_CATALOG_LINE_BUDGET - 3] + "..."
+
+
+def _strip_x_kiso_extension(description: str) -> str:
+    if not description:
+        return ""
+    return _X_KISO_EXT_RE.sub("", description).rstrip()
 
 
 def _format_schema_summary(schema: Any) -> str:

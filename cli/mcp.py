@@ -86,6 +86,12 @@ def add_subcommands(parent: argparse.ArgumentParser) -> None:
     test = s.add_parser("test", help="initialize + list_methods + shutdown")
     test.add_argument("name", help="server name")
 
+    rh = s.add_parser(
+        "reset-health",
+        help="clear the circuit-breaker for a server (no daemon restart)",
+    )
+    rh.add_argument("name", help="server name")
+
     logs = s.add_parser("logs", help="tail the server stderr log")
     logs.add_argument("name", help="server name")
     logs.add_argument("--tail", type=int, default=50, help="number of lines")
@@ -139,6 +145,8 @@ def handle(args: argparse.Namespace) -> int:
         return _cmd_env(args)
     if cmd == "trust":
         return _cmd_trust(args)
+    if cmd == "reset-health":
+        return _cmd_reset_health(args)
     die(f"unknown mcp subcommand: {cmd}")
     return 2  # unreachable
 
@@ -544,6 +552,33 @@ def _cmd_env(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # trust (user-extensible install-time allowlist)
 # ---------------------------------------------------------------------------
+
+
+def _cmd_reset_health(args: argparse.Namespace) -> int:
+    """Clear the circuit-breaker state for a single MCP server.
+
+    Does not restart the daemon. The next call to the named server
+    will try to spawn a fresh client and will flow through the normal
+    initialize + list_methods lifecycle.
+    """
+    import asyncio
+
+    from kiso.config import load_config
+    from kiso.mcp.manager import MCPManager
+
+    cfg = load_config()
+    if args.name not in cfg.mcp_servers:
+        die(f"no such server: {args.name!r}")
+
+    manager = MCPManager(cfg.mcp_servers)
+    manager.reset_health(args.name)
+
+    async def _shutdown() -> None:
+        await manager.shutdown_all()
+
+    asyncio.run(_shutdown())
+    print(f"reset health for mcp[{args.name}]")
+    return 0
 
 
 def _cmd_trust(args: argparse.Namespace) -> int:
