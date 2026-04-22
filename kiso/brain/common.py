@@ -444,7 +444,7 @@ def _repair_json(text: str) -> str:
 
 
 _INSTALL_CMD_RE = re.compile(
-    r"(?:kiso\s+connector\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
+    r"(?:kiso\s+(?:connector|mcp|skill)\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
     re.IGNORECASE,
 )
 # Extract plugin name from "kiso connector install <name>" for registry validation.

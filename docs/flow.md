@@ -189,7 +189,7 @@ Before execution, `validate_plan` runs deterministic structural checks that reje
 - **No msg-first**: plans must start with action tasks (exec/wrapper/search), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
 - **Codegen-only shape**: when the first task is a wrapper and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen wrappers — the reviewer already inspects wrapper output.
 - **Browser URL validation**: browser wrapper args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
-- **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan).
+- **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan). This covers all install command shapes: `kiso mcp install --from-url`, `kiso skill install --from-url`, `kiso connector install`, system package managers (`apt-get install`, `brew install`, …), and Python / Node ephemeral runners (`uv pip install`, `npx -y`). Once the user approves, the same commands are allowed through the worker.
 
 ### LLM Retry and Fallback
 
