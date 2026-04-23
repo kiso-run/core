@@ -83,9 +83,15 @@ class FakeManager:
         return [m for m in self._methods if m.server == name]
 
     async def call_method(
-        self, server: str, method: str, args: dict, *, session: str | None = None
+        self,
+        server: str,
+        method: str,
+        args: dict,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
     ):
-        self.call_args = (server, method, args, session)
+        self.call_args = (server, method, args, session, sandbox_uid)
         return self._return_value
 
 

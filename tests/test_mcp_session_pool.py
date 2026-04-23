@@ -109,7 +109,12 @@ def recorder():
     """Factory that records every client created, with its resolved server."""
     created: list[RecordingClient] = []
 
-    def factory(server: MCPServer, *, extra_env: dict[str, str] | None = None) -> RecordingClient:
+    def factory(
+        server: MCPServer,
+        *,
+        extra_env: dict[str, str] | None = None,
+        sandbox_uid: int | None = None,
+    ) -> RecordingClient:
         c = RecordingClient(server, extra_env=extra_env)
         created.append(c)
         return c

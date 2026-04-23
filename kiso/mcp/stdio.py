@@ -113,6 +113,7 @@ class MCPStdioClient(MCPClient):
         server: MCPServer,
         *,
         extra_env: dict[str, str] | None = None,
+        sandbox_uid: int | None = None,
     ) -> None:
         if server.transport != "stdio":
             raise ValueError(
@@ -120,6 +121,7 @@ class MCPStdioClient(MCPClient):
             )
         self._server = server
         self._extra_env = dict(extra_env or {})
+        self._sandbox_uid = sandbox_uid
         self._proc: asyncio.subprocess.Process | None = None
         self._stdout_reader_task: asyncio.Task | None = None
         self._stderr_reader_task: asyncio.Task | None = None
@@ -326,16 +328,24 @@ class MCPStdioClient(MCPClient):
     async def _spawn(self) -> None:
         env = self._build_env()
         cwd = self._server.cwd
+        spawn_kwargs: dict[str, Any] = dict(
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            cwd=cwd,
+            start_new_session=True,
+        )
+        if self._sandbox_uid is not None:
+            # asyncio forwards `user=` to setuid() in the child between
+            # fork and exec, dropping privileges before the MCP server
+            # sees any input — same behavior exec tasks already get.
+            spawn_kwargs["user"] = self._sandbox_uid
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 self._server.command,
                 *self._server.args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=cwd,
-                start_new_session=True,
+                **spawn_kwargs,
             )
         except FileNotFoundError as e:
             raise MCPTransportError(

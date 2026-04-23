@@ -46,9 +46,15 @@ class FakeManager:
         return []
 
     async def call_method(
-        self, server: str, method: str, args: dict, *, session: str | None = None
+        self,
+        server: str,
+        method: str,
+        args: dict,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
     ):
-        self.call_args = (server, method, args, session)
+        self.call_args = (server, method, args, session, sandbox_uid)
         if self._exc is not None:
             raise self._exc
         return self._return_value
@@ -145,6 +151,25 @@ class TestHappyPath:
         # Task marked done in DB
         rows = await get_tasks_for_plan(db, task_row["plan_id"])
         assert any(r["status"] == "done" for r in rows)
+
+    async def test_sandbox_uid_from_ctx_forwarded_to_manager(self, db):
+        """A user-role session has ctx.sandbox_uid set; the handler must
+        relay it so MCPManager spawns the stdio subprocess under the
+        session's UID (parity with exec)."""
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        payload = MCPCallResult(
+            stdout_text="ok",
+            published_files=[],
+            structured_content=None,
+            is_error=False,
+        )
+        mgr = FakeManager(return_value=payload)
+        ctx = await _make_ctx(db, mgr)
+        ctx.sandbox_uid = 4242
+        task_row = await _make_mcp_task_row(db)
+        await handler(ctx, task_row, 0, True, 0)
+        # FakeManager stores (server, method, args, session, sandbox_uid)
+        assert mgr.call_args[4] == 4242
 
     async def test_stdout_text_stored_in_task_output(self, db):
         handler = _TASK_HANDLERS[TASK_TYPE_MCP]

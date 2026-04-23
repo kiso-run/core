@@ -103,7 +103,12 @@ def fake_factory():
     """Returns a factory that records all client instances it creates."""
     created: list[FakeClient] = []
 
-    def factory(server: MCPServer, *, extra_env: dict | None = None) -> FakeClient:
+    def factory(
+        server: MCPServer,
+        *,
+        extra_env: dict | None = None,
+        sandbox_uid: int | None = None,
+    ) -> FakeClient:
         c = FakeClient(server)
         created.append(c)
         return c
@@ -297,7 +302,7 @@ class TestCrashRecovery:
         # its first call. The manager will spawn, crash, retry, crash,
         # retry, crash. After 3 crashes → circuit open.
         # Patch the factory to build crash-on-call clients.
-        def crashy_factory(server, *, extra_env=None):
+        def crashy_factory(server, *, extra_env=None, sandbox_uid=None):
             c = FakeClient(server)
             c.call_method = _always_crash  # type: ignore[method-assign]
             fake_factory.created.append(c)

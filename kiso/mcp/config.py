@@ -36,6 +36,7 @@ _TRANSPORTS = ("stdio", "http")
 _ENV_REF_RE = re.compile(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
 _SESSION_REF_RE = re.compile(r"\$\{session:([A-Za-z_][A-Za-z0-9_]*)\}")
 _SESSION_TOKEN_KINDS = ("workspace", "id")
+_SANDBOX_MODES = ("role_based", "never")
 
 
 class MCPConfigError(Exception):
@@ -75,6 +76,7 @@ class MCPServer:
     # common
     enabled: bool = True
     timeout_s: float = 60.0
+    sandbox: str = "role_based"
 
     @property
     def is_session_scoped(self) -> bool:
@@ -200,6 +202,13 @@ def _parse_one(name: str, section: Any) -> MCPServer:
         )
     enabled = bool(section.get("enabled", True))
 
+    sandbox = section.get("sandbox", "role_based")
+    if sandbox not in _SANDBOX_MODES:
+        raise MCPConfigError(
+            f"[mcp.{name}]: sandbox must be one of {_SANDBOX_MODES}, "
+            f"got {sandbox!r}"
+        )
+
     if transport == "stdio":
         command = section.get("command")
         if not isinstance(command, str) or not command:
@@ -226,6 +235,7 @@ def _parse_one(name: str, section: Any) -> MCPServer:
             cwd=_expand_str(name, "cwd", cwd_raw) if cwd_raw else None,
             enabled=enabled,
             timeout_s=timeout_s,
+            sandbox=sandbox,
         )
 
     # transport == "http"
@@ -253,6 +263,7 @@ def _parse_one(name: str, section: Any) -> MCPServer:
         auth=_expand_auth(name, auth) if auth else None,
         enabled=enabled,
         timeout_s=timeout_s,
+        sandbox=sandbox,
     )
 
 

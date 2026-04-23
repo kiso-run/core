@@ -70,7 +70,11 @@ _DEFAULT_MAX_SESSION_CLIENTS_PER_SERVER = 32
 
 GLOBAL_SCOPE = "_global"
 
-PoolKey = tuple[str, str]
+# (server_name, scope_key, sandbox_uid). sandbox_uid is ``None`` for
+# admin-context calls and for servers declared ``sandbox = "never"``;
+# otherwise it pins the subprocess to a specific UID so user-role
+# sessions cannot share a client with admin or another user.
+PoolKey = tuple[str, str, int | None]
 
 
 def _default_workspace_resolver(session_id: str) -> Path:
@@ -84,11 +88,17 @@ class UnhealthyServerError(MCPError):
 
 
 def _default_factory(
-    server: MCPServer, *, extra_env: dict[str, str] | None = None
+    server: MCPServer,
+    *,
+    extra_env: dict[str, str] | None = None,
+    sandbox_uid: int | None = None,
 ) -> MCPClient:
     if server.transport == "stdio":
-        return MCPStdioClient(server, extra_env=extra_env)
+        return MCPStdioClient(
+            server, extra_env=extra_env, sandbox_uid=sandbox_uid
+        )
     if server.transport == "http":
+        # HTTP transports have no subprocess — sandbox_uid is a no-op.
         return MCPStreamableHTTPClient(server)
     raise ValueError(f"unknown transport: {server.transport!r}")
 
@@ -160,14 +170,18 @@ class MCPManager:
         self._session_env[session] = dict(env)
 
     async def list_methods(
-        self, name: str, *, session: str | None = None
+        self,
+        name: str,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
     ) -> list[MCPMethod]:
         self._assert_known(name)
         cached = self._method_cache.get(name)
         now = self._clock()
         if cached is not None and now - cached[0] < self._cache_ttl_s:
             return cached[1]
-        client = await self._get_or_spawn(name, session)
+        client = await self._get_or_spawn(name, session, sandbox_uid)
         methods = await client.list_methods()
         self._method_cache[name] = (now, methods)
         return methods
@@ -191,6 +205,7 @@ class MCPManager:
         args: dict,
         *,
         session: str | None = None,
+        sandbox_uid: int | None = None,
     ) -> MCPCallResult:
         self._assert_known(name)
         if name in self._unhealthy:
@@ -199,7 +214,7 @@ class MCPManager:
                 f"consecutive failures; call MCPManager.reset_health() to retry"
             )
 
-        client = await self._get_or_spawn(name, session)
+        client = await self._get_or_spawn(name, session, sandbox_uid)
         try:
             return await client.call_method(method, args)
         except MCPInvocationError:
@@ -211,9 +226,11 @@ class MCPManager:
             await self._record_failure(name)
             if name in self._unhealthy:
                 raise
-            key = self._scope_key(name, session)
+            key = self._scope_key(name, session, sandbox_uid)
             await self._shutdown_key(key)
-            client = await self._get_or_spawn(name, session, force=True)
+            client = await self._get_or_spawn(
+                name, session, sandbox_uid, force=True
+            )
             try:
                 return await client.call_method(method, args)
             except MCPTransportError:
@@ -221,9 +238,14 @@ class MCPManager:
                 raise
 
     async def cancel(
-        self, name: str, request_id: Any, *, session: str | None = None
+        self,
+        name: str,
+        request_id: Any,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
     ) -> None:
-        key = self._scope_key(name, session)
+        key = self._scope_key(name, session, sandbox_uid)
         client = self._pool.get(key)
         if client is None:
             return
@@ -255,7 +277,10 @@ class MCPManager:
             try:
                 await self._shutdown_key(key)
             except Exception as e:  # noqa: BLE001
-                log.warning("mcp[%s:%s] shutdown failed: %s", key[0], key[1], e)
+                log.warning(
+                    "mcp[%s:%s:%s] shutdown failed: %s",
+                    key[0], key[1], key[2], e,
+                )
         self._pool.clear()
         self._method_cache.clear()
         self._last_used.clear()
@@ -292,22 +317,28 @@ class MCPManager:
         if not server.enabled:
             raise ValueError(f"mcp server {name!r} is disabled in config")
 
-    def _scope_key(self, name: str, session: str | None) -> PoolKey:
-        if session is None:
-            return (name, GLOBAL_SCOPE)
+    def _scope_key(
+        self, name: str, session: str | None, sandbox_uid: int | None
+    ) -> PoolKey:
         server = self._servers[name]
+        # A server with sandbox="never" opts out of role-based UID
+        # isolation — admin and user calls share one client.
+        uid_key = None if server.sandbox == "never" else sandbox_uid
+        if session is None:
+            return (name, GLOBAL_SCOPE, uid_key)
         if not server.is_session_scoped:
-            return (name, GLOBAL_SCOPE)
-        return (name, session)
+            return (name, GLOBAL_SCOPE, uid_key)
+        return (name, session, uid_key)
 
     async def _get_or_spawn(
         self,
         name: str,
         session: str | None,
+        sandbox_uid: int | None = None,
         *,
         force: bool = False,
     ) -> MCPClient:
-        key = self._scope_key(name, session)
+        key = self._scope_key(name, session, sandbox_uid)
         is_session_scope = key[1] != GLOBAL_SCOPE
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
@@ -320,7 +351,10 @@ class MCPManager:
                 try:
                     await existing.shutdown()
                 except Exception as e:  # noqa: BLE001
-                    log.debug("mcp[%s:%s] stale cleanup failed: %s", *key, e)
+                    log.debug(
+                        "mcp[%s:%s:%s] stale cleanup failed: %s",
+                        key[0], key[1], key[2], e,
+                    )
                 self._pool.pop(key, None)
                 self._last_used.pop(key, None)
 
@@ -332,7 +366,9 @@ class MCPManager:
                 await self._evict_to_bound(name, exclude_key=key)
                 extra_env = self._session_env.get(session, {})  # type: ignore[arg-type]
 
-            client = self._factory(server, extra_env=extra_env)
+            client = self._factory(
+                server, extra_env=extra_env, sandbox_uid=key[2]
+            )
             try:
                 await client.initialize()
             except Exception:
@@ -359,7 +395,10 @@ class MCPManager:
         try:
             await client.shutdown()
         except Exception as e:  # noqa: BLE001
-            log.debug("mcp[%s:%s] shutdown raised: %s", *key, e)
+            log.debug(
+                "mcp[%s:%s:%s] shutdown raised: %s",
+                key[0], key[1], key[2], e,
+            )
 
     def _maybe_prune_session(self, session: str) -> None:
         if any(k[1] == session for k in self._pool):
