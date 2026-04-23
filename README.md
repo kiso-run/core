@@ -1,24 +1,75 @@
 # Kiso
 
-Kiso is a general-purpose agent runtime that can actually do work without
+Kiso is a general-purpose agent runtime that actually does work without
 collapsing into prompt soup.
 
-It plans, executes, reviews, replans, remembers, and reports through a runtime
-that is built around explicit contracts, isolated execution, and durable state.
-You can use it as a CLI assistant, wire it into connectors, give it wrappers, and
-let it run real workflows across files, shells, APIs, and multi-step recovery.
+It plans, executes, reviews, replans, remembers, and reports through a
+runtime built around explicit contracts, isolated execution, and durable
+state. Use it as a CLI assistant, wire it into connectors, extend it with
+**Agent Skills** and **MCP servers**, and let it run real workflows across
+files, shells, APIs, and multi-step recovery.
 
 Most agent bots are still "one big prompt plus vibes". Kiso is not.
 
-`KISO` (基礎) means `foundation` in Japanese. That is the point: a strong base
-for building real agentic behavior, not a demo loop.
+`KISO` (基礎) means `foundation` in Japanese. That is the point: a strong
+base for building real agentic behavior, not a demo loop.
 
-## Why Kiso Wins
+## The two extension primitives
 
-### It is structurally reliable, not just prompt-guided
+v0.10 converges on exactly two standards — anything else is exec:
 
-Kiso does not rely on a giant system prompt to keep the runtime coherent.
-Instead it uses:
+- **[Agent Skills](https://agentskills.io)** — packaged planner
+  instructions on how to *think* about a class of problem. Installed
+  from any URL (`kiso skill install --from-url <github|zip|raw>`),
+  optionally bundling scripts and references.
+- **[MCP](https://modelcontextprotocol.io)** — the standard protocol
+  for *what to call*. Kiso is a consumer: you install servers from
+  URL (`kiso mcp install --from-url <pulsemcp|github|npm|pypi>`), the
+  planner sees them, the runtime handles schemas, sessions, trust.
+
+Exec is the universal fallback for "just run this shell command".
+
+That is the whole extension surface. No Kiso-maintained registry of
+skills or MCP servers — you bring the URL, Kiso wires the runtime
+policy around it (trust store, per-session sandbox, schema
+validation, recovery).
+
+## Single-key onboarding
+
+The default preset is designed so that **`OPENROUTER_API_KEY` is the
+only mandatory secret** for full capability. Every kiso-maintained
+MCP server (codegen, web search, transcription, OCR) routes through
+OpenRouter. Servers that need no key at all (filesystem, fetch,
+browser, docreader) work out of the box.
+
+Collapsed onboarding from three required keys
+(`OPENROUTER_API_KEY` + `GEMINI_API_KEY` + a search API key) to
+**one**.
+
+## Quick start
+
+```bash
+export OPENROUTER_API_KEY=sk-or-v1-...
+bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
+kiso doctor
+kiso msg "list the files in the workspace"
+```
+
+The installer pulls kiso, writes a config to `~/.kiso/`, starts the
+container, seeds the default MCP preset, and installs the `kiso` CLI
+to `~/.local/bin/`. `kiso doctor` sanity-checks every layer (API key,
+providers, MCP servers, sandbox). `kiso msg` sends your first message.
+
+For a step-by-step walk-through (first skill, first MCP from URL,
+first multi-step plan) see [docs/tutorial.md](docs/tutorial.md). For
+the full docs tree, start at [docs/index.md](docs/index.md).
+
+## What makes kiso different
+
+### Structurally reliable, not just prompt-guided
+
+Kiso does not rely on a giant system prompt to keep the runtime
+coherent. Instead:
 
 - explicit planning and review phases
 - normalized `TaskContract` and `TaskResult` runtime objects
@@ -26,193 +77,131 @@ Instead it uses:
 - classified failure modes instead of generic "something went wrong"
 - deterministic recovery boundaries instead of blind retry loops
 
-This matters because the hard problems in agent systems are usually not raw
-generation quality. They are handoff problems:
+The hard problems in agent systems are usually not raw generation
+quality. They are handoff problems:
 
-- the planner thinks a file exists, but the executor cannot find it
-- a wrapper edits something, but the next step tests the wrong path
+- the planner thinks a file exists but the executor cannot find it
+- one step edits something, the next step tests the wrong path
 - the model retries the same broken strategy with different wording
-- memory gets stuffed into prompts with no distinction between facts and recent execution state
+- memory gets stuffed into prompts with no distinction between facts
+  and recent execution state
 
-Kiso is built to reduce those failures at the runtime boundary, not only at the
-prompt boundary.
+Kiso reduces those failures at the **runtime boundary**, not only at
+the prompt boundary.
 
 ### It executes in the real world
 
-Kiso is not a chat wrapper that stops at advice. It can:
-
-- run shell commands in isolated workspaces
-- install and call wrappers packaged as plugins
-- search, inspect files, produce reports, and publish artifacts
-- continue across multiple plans when a workflow needs investigation first
-- report progress and final outputs back through CLI or connectors
-
-The system is designed for real execution, not just "here is what I would do".
+- shell commands in isolated per-session workspaces
+- MCP tool calls with schema validation, per-session client pools,
+  and recovery when a server dies
+- skill-guided plans that compose exec + MCP + planner prompt modules
+- durable plan / task / result state across replan cycles
+- final outputs and file artifacts published back through CLI,
+  webhook, or connectors
 
 ### It stays general-purpose
 
-Kiso is not locked to coding, research, support, or one vertical workflow.
-It is a runtime for open-ended agent tasks with enough structure to stay sane.
-
-That means:
+Not locked to coding, research, support, or one vertical workflow:
 
 - open-ended planner outputs
-- wrappers and connectors as plugins
+- skills and MCP servers as plug-ins, each brought in from its own URL
 - persistent knowledge and behavior rules
-- project/session scoping
-- room for strict safety rules without turning the system into a brittle workflow engine
+- project / session scoping
+- room for strict safety rules without collapsing into a brittle
+  workflow engine
 
-## What Kiso Does
-
-At a high level, Kiso:
-
-1. receives a user message through CLI or an API-backed connector
-2. builds role-aware context from recent conversation, knowledge, rules, wrappers, and workspace state
-3. asks the planner for a task graph
-4. normalizes that plan into executable task contracts
-5. runs tasks one by one, carrying forward structured results, file refs, artifact refs, and dependency links
-6. reviews non-trivial execution steps before continuing
-7. replans when the current strategy is wrong instead of pretending partial failure is success
-8. delivers user-facing updates and final outputs
-9. stores knowledge and execution traces so the next plan starts from a better state
-
-If you want the full runtime walkthrough, start with [architecture.md](docs/architecture.md) and then go deeper into [flow.md](docs/flow.md).
-
-## Why This Architecture Is Better Than A Simple Agent Shell
-
-Most simple agent shells have the same pattern:
-
-- take a message
-- ask one model what to do
-- maybe execute a command
-- print the answer
-
-That can work for toy tasks, but it breaks down under real orchestration.
-
-Kiso is designed around the actual failure surfaces:
-
-- execution needs isolation
-- wrappers need contracts, not just best-effort JSON
-- multi-step workflows need durable state
-- replans need memory of what was already tried
-- memory needs semantic knowledge separated from recent operational context
-- user-facing messaging should not be mixed with internal execution steps
-
-That is why Kiso can support workflows that are longer, messier, and more
-recoverable than a single-turn coding agent loop.
-
-## Core Capabilities
+## Core capabilities
 
 - Structured planning, execution, review, and replan loops
-- Per-session workspaces with published artifacts and uploads directories
-- Wrapper and connector plugins, each in its own isolated environment
-- Runtime file/artifact identity and dependency-aware handoff
-- Knowledge system with facts, entities, tags, confidence, decay, and curation
+- Per-session workspaces with published artifacts and uploads
+- Skills + MCP servers as the two extension primitives
+- Runtime file / artifact identity and dependency-aware handoff
+- Knowledge system with facts, entities, tags, confidence, decay,
+  and curation
 - Behavior rules and safety constraints carried into planning
-- Ephemeral in-memory secrets that never need to hit disk
+- Ephemeral in-memory secrets that never hit disk
 - Webhook and API delivery for connector-driven usage
 - Cron scheduling and recurring automation
 - Execution hooks, audit logs, and operational introspection
 
-## Example Workflows
+## Example workflows
 
 ### Engineering and repo automation
 
 ```text
-"Inspect this repo, find the slowest test module, propose a fix, patch it,
-run the targeted tests, and summarize the tradeoffs."
+"Inspect this repo, find the slowest test module, propose a fix,
+patch it, run the targeted tests, and summarize the tradeoffs."
 ```
 
-Kiso can inspect the workspace, run shell commands, edit files through wrappers,
-execute verification steps, and report exactly what changed.
+Kiso walks the workspace, runs shell commands, asks an MCP codegen
+server to edit files, executes verification steps, and reports
+exactly what changed.
 
 ### Research and artifact production
 
 ```text
-"Search for the latest EU AI Act implementation guidance, compare three
-sources, write a short internal brief, and publish it as a markdown file."
+"Search for the latest EU AI Act implementation guidance, compare
+three sources, write a short internal brief, and publish it as a
+markdown file."
 ```
 
-Kiso can search, collect evidence, structure outputs, and deliver both a user
-message and a file artifact.
+Kiso drives a search-capable MCP server, collects evidence, produces
+structured outputs, and delivers both a user message and a file
+artifact.
 
 ### Ops and recurring checks
 
 ```text
-"Every weekday at 9:00, check competitor pricing, flag meaningful changes,
-and send the summary to the marketing session."
+"Every weekday at 9:00, check competitor pricing, flag meaningful
+changes, and send the summary to the marketing session."
 ```
 
-Kiso can schedule recurring work, keep session-scoped context, and reuse the
-same runtime for operational automation instead of one-off chats.
+Kiso schedules recurring work, keeps session-scoped context, and
+reuses the same runtime for operational automation instead of
+one-off chats.
 
 ### Multi-step investigation before action
 
 ```text
-"Figure out why the staging deploy is failing, inspect logs, check config
-differences, and only then propose or apply the smallest safe fix."
+"Figure out why the staging deploy is failing, inspect logs, check
+config differences, and only then propose or apply the smallest safe
+fix."
 ```
 
-Kiso can investigate first, replan with the evidence it found, and avoid
-pretending that the first guessed strategy was correct.
+Kiso investigates first, replans with the evidence it found, and
+avoids pretending the first guessed strategy was correct.
 
-## When To Use Kiso
+## When to use kiso
 
-Use Kiso when you need an agent that must:
+When you need an agent that must:
 
 - carry work across multiple execution and review steps
-- touch real files, commands, wrappers, or connectors
+- touch real files, commands, MCP servers, or connectors
 - recover from partial failure without losing the thread
 - keep durable knowledge and session/project context
-- stay general-purpose instead of being locked to one workflow template
+- stay general-purpose instead of being locked to one workflow
+  template
 
-## When Not To Use Kiso
+## When not to use kiso
 
-Do not use Kiso when you only need:
+When you only need:
 
 - a simple chat assistant with no execution
 - a single hard-coded workflow with no open-ended planning
-- a tiny embedded helper where Docker, sessions, and runtime state would be overkill
-- deterministic business logic that should just be plain application code
-
-## Quick Start
-
-```bash
-# Install
-bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
-
-# Open an interactive session
-kiso
-
-# Or send a single message
-kiso msg "find all Python files larger than 1MB and summarize what they do"
-
-# Install a wrapper
-kiso wrapper install browser
-
-# Connect to a community MCP server (Kiso is a consumer, bring your own URL)
-kiso mcp install --from-url npm:@modelcontextprotocol/server-github
-kiso mcp env github set GITHUB_PERSONAL_ACCESS_TOKEN <your-token>
-
-# Create a recurring task
-kiso cron add "0 9 * * *" "check competitor prices" --session marketing
-```
-
-## Extending Kiso
-
-Three extension surfaces — wrappers (local install + manage),
-MCP servers (remote APIs, consumer-only), recipes (planner
-instructions). See [docs/extensibility.md](docs/extensibility.md)
-for the decision tree and [docs/mcp.md](docs/mcp.md) for the
-MCP consumer guide.
+- a tiny embedded helper where Docker, sessions, and runtime state
+  would be overkill
+- deterministic business logic that should just be plain application
+  code
 
 ## Installation
 
-**Prerequisites:** Docker with Compose v2, git, and an OpenRouter API key.
+**Prerequisites:** Docker with Compose v2, git, and
+`OPENROUTER_API_KEY`.
 
-### One-liner
+### One-liner (single key)
 
 ```bash
+export OPENROUTER_API_KEY=sk-or-v1-...
 bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.sh)
 ```
 
@@ -221,37 +210,38 @@ bash <(curl -fsSL https://raw.githubusercontent.com/kiso-run/core/main/install.s
 ```bash
 git clone https://github.com/kiso-run/core.git
 cd core
-./install.sh
+OPENROUTER_API_KEY=sk-or-v1-... ./install.sh
 ```
 
-### Non-interactive
+### Non-interactive (scripted)
 
 ```bash
 ./install.sh --user marco --api-key sk-or-v1-...
 ```
 
-The installer builds the Docker image, writes config to `~/.kiso/`, starts the
-container, and installs the `kiso` CLI to `~/.local/bin/`.
+The installer builds the Docker image, writes config to
+`~/.kiso/instances/<name>/`, starts the container, seeds the default
+MCP preset, and installs the `kiso` CLI to `~/.local/bin/`.
 
-## Example Commands
+## Example commands
 
 ```bash
-# Core interaction
-kiso
-kiso msg "hello"
-kiso cancel
-kiso status
+# Interaction
+kiso                              # start chatting
+kiso msg "hello"                  # send a single message
+kiso status                       # show session state
+kiso doctor                       # sanity-check every layer
 
-# Sessions
+# Extending
+kiso skill install --from-url https://github.com/acme/kiso-skill-review
+kiso skill list
+kiso mcp install --from-url npm:@modelcontextprotocol/server-github
+kiso mcp env github set GITHUB_PERSONAL_ACCESS_TOKEN <your-token>
+kiso mcp test github                          # smoke-test a server
+
+# Sessions and knowledge
 kiso sessions
 kiso session create dev
-
-# Plugins
-kiso wrapper install search
-kiso plugin list
-kiso preset install performance-marketer
-
-# Knowledge and rules
 kiso knowledge add "Uses Flask" --entity my-app --tags python
 kiso knowledge search "database"
 kiso behavior add "always use metrics"
@@ -261,82 +251,58 @@ kiso rules add "never delete /data"
 kiso cron add "0 9 * * *" "check prices" --session marketing
 ```
 
-## Runtime Shape
+## Runtime shape
 
 ```text
 message -> planner -> task contracts -> worker execution -> review/replan -> user delivery
-                   \-> memory + wrappers + workspace state ->/
+                   \-> memory + skills + MCP catalog + workspace state ->/
 ```
 
-The key point is that Kiso does not treat text as the only handoff boundary.
-The runtime carries forward structured contracts and results so later phases can
-reason about what actually happened, not just what a previous prompt said.
+The key point is that Kiso does not treat text as the only handoff
+boundary. The runtime carries forward structured contracts and
+results so later phases can reason about what actually happened, not
+just what a previous prompt said.
 
-## Docs Map
+## Docs
 
-- [architecture.md](docs/architecture.md) — What Kiso is, why the architecture works, and how the core pieces fit together
-- [flow.md](docs/flow.md) — Full message lifecycle and runtime sequencing
-- [config.md](docs/config.md) — Configuration, providers, models, tokens
-- [extensibility.md](docs/extensibility.md) — Extension surfaces: MCP servers, skills, connectors
-- [mcp.md](docs/mcp.md) — MCP server install and runtime
-- [connectors.md](docs/connectors.md) — Platform bridges and connector model
-- [api.md](docs/api.md) — HTTP API
-- [cli.md](docs/cli.md) — Terminal client and management commands
-- [security.md](docs/security.md) — Authentication, permissions, secrets, prompt-injection defense
-- [llm-roles.md](docs/llm-roles.md) — LLM roles, prompts, context assembly
-- [database.md](docs/database.md) — Database schema and runtime-state mapping
-- [docker.md](docs/docker.md) — Docker setup, volumes, packaging
-- [hooks.md](docs/hooks.md) — Execution hooks
-- [audit.md](docs/audit.md) — Audit trail and logging
-- [testing.md](docs/testing.md) — Test strategy and confidence model
+Entry point: **[docs/index.md](docs/index.md)**.
 
-## Project Structure
+Key files:
+
+- [docs/architecture.md](docs/architecture.md) — runtime at a glance
+- [docs/flow.md](docs/flow.md) — full message lifecycle
+- [docs/skills.md](docs/skills.md) — Agent Skills authoring + install
+- [docs/mcp.md](docs/mcp.md) — MCP consumer guide
+- [docs/default-preset.md](docs/default-preset.md) — what ships in
+  `kiso init --preset default`
+- [docs/cli.md](docs/cli.md) — every `kiso` subcommand
+- [docs/config.md](docs/config.md) — config + settings reference
+- [docs/security.md](docs/security.md) — security model
+- [docs/tutorial.md](docs/tutorial.md) — first skill + first MCP
+  walk-through
+
+## Project structure
 
 ```text
 kiso/                               # installable python package
 ├── main.py                         # FastAPI app, lifespan, boot
 ├── api/                            # REST API routes
-│   ├── runtime.py                  # /msg, /status endpoints
-│   ├── sessions.py                 # session management
-│   ├── knowledge.py                # facts, entities, tags
-│   ├── admin.py                    # admin operations
-│   └── projects.py                 # multi-project support
 ├── brain/                          # LLM role orchestration
-│   ├── planner.py                  # plan generation + deterministic validation
-│   ├── reviewer.py                 # task output review
-│   ├── curator.py                  # knowledge curation + entity assignment
-│   ├── text_roles.py               # messenger, summarizer, exec translator
-│   └── common.py                   # shared LLM call infra, schemas, retry
 ├── worker/                         # per-session execution runtime
-│   ├── loop.py                     # message processing, replan loop
-│   ├── message_flow.py             # messenger + curator + summarizer flow
-│   ├── review_flow.py              # review step orchestration
-│   ├── exec.py / wrapper.py / search.py  # task handlers
-│   ├── replan.py                   # replan context building
-│   └── state.py / utils.py         # execution state, workspace helpers
 ├── store/                          # SQLite persistence
-│   ├── knowledge.py                # facts, entities, tags
-│   ├── plans.py / sessions.py      # plans, tasks, sessions
-│   └── shared.py / setup.py        # queries, schema migrations
-├── llm.py                          # LLM client (SSE streaming, retry)
+├── mcp/                            # MCP client: stdio/http, pool,
+│                                   # Resources/Prompts/Sampling
+├── skill_loader.py                 # standard skill package loader
+├── skill_runtime.py                # role-scoped skill projection
+├── llm.py                          # LLM client (SSE streaming)
 ├── config.py                       # config loading and validation
 ├── sysenv.py                       # system environment detection
-├── wrappers.py / connectors.py        # plugin discovery and loading
-└── roles/*.md                      # LLM role prompts (planner, reviewer, etc.)
+└── roles/*.md                      # LLM role prompts
 
 ~/.kiso/instances/{name}/           # per-instance state
 ├── config.toml
 ├── store.db
-├── wrappers/{name}/
-├── connectors/{name}/
+├── skills/{name}/                  # installed skills
+├── mcp.json                        # installed MCP servers
 └── sessions/{sid}/                 # workspace, pub/, uploads/
 ```
-
-## Package Model
-
-Wrappers and connectors use the same packaging shape: `kiso.toml` manifest,
-`pyproject.toml`, and `run.py`. Each runs in its own isolated environment.
-
-Official packages follow the `kiso-run/wrapper-{name}` and
-`kiso-run/connector-{name}` naming pattern, but any git repo with a valid
-`kiso.toml` can participate.

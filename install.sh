@@ -365,6 +365,14 @@ ask_api_key() {
         API_KEY="$ARG_API_KEY"
         return
     fi
+    # Single-key UX: honor $OPENROUTER_API_KEY from the process environment.
+    # This is what makes `OPENROUTER_API_KEY=... curl | sh` work without the
+    # installer having to prompt interactively.
+    if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
+        echo "API key: (from \$OPENROUTER_API_KEY)" >&2
+        API_KEY="$OPENROUTER_API_KEY"
+        return
+    fi
     local key
     while true; do
         safe_read -rsp "LLM API key for $BASE_URL: " key
@@ -391,15 +399,16 @@ for role in MODEL_DEFAULTS:
     print(f'{role}|{desc}|{default}')
 " 2>/dev/null || cat <<'FALLBACK'
 briefer|selects relevant context for planner|google/gemini-2.5-flash
-classifier|classifies messages as plan or chat|google/gemini-2.5-flash-lite
+classifier|classifies messages as plan or chat|google/gemini-2.5-flash
 planner|interprets requests, creates task plans|deepseek/deepseek-v3.2
 reviewer|checks task output, decides replan|google/gemini-2.5-flash-lite
-curator|manages learned knowledge|deepseek/deepseek-v3.2
+curator|manages learned knowledge|google/gemini-2.5-flash
 worker|translates tasks to shell commands|deepseek/deepseek-v3.2
 summarizer|compresses conversation history|google/gemini-2.5-flash-lite
 paraphraser|prompt injection defense|google/gemini-2.5-flash-lite
 messenger|writes human-readable responses|deepseek/deepseek-v3.2
-searcher|web search (native search)|perplexity/sonar
+consolidator|periodic knowledge quality review|google/gemini-2.5-flash-lite
+mcp_sampling|fulfils sampling/createMessage requests from MCP servers|google/gemini-2.5-flash
 FALLBACK
 )
 
