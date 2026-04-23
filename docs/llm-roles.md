@@ -37,34 +37,34 @@ This two-layer scheme is what makes kiso resilient to role-file corruption at ru
 
 ## Context per Role
 
-| Context piece | Classifier | Briefer | Planner | Reviewer | Worker | Messenger | Searcher | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|---|---|---|---|
-| User message (raw) | yes | - | - | - | - | - | - | - | - | - |
-| Session summary | - | yes | briefer-filtered | - | - | briefer-filtered | - | yes (existing) | yes | - |
-| Last N raw messages | - | yes | briefer-filtered | - | - | - | - | - | - | - |
-| Recent msg outputs | - | yes | briefer-filtered | - | - | - | - | - | - | - |
-| Paraphrased untrusted messages | - | yes | briefer-filtered | - | - | - | - | - | - | generates |
-| New message | - | yes | yes | - | - | - | - | - | - | - |
-| Facts (session-scoped; admin sees all) | - | yes | briefer-filtered | - | - | briefer-filtered | - | - | yes | - |
-| Pending items (global + session) | - | yes | briefer-filtered | - | - | - | - | - | yes | - |
-| Allowed wrapper summaries + args schemas | - | yes | briefer-filtered | - | - | - | - | - | - | - |
-| Caller role (admin/user) | - | - | yes | - | - | - | - | - | - | - |
-| System environment | - | yes | briefer-filtered | - | yes | - | - | - | - | - |
-| Capability analysis | - | yes | briefer-filtered | - | - | - | - | - | - | - |
-| Plan context (goal) | - | - | generates | yes (as background) | - | - | - | - | - | - |
-| Preceding plan outputs (fenced) | - | yes (msg) | - | - | yes | briefer-filtered | yes | - | - | - |
-| Current task detail | - | - | - | yes | yes | yes | yes | - | - | - |
-| Current task expect | - | - | - | yes | - | - | - | - | - | - |
-| Current task output (fenced) | - | - | - | yes | - | - | - | - | - | - |
-| Original user request | - | - | - | yes | - | - | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | - | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | - | - | replan only | - | - | - | - | - | - | - |
-| Remaining tasks | - | - | replan only | - | - | - | - | - | - | - |
-| Failure reason | - | - | replan only | - | - | - | - | - | - | - |
-| Replan history | - | - | replan only | - | - | - | - | - | - | - |
-| Confirmed facts | - | - | replan only | - | - | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | - | yes |
+| Context piece | Classifier | Briefer | Planner | Reviewer | Worker | Messenger | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|---|---|
+| User message (raw) | yes | - | - | - | - | - | - | - | - |
+| Session summary | - | yes | briefer-filtered | - | - | briefer-filtered | yes (existing) | yes | - |
+| Last N raw messages | - | yes | briefer-filtered | - | - | - | - | - | - |
+| Recent msg outputs | - | yes | briefer-filtered | - | - | - | - | - | - |
+| Paraphrased untrusted messages | - | yes | briefer-filtered | - | - | - | - | - | generates |
+| New message | - | yes | yes | - | - | - | - | - | - |
+| Facts (session-scoped; admin sees all) | - | yes | briefer-filtered | - | - | briefer-filtered | - | yes | - |
+| Pending items (global + session) | - | yes | briefer-filtered | - | - | - | - | yes | - |
+| Skill role slices + MCP method catalog | - | yes | briefer-filtered | yes (reviewer slice) | yes (worker slice) | yes (messenger slice) | - | - | - |
+| Caller role (admin/user) | - | - | yes | - | - | - | - | - | - |
+| System environment | - | yes | briefer-filtered | - | yes | - | - | - | - |
+| Capability analysis | - | yes | briefer-filtered | - | - | - | - | - | - |
+| Plan context (goal) | - | - | generates | yes (as background) | - | - | - | - | - |
+| Preceding plan outputs (fenced) | - | yes (msg) | - | - | yes | briefer-filtered | - | - | - |
+| Current task detail | - | - | - | yes | yes | yes | - | - | - |
+| Current task expect | - | - | - | yes | - | - | - | - | - |
+| Current task output (fenced) | - | - | - | yes | - | - | - | - | - |
+| Original user request | - | - | - | yes | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | - | - | replan only | - | - | - | - | - | - |
+| Remaining tasks | - | - | replan only | - | - | - | - | - | - |
+| Failure reason | - | - | replan only | - | - | - | - | - | - |
+| Replan history | - | - | replan only | - | - | - | - | - | - |
+| Confirmed facts | - | - | replan only | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | yes |
 
 Key principle: the planner must put everything the messenger / worker needs into the task `detail` — neither will see the raw conversation (see [Why the messenger doesn't see the raw conversation](#why-the-messenger-doesnt-see-the-raw-conversation)). For `exec` tasks, `detail` is a natural-language description; the **worker** role (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
 
@@ -93,7 +93,7 @@ Key principle: the planner must put everything the messenger / worker needs into
 ```
 
 - **modules**: prompt modules to inject into the consumer's system prompt (from 11 available modules). Empty array when only core rules are needed (e.g., simple lookups).
-- **wrappers**: relevant wrapper descriptions (copied verbatim from context pool). Filters the full wrapper list to only what's relevant.
+- **skills** + **mcp_methods**: role-scoped skill slices and MCP methods relevant to the current message (see `briefer.md` schema). Filters the full skill / MCP catalogs down to what the planner actually needs.
 - **context**: synthesized briefing replacing raw summary, facts, and history. Preserves specific values (names, versions, paths, URLs).
 - **output_indices**: which plan_output entries to include (for messenger/worker). Filters irrelevant setup/install outputs.
 - **relevant_tags**: fact tags for additional retrieval by semantic topic.
@@ -111,10 +111,10 @@ The planner prompt is modular — `<!-- MODULE: name -->` markers divide it into
 | `data_flow` | Tasks produce large output for later tasks |
 | `scripting` | Data processing or code generation needed |
 | `replan` | Replan context only |
-| `tool_recovery` | Wrapper is broken or has failed |
-| `kiso_commands` | Kiso administration (wrapper/connector/env management) |
+| `mcp_recovery` | MCP server is broken or has failed |
+| `kiso_commands` | Kiso administration (skill / MCP / connector / env management) |
 | `user_mgmt` | Users, roles, or aliases |
-| `plugin_install` | Wrapper/connector not installed (also force-injected when no wrappers exist) |
+| `plugin_install` | Skill or MCP server not installed (force-injected when the catalog is empty or the user asks to install) |
 
 ### Fallback
 
@@ -241,13 +241,14 @@ response_format = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "type": {"type": "string", "enum": ["exec", "msg", "wrapper", "search", "replan"]},
+                            "type": {"type": "string", "enum": ["exec", "mcp", "msg", "replan"]},
                             "detail": {"type": "string"},
-                            "wrapper": {"type": ["string", "null"]},
-                            "args": {"type": ["string", "null"]},
+                            "server": {"type": ["string", "null"]},
+                            "method": {"type": ["string", "null"]},
+                            "args": {"type": ["object", "null"]},
                             "expect": {"type": ["string", "null"]}
                         },
-                        "required": ["type", "detail", "wrapper", "args", "expect"],
+                        "required": ["type", "detail", "server", "method", "args", "expect"],
                         "additionalProperties": False
                     }
                 },
@@ -262,9 +263,9 @@ response_format = {
 
 Schema notes:
 - **`secrets`**: array of `{key, value}` pairs — ephemeral credentials extracted from user messages. Stored in worker memory only, never in DB. `null` when no secrets. Example: `[{"key": "api_token", "value": "tok_abc123"}]`
-- **`args`**: JSON string (strict mode doesn't allow dynamic-key objects). `null` for `exec`, `msg`, and `replan` tasks. Required for `wrapper` tasks (validated against `kiso.toml` schema). Optional for `search` tasks (`null` or JSON with `max_results`, `lang`, `country`).
-- **Optional task fields** (`wrapper`, `args`, `expect`): nullable — `null` when not applicable.
-- **`review` field removed**: `exec`, `wrapper`, and `search` tasks are always reviewed. `msg` tasks are never reviewed. The task type determines behavior.
+- **`args`**: structured object (MCP input schema). `null` for `exec`, `msg`, and `replan` tasks. Required for `mcp` tasks (validated against the server's published input schema before dispatch).
+- **Optional task fields** (`server`, `method`, `args`, `expect`): nullable — `null` when not applicable.
+- **`review` field removed**: `exec` and `mcp` tasks are always reviewed. `msg` tasks are never reviewed. The task type determines behavior.
 
 Provider guarantees valid JSON at decoding level — no parse retries needed. If the provider doesn't support structured output, the call fails with a clear error:
 
@@ -274,27 +275,26 @@ Planner, Reviewer, and Curator require it. Route these roles to a compatible pro
 (e.g. models.planner = "openrouter:z-ai/glm-4.7").
 ```
 
-Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Searcher, Summarizer, and Paraphraser produce free-form text.
+Structured output is a hard requirement for Planner, Reviewer, and Curator. Worker, Messenger, Summarizer, and Paraphraser produce free-form text.
 
 ### Validation After Parsing
 
 JSON structure is guaranteed by the provider, but kiso validates **semantics** before execution:
 
-1. `exec`, `wrapper`, and `search` tasks must have a non-null `expect`
+1. `exec` and `mcp` tasks must have a non-null `expect`
 2. `msg` and `replan` tasks must have `expect = null`
 3. Last task must be `type: "msg"` or `type: "replan"` (user gets a response, or investigation triggers a new plan)
-4. Every `wrapper` reference must exist in installed wrappers
-5. Every `wrapper` task's `args` must be valid JSON matching the wrapper's schema from `kiso.toml`
+4. Every `mcp` task's `server` must match an installed MCP server, and its `method` must be listed in that server's current tool catalog
+5. Every `mcp` task's `args` must validate against the method's input schema (JSON Schema from `tools/list`)
 6. `tasks` list must not be empty
-7. `replan` tasks must have `wrapper = null` and `args = null`, and can only be the last task
+7. `replan` tasks must have `server = null`, `method = null`, `args = null`, and can only be the last task
 8. A plan can have at most one `replan` task
-9. `search` tasks must have `wrapper = null`, `expect` non-null, and `args` (if present) must be valid JSON with optional keys: `max_results` (int), `lang` (string), `country` (string)
 
 On failure, kiso sends the plan back with specific errors, up to `max_validation_retries` (default 3):
 
 ```
 Your plan has errors:
-- Task 2: wrapper "aider" requires arg "message" (string, required) but it's missing
+- Task 2: mcp "aider:aider_codegen" requires arg "message" (string, required) but it's missing
 - Task 3: exec task missing expect field
 Fix these and return the corrected plan.
 ```
@@ -303,36 +303,35 @@ If exhausted: fail the message, notify user. No silent fallback.
 
 ### Identity and Environment Awareness
 
-The planner knows it is the planning component of Kiso, not a generic task planner. Kiso operates on two layers: the **OS layer** (direct shell commands) and the **Kiso layer** (native primitives: wrappers, connectors, env vars, memory). The planner checks for a Kiso-native solution before reaching for OS-level commands, and only proceeds when both intent and target are unambiguous — otherwise it asks the user first.
+The planner knows it is the planning component of Kiso, not a generic task planner. Kiso operates on two layers: the **OS layer** (direct shell commands) and the **Kiso layer** (skills, MCP servers, connectors, env vars, memory). The planner checks for a skill or MCP method that covers the goal before reaching for OS-level commands, and only proceeds when both intent and target are unambiguous — otherwise it asks the user first.
 
 ### Prompt Design
 
 **System prompt** (`roles/planner.md`) is modular — a fixed core plus 11 conditional modules selected by the briefer (see [Briefer](#briefer)). When the briefer is disabled, keyword-based fallback selects modules.
 
-**1. Few-shot examples.** Complete plan examples in `roles/planner.md`. Cover: coding task (msg → wrapper → exec → msg), research task (wrapper → msg). All task fields always present (strict mode); nullable fields are `null`.
+**1. Few-shot examples.** Complete plan examples in `roles/planner.md`. Cover: coding task (msg → mcp(aider) → exec → msg), research task (mcp(search) → msg). All task fields always present (strict mode); nullable fields are `null`.
 
 **2. Task templates** as reference patterns (not forced, just suggested):
 
 ```
 Common patterns:
-- Code change: msg → wrapper(aider) → exec(test) → msg
-- Web lookup: search → msg
-- Bulk research: wrapper(search) → msg (if search wrapper installed, cheaper for >10 results)
-- Investigation: search → exec → replan (gather info, then replan with results)
+- Code change: msg → mcp(aider:aider_codegen) → exec(test) → msg
+- Web lookup: mcp(search:web_search) → msg
+- Investigation: mcp(search:web_search) → exec → replan
 - Simple question: msg
 - Clarification needed: msg (ask the user)
-- Multi-step build: msg → exec(setup) → wrapper(aider) → exec(test) → msg
+- Multi-step build: msg → exec(setup) → mcp(aider:aider_codegen) → exec(test) → msg
 ```
 
-**3. Rules** — the expected JSON format, available task types, available wrappers with args schemas, caller role, and these constraints:
+**3. Rules** — the expected JSON format, available task types, the role-scoped skill slices + MCP method catalog, caller role, and these constraints:
 - Task `detail` must be self-contained — the worker does not see the conversation
 - **CRITICAL**: The last task must be `type: "msg"` or `type: "replan"` — the user always gets a final response, or investigation triggers a new plan. This rule is marked `CRITICAL:` in the prompt because some models skip it under token pressure, wasting a validation retry.
-- `exec`, `wrapper`, and `search` tasks must have an `expect` field (they are always reviewed)
+- `exec` and `mcp` tasks must have an `expect` field (they are always reviewed)
 - `msg` tasks are the only way to communicate with the user
 - **Asking the user**: if the planner needs information it doesn't have, it ends the plan with a `msg` task asking the question. The next message cycle will have the user's answer in context (recent messages + msg outputs). Two cases:
   - Request is ambiguous or missing critical info **upfront** → produce a single `msg` task asking for clarification, do not guess
   - Planner realizes **mid-planning** that a later step depends on unknown user input → stop planning at that point, end with a `msg` asking the question. Do not plan tasks that depend on answers you don't have yet
-- **Task output chaining**: outputs from earlier tasks are available to later tasks in the same plan. For `exec`: read `.kiso/plan_outputs.json` in the workspace. For `wrapper` and `msg`: provided automatically. Plan commands that use previous results accordingly
+- **Task output chaining**: outputs from earlier tasks are available to later tasks in the same plan. For `exec`: read `.kiso/plan_outputs.json` in the workspace. For `mcp` and `msg`: provided automatically. Plan commands that use previous results accordingly
 - If a user (non-admin) shares credentials, extract them into `secrets` (ephemeral, not persisted) and inform the user they are temporary
 - If a user asks to permanently configure a credential, respond with a `msg` task telling them to ask an admin to set it as a deploy secret via `kiso env set`
 - If an admin asks to configure a credential, generate exec tasks: `kiso env set ... && kiso env reload`
@@ -344,11 +343,12 @@ All fields are always present in the JSON output (strict mode requires it). The 
 
 | Field | Non-null when | Description |
 |---|---|---|
-| `type` | always | `exec`, `msg`, `wrapper`, `search`, `replan` |
-| `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. For `search` tasks, the search query. |
+| `type` | always | `exec`, `mcp`, `msg`, `replan` |
+| `detail` | always | What to do (natural language). For `msg` tasks, must include all context the messenger needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. For `mcp` tasks, describes the intent (the machine-readable server / method / args are in their own fields). |
 | `expect` | `type` is `exec` or `mcp` | Success criteria for THIS task's output only — not the overall plan goal. Must be verifiable from the task's direct output. For maintenance commands, "0 changes" is a valid success state and should be stated explicitly. Required — all exec/mcp tasks are reviewed. |
-| `wrapper` | `type` is `wrapper` | Wrapper name. Must be `null` for search tasks. |
-| `args` | `type` is `wrapper` (required); `type` is `search` (optional) | For wrappers: arguments as a JSON string validated against `kiso.toml` schema. For search: nullable — `null` or JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. |
+| `server` | `type` is `mcp` | Installed MCP server id (from `~/.kiso/mcp.json`). `null` for non-mcp tasks. |
+| `method` | `type` is `mcp` | MCP method name (from the server's tool catalog). `null` for non-mcp tasks. |
+| `args` | `type` is `mcp` (required) | Structured object validated against the method's input schema. `null` for non-mcp tasks. |
 
 ### Output Fields
 
@@ -362,7 +362,7 @@ After validation, the planner output becomes a **plan** entity — see [database
 
 ## Reviewer
 
-**When**: after execution of every `exec`, `wrapper`, and `search` task (always — no opt-out).
+**When**: after execution of every `exec` and `mcp` task (always — no opt-out).
 
 **Input**: see [Context per Role](#context-per-role) table. Task output is fenced (see [security.md](security.md#layer-2-random-boundary-fencing)).
 
@@ -567,12 +567,12 @@ response_format = {
                             "learning_id": {"type": "integer"},
                             "verdict": {"type": "string", "enum": ["promote", "ask", "discard"]},
                             "fact": {"type": ["string", "null"]},
-                            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "wrapper", "general"]}, {"type": "null"}]},
+                            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "tool", "general"]}, {"type": "null"}]},
                             "question": {"type": ["string", "null"]},
                             "reason": {"type": "string"},
                             "tags": {"anyOf": [{"type": "array", "items": {"type": "string"}, "maxItems": 5}, {"type": "null"}]},
                             "entity_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                            "entity_kind": {"anyOf": [{"type": "string", "enum": ["website", "company", "wrapper", "person", "project", "concept"]}, {"type": "null"}]}
+                            "entity_kind": {"anyOf": [{"type": "string", "enum": ["website", "company", "tool", "person", "project", "concept"]}, {"type": "null"}]}
                         },
                         "required": ["learning_id", "verdict", "fact", "category", "question", "reason", "tags", "entity_name", "entity_kind"],
                         "additionalProperties": False
@@ -590,7 +590,7 @@ response_format = {
 
 | Verdict | Meaning | Effect |
 |---|---|---|
-| `promote` | Learning is a confirmed, important fact | `fact` + `category` become a new entry in `store.facts`. `tags` (1-5) enable semantic retrieval. `entity_name` + `entity_kind` link the fact to an entity record (created if new). `category` determines session scoping: `"user"` facts are session-scoped; `"project"`, `"wrapper"`, `"general"` facts are global. Learning marked `promoted`. |
+| `promote` | Learning is a confirmed, important fact | `fact` + `category` become a new entry in `store.facts`. `tags` (1-5) enable semantic retrieval. `entity_name` + `entity_kind` link the fact to an entity record (created if new). `category` determines session scoping: `"user"` facts are session-scoped; `"project"`, `"tool"`, `"general"` facts are global. Learning marked `promoted`. |
 | `ask` | Uncertain but potentially important | `question` field becomes a new entry in `store.pending` (scope = session). The planner will ask the user for confirmation. |
 | `discard` | Trivial, transient, or already covered | Learning marked `discarded`. `reason` explains why. |
 

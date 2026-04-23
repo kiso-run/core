@@ -22,6 +22,12 @@ _MASK_EXEMPT = frozenset({"timestamp", "type"})
 # Avoids mkdir + chmod on every write once the directory exists.
 _audit_dir_ready: set[Path] = set()
 
+# Optional callback that mirrors each log_llm_call into a dedicated
+# store (``kiso/store/usage.py``). Installed by the boot path when a
+# SQLite connection is available; left None for the JSONL-only path
+# used by tests and the daemon before DB is open.
+_usage_recorder = None
+
 
 @dataclass(frozen=True, slots=True)
 class LlmAuditEntry:
@@ -141,6 +147,16 @@ def log_llm_call(
         duration_ms=duration_ms,
         status=status,
     ))
+    # Mirror into the dedicated llm_usage SQLite table if a recorder
+    # callback is installed. Cost resolution is the recorder's job
+    # (uses kiso/stats.py::compute_cost).
+    if _usage_recorder is not None and status != "error":
+        try:
+            from kiso.stats import compute_cost
+            cost = compute_cost(model, input_tokens, output_tokens)
+            _usage_recorder(session, role, model, input_tokens, output_tokens, cost)
+        except Exception:  # pragma: no cover — best-effort
+            log.debug("usage recorder failed", exc_info=True)
 
 
 def log_task(

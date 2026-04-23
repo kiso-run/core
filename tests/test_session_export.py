@@ -264,6 +264,72 @@ class TestUnpackSession:
         ).fetchone()[0] == 2
         assert (target_ws_parent / "archive1" / "notes.md").is_file()
 
+    def test_delete_then_import_resumes_queries(
+        self, tmp_path: Path,
+        fixture_db: sqlite3.Connection,
+        fixture_workspace: Path,
+    ) -> None:
+        """Integration: export → delete all session data → import →
+        queries must return the original rows. This covers the "move
+        a session to another machine" story end-to-end on the store
+        layer, without needing a running server."""
+        from kiso.session_export import pack_session, unpack_session
+
+        archive = tmp_path / "dev.kiso.tar.gz"
+        pack_session(
+            conn=fixture_db,
+            session_id="dev",
+            workspace_parent=fixture_workspace,
+            output_path=archive,
+        )
+
+        # Simulate a full reset of the `dev` session on the source
+        # machine: drop rows + remove workspace dir.
+        for table in (
+            "sessions", "messages", "plans", "tasks", "facts", "learnings"
+        ):
+            fixture_db.execute(
+                f"DELETE FROM {table} WHERE session = ?", ("dev",)
+            )
+        fixture_db.commit()
+        import shutil as _sh
+        _sh.rmtree(fixture_workspace / "dev", ignore_errors=True)
+
+        # Confirm the deletion actually happened.
+        assert fixture_db.execute(
+            "SELECT COUNT(*) FROM messages WHERE session = ?", ("dev",)
+        ).fetchone()[0] == 0
+        assert not (fixture_workspace / "dev").exists()
+        # Other session is untouched.
+        assert fixture_db.execute(
+            "SELECT COUNT(*) FROM messages WHERE session = ?", ("other",)
+        ).fetchone()[0] == 1
+
+        # Now import the archive back into the same DB / workspace
+        # parent.
+        unpack_session(
+            archive_path=archive,
+            conn=fixture_db,
+            workspace_parent=fixture_workspace,
+        )
+
+        # The conversation resumes: the same messages, plan, tasks
+        # exist again, and the workspace files are back byte-for-byte.
+        row = fixture_db.execute(
+            "SELECT content FROM messages "
+            "WHERE session = ? ORDER BY id", ("dev",)
+        ).fetchall()
+        assert [r[0] for r in row] == ["hello", "hi"]
+        assert fixture_db.execute(
+            "SELECT goal FROM plans WHERE session = ?", ("dev",)
+        ).fetchone()[0] == "answer the user"
+        assert (fixture_workspace / "dev" / "notes.md").read_text() == (
+            "hello from the workspace\n"
+        )
+        assert (
+            fixture_workspace / "dev" / "pub" / "report.txt"
+        ).read_text() == "published output\n"
+
     def test_rejects_future_schema_version(
         self, tmp_path: Path,
         fixture_db: sqlite3.Connection,

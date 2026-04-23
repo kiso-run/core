@@ -12,10 +12,10 @@ the wider ecosystem.
 > **Terminology note.** Throughout this document and the rest of
 > Kiso's vocabulary, an MCP server exposes **methods**. The MCP
 > specification itself uses the word *"tool"* for the same
-> concept (cf. `tools/list`, `tools/call`). We use "method" to
-> avoid confusion with Kiso's earlier "tool" terminology (now
-> renamed to "wrapper"). When reading the MCP spec, mentally
-> substitute *tool* → *method*.
+> concept (cf. `tools/list`, `tools/call`). We use "method"
+> consistently when referring to kiso-side dispatch to avoid
+> ambiguity in runtime messages. When reading the MCP spec,
+> mentally substitute *tool* → *method*.
 
 ## Finding servers
 
@@ -393,16 +393,15 @@ Open an issue if you need one of these for a concrete use case.
 
 ## Community examples for retired wrappers
 
-Kiso v0.9 retired three wrappers that violated the boundary rule
-(pure remote-API proxies with no local-install lifecycle). Users
-who still want that functionality can configure community MCP
-servers from the ecosystem:
+For capabilities that are pure remote-API proxies (Google Workspace,
+generic web search, external knowledge bases), the ecosystem has
+several community MCP servers. A few starting points:
 
-| Retired wrapper | Community MCP alternatives (not endorsed) |
+| Capability | Community MCP starting points (not endorsed) |
 |---|---|
-| `gworkspace` | Search pulsemcp.com and `modelcontextprotocol/servers` for "google" — several Google Drive / Calendar / Docs MCPs exist |
-| `websearch` | `@modelcontextprotocol/server-brave-search`, Google Maps Grounding Lite for geo-aware grounding, or the built-in `search` task type (no MCP needed for basic web search) |
-| `moltbook` | `thebenlamm/moltbook-mcp` (pip-installable Python server) |
+| Google Workspace | Search `pulsemcp.com` and `modelcontextprotocol/servers` for "google" — several Google Drive / Calendar / Docs MCPs exist. |
+| Generic web search | `@modelcontextprotocol/server-brave-search`, `@modelcontextprotocol/server-perplexity-ask`, or kiso's own `kiso-run/search-mcp` (routes via OpenRouter, one-key). |
+| Notebooks / reading lists | Search `pulsemcp.com` for the concept you need. |
 
 These are community servers maintained by third parties. Kiso
 has no SLA or security review for any of them. Read the server's

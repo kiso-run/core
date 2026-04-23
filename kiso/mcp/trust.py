@@ -30,6 +30,30 @@ MCP_TIER1_PREFIXES: tuple[str, ...] = (
 TrustTier = Literal["tier1", "custom", "untrusted"]
 
 
+def format_trust_rejection(
+    *,
+    url: str,
+    expected_prefixes: tuple[str, ...] | list[str],
+) -> str:
+    """User-facing message for an untrusted install source.
+
+    Explains what the trust system expected, why the supplied URL
+    does not match, and how to add a custom prefix so the source is
+    accepted on subsequent installs.
+    """
+    prefixes = "\n".join(f"    - {p}" for p in expected_prefixes)
+    return (
+        f"install source rejected by the trust store: {url}\n"
+        f"  Trusted prefixes (Tier 1, shipped with kiso):\n{prefixes}\n"
+        f"  The URL does not match any trusted prefix above. Either:\n"
+        f"    * install from a trusted source, or\n"
+        f"    * add a custom prefix: "
+        f"`kiso mcp trust add '<prefix>'` — see `kiso mcp trust list`\n"
+        f"  and `docs/security.md` (trust store section) for the "
+        f"full policy."
+    )
+
+
 def is_trusted(source_key: str) -> TrustTier:
     """Classify *source_key* into a trust tier.
 

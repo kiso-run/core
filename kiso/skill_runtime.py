@@ -22,6 +22,8 @@ applied before the briefer runs, identical semantics to the recipe
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from typing import Any
 
@@ -34,7 +36,37 @@ __all__ = (
     "instructions_for_reviewer",
     "instructions_for_messenger",
     "filter_by_activation_hints",
+    "log_activation_miss",
 )
+
+
+log = logging.getLogger(__name__)
+
+
+def log_activation_miss(
+    *,
+    skill_name: str,
+    message: str,
+    applies_to: list[str],
+    excludes: list[str],
+) -> None:
+    """Emit a DEBUG log explaining why a skill was filtered out.
+
+    No-op unless ``KISO_DEBUG`` is set in the process environment —
+    this must not spam normal operation. Intended for a user trying
+    to figure out why an installed skill never activates on a given
+    message.
+    """
+    if not os.environ.get("KISO_DEBUG"):
+        return
+    msg_preview = message if len(message) <= 80 else message[:80] + "…"
+    log.debug(
+        "skill %s filtered: applies_to=%s no match in %r; excludes=%s",
+        skill_name,
+        applies_to,
+        msg_preview,
+        excludes,
+    )
 
 
 def _attr(obj, name, default=None):
@@ -146,8 +178,20 @@ def filter_by_activation_hints(
         if applies and not any(
             _selector_matches(message_norm, sel) for sel in applies
         ):
+            log_activation_miss(
+                skill_name=getattr(s, "name", "<unknown>"),
+                message=message,
+                applies_to=list(applies),
+                excludes=list(excludes),
+            )
             continue
         if any(_selector_matches(message_norm, sel) for sel in excludes):
+            log_activation_miss(
+                skill_name=getattr(s, "name", "<unknown>"),
+                message=message,
+                applies_to=list(applies),
+                excludes=list(excludes),
+            )
             continue
         kept.append(s)
     return kept

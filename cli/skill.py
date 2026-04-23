@@ -43,6 +43,28 @@ _zip_fetcher = None
 _agentskills_resolver = None
 
 
+def format_skill_install_http_failure(
+    *,
+    url: str,
+    status: int,
+    reason: str,
+) -> str:
+    """User-facing message for an HTTP failure during ``kiso skill install``.
+
+    Names the URL that was tried and the remote status so the user
+    can tell "the URL was wrong" from "the server is down" from "the
+    file does not exist". Paired with the pre-argparse
+    ``--from-url`` hint (``cli/_from_url_hint.py``) for bare-identifier
+    mistakes.
+    """
+    return (
+        f"skill install failed: HTTP {status} {reason}\n"
+        f"  URL: {url}\n"
+        f"  Next step: check the URL in a browser or retry with a "
+        f"different --from-url source."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Argparse wiring
 # ---------------------------------------------------------------------------

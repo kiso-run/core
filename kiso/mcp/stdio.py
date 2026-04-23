@@ -111,6 +111,39 @@ def _read_env_file(server_name: str) -> dict[str, str]:
     return out
 
 
+def format_mcp_spawn_failure(
+    *,
+    server_name: str,
+    command: str,
+    args: list[str],
+    reason: str,
+    stderr_tail: str | None,
+) -> str:
+    """Build the user-facing message for an MCP subprocess spawn failure.
+
+    Names the exact command + args that were attempted and surfaces
+    any stderr captured before the process crashed. Paired with
+    ``kiso/worker/mcp.py::format_mcp_transport_failure`` — together
+    they cover "cannot start" vs "started but call failed".
+    """
+    argv = " ".join([command, *args]) if args else command
+    head = (
+        f"mcp[{server_name}] spawn failed: {reason}\n"
+        f"  command attempted: {argv}"
+    )
+    if stderr_tail and stderr_tail.strip():
+        tail = stderr_tail.strip().splitlines()
+        # Cap the stderr echo so we never dump megabytes into the error.
+        if len(tail) > 20:
+            tail = ["...", *tail[-20:]]
+        head += "\n  stderr tail:\n    " + "\n    ".join(tail)
+    head += (
+        f"\n  Next step: run `kiso mcp test {server_name}` (full stderr "
+        f"in `~/.kiso/mcp/{server_name}.err.log`)."
+    )
+    return head
+
+
 class MCPStdioClient(MCPClient):
     """Concrete MCP client over a local subprocess stdio transport."""
 
@@ -463,12 +496,23 @@ class MCPStdioClient(MCPClient):
             )
         except FileNotFoundError as e:
             raise MCPTransportError(
-                f"mcp[{self._server.name}] spawn failed: command not found: "
-                f"{self._server.command!r}"
+                format_mcp_spawn_failure(
+                    server_name=self._server.name,
+                    command=self._server.command,
+                    args=list(self._server.args),
+                    reason=f"command not found: {e}",
+                    stderr_tail=None,
+                )
             ) from e
         except Exception as e:  # noqa: BLE001
             raise MCPTransportError(
-                f"mcp[{self._server.name}] spawn failed: {e}"
+                format_mcp_spawn_failure(
+                    server_name=self._server.name,
+                    command=self._server.command,
+                    args=list(self._server.args),
+                    reason=str(e),
+                    stderr_tail=None,
+                )
             ) from e
 
         self._open_stderr_log()

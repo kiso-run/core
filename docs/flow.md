@@ -90,7 +90,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Paraphrased untrusted messages (from step a, with random boundary fencing)
 - Recent msg outputs (all `msg` task outputs since last summarization, from `store.tasks`)
 - Workspace file listing (files in the session directory, max 30, with sizes)
-- Wrapper summaries and args schemas (only wrappers allowed for this user, from `kiso.toml`, rescanned on each planner call — skips directories with `.installing` marker)
+- MCP method catalog + skill catalog (role-scoped to the user via the briefer's pre-filter and any `[users.<name>.mcp]` / `[users.<name>.skills]` filters)
 - Caller role (admin | user)
 - New message
 
@@ -105,7 +105,7 @@ Returns JSON with:
 
 Before execution, Kiso normalizes each raw planner task into an internal
 `TaskContract`. The contract carries:
-- normalized task identity (`type`, intent, wrapper name, parsed args)
+- normalized task identity (`type`, intent, MCP server + method, parsed args)
 - delivery mode (`action` vs `user-facing`)
 - verification mode (`review` vs `none`)
 - allowed repair scope
@@ -129,8 +129,7 @@ For each task, kiso first checks the **cancel flag** — if set, remaining tasks
 |---|---|
 | `exec` | **Two-step (architect/editor pattern):** 1) The **exec translator** LLM converts the natural-language `detail` into a shell command, using the system environment context, structured preceding task results, and authoritative dependency links when prior files/artifacts are relevant. The translated command is persisted in the task's `command` column so the CLI can display it. 2) The translated command is executed via `asyncio.create_subprocess_shell(...)` with `cwd=KISO_DIR/sessions/{session}`, timeout from config. Admin: full access. User: restricted to session workspace. Clean env (only PATH). Plan outputs from preceding tasks available in `{workspace}/.kiso/plan_outputs.json`. Captures stdout+stderr. |
 | `msg` | Calls LLM with `messenger` role. Context: facts + session summary + task detail + preceding plan outputs (fenced). The messenger does **not** see conversation messages — the planner provides all necessary context in the task `detail` field (see [llm-roles.md — Why the messenger doesn't see the raw conversation](llm-roles.md#why-the-messenger-doesnt-see-the-raw-conversation)). |
-| `search` | Calls LLM with `searcher` role (see [config.md](config.md) for default model). `detail` = search query. `args` = optional JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. Preceding plan outputs provided as context. Returns web search results. Always reviewed. |
-| `wrapper` | Validates args against `kiso.toml` schema. Pipes input JSON to stdin: `.venv/bin/python KISO_DIR/wrappers/{name}/run.py`. Input: args + session + workspace + scoped ephemeral secrets + `plan_outputs` (preceding task outputs). Output: stdout. |
+| `mcp` | Validates `args` against the server's published input schema, looks up the per-session MCP client from the pool (or spawns one), calls `<server>:<method>` with the args plus workspace / session context. Returns the tool's structured response (``content`` array) rendered into stdout + published files. Always reviewed. |
 
 **Task output chaining**: the worker accumulates outputs from completed tasks in the current plan and passes them to each subsequent task. The runtime also normalizes those outputs into canonical `TaskResult` objects and carries `file_refs`, `artifact_refs`, failure classes, reviewer summaries, and dependency links forward. This allows later tasks to reference results from earlier ones without replanning. See [Task Output Chaining](#task-output-chaining).
 
@@ -140,7 +139,7 @@ All LLM calls, task executions, and webhook deliveries are logged to the audit t
 
 ### g) Reviews and Delivers
 
-**For `exec`, `wrapper`, and `search` tasks** (always reviewed):
+**For `exec` and `mcp` tasks** (always reviewed):
 
 1. **Review**: Reviewer receives process goal + task detail + task expect + task output + original user message. Uses structured output. Two outcomes:
    - `status: "ok"` → proceed to next task
@@ -187,8 +186,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
 Before execution, `validate_plan` runs deterministic structural checks that reject invalid plans with specific error feedback (the planner retries with the error message). Key guardrails:
 
 - **No msg-first**: plans must start with action tasks (exec/mcp), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
-- **Codegen-only shape**: when the first task is a wrapper and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen wrappers — the reviewer already inspects wrapper output.
-- **Browser URL validation**: browser wrapper args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
+- **Codegen-only shape**: when the first task is an `mcp` codegen call (e.g. `aider`) and the second is `exec`, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen — the reviewer already inspects MCP output.
 - **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan). This covers all install command shapes: `kiso mcp install --from-url`, `kiso skill install --from-url`, `kiso connector install`, system package managers (`apt-get install`, `brew install`, …), and Python / Node ephemeral runners (`uv pip install`, `npx -y`). Once the user approves, the same commands are allowed through the worker.
 
 ### LLM Retry and Fallback
@@ -209,7 +207,7 @@ The worker accumulates outputs from completed tasks in the current plan and pass
 [
   {
     "index": 1,
-    "type": "wrapper",
+    "type": "mcp",
     "detail": "Search for fly.io deployment guides",
     "output": "1. fly.io/docs/python - Deploy Python apps...",
     "status": "done"
@@ -242,8 +240,7 @@ How each task type receives preceding outputs:
 | Task type | Mechanism | Details |
 |---|---|---|
 | `exec` | File `{workspace}/.kiso/plan_outputs.json` | Written before each execution. Empty array (`[]`) if first task. The planner writes commands that reference it, e.g. `jq -r '.[-1].output' .kiso/plan_outputs.json`. |
-| `wrapper` | `plan_outputs` field in input JSON | Same structure, added alongside `args`, `session`, `workspace`, `session_secrets` in the stdin JSON. |
-| `search` | Fenced section in searcher LLM prompt | Same structure as `msg`, preceding outputs provided in the searcher's context. |
+| `mcp` | `plan_outputs` field in the call arguments | Threaded into the tool call alongside `args`, `session`, and any per-server context the runtime injects. |
 | `msg` | Fenced section in messenger LLM prompt | Formatted as readable text inside boundary fencing (external content). The worker uses it naturally when writing responses. |
 
 The worker always provides preceding outputs — no conditional logic. The planner writes task details that reference them when needed. The file is cleaned up after plan completion.
@@ -322,12 +319,13 @@ Planner, Worker, and Curator receive facts in their context. Reviewer, Summarize
 
 See [database.md — facts](database.md#facts) for the full schema.
 
-Facts have a `category` (`project`, `user`, `wrapper`, `general`) and an optional `session` column (provenance).
+Facts have a `category` (`project`, `user`, `tool`, `general`, plus
+the special `safety` / `behavior` categories) and an optional
+`session` column (provenance).
 
-**Visibility rules (M43)**:
-- `project`, `wrapper`, `general` facts: always global — visible in every session.
+**Visibility rules**:
+- `project`, `tool`, `general` facts: always global — visible in every session.
 - `user` facts: scoped to the session where they were created. Other sessions do not see them.
-- `user` facts: not visible outside their originating session.
 
 **Admin visibility (M44f)**: admin callers receive all facts from all sessions, but the planner context splits them into two priority tiers:
 - `## Known Facts` — current session + global facts (primary context).
@@ -335,7 +333,7 @@ Facts have a `category` (`project`, `user`, `wrapper`, `general`) and an optiona
 
 ### Consolidation
 
-When facts exceed `knowledge_max_facts` (see [config.md](config.md)), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `wrapper`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
+When facts exceed `knowledge_max_facts` (see [config.md](config.md)), the Summarizer reads all facts and returns a structured JSON array: `[{content, category, confidence}]`. It merges duplicates (e.g. `"uses Flask"` + `"Flask 2.3"` → `"Project uses Flask 2.3"`), resolves contradictions (keeps the most recent), and assigns a category (`project`, `user`, `tool`, `general`) and confidence (1.0 for well-established facts, lower for uncertain ones). The old rows are replaced with the consolidated entries.
 
 After consolidation, the worker runs a **decay pass** (reduces confidence for stale facts) and an **archive pass** (moves low-confidence facts to `facts_archive`). See [database.md — facts](database.md#facts) for the full schema.
 
@@ -351,7 +349,7 @@ Facts are grouped by category. For regular users:
 ### User
 - Team: marco (backend), anna (frontend)
 
-### Wrapper
+### Tool
 - Tests run with: pytest tests/ -q
 ```
 
@@ -403,9 +401,8 @@ WORKER (per session)
   │  pass plan_outputs        │
   │  │                        │
   │  exec → translate → run   │
-  │  wrapper → validate → run    │
-  │  search → searcher LLM     │
-  │  msg → generate → deliver │
+  │  mcp  → validate → call   │
+  │  msg  → generate → deliver│
   │  replan → trigger replan  │
   │         │                 │
   │  sanitize + accumulate    │

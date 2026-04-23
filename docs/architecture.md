@@ -10,8 +10,8 @@ instructions.
 
 That means Kiso is not just:
 
-- a chatbot with wrapper calls
-- a shell wrapper around an LLM
+- a chatbot with tool calls bolted on
+- a shell script wrapping an LLM
 - a fixed workflow engine
 
 It sits in the middle:
@@ -92,7 +92,7 @@ Most agent failures are handoff failures, not "the model had a bad sentence".
 
 Typical failure classes:
 
-- a wrapper edited a file but the next step tested the wrong path
+- an MCP tool edited a file but the next step tested the wrong path
 - a previous failure is described vaguely, so the planner retries the same idea
 - user-facing output gets mixed into internal action tasks
 - memory retrieval returns the wrong kind of context because execution state and semantic facts are blended together
@@ -127,7 +127,7 @@ Before execution, raw planner tasks are normalized into `TaskContract` objects.
 These contracts carry the semantics the runtime actually depends on, including:
 
 - task type and intent
-- wrapper name and structured args
+- MCP server + method name and structured args
 - delivery mode
 - verification mode
 - declared inputs
@@ -180,7 +180,7 @@ thinks happened".
 
 ### Reviewer
 
-`exec`, `wrapper`, and `search` tasks do not automatically count as success just
+`exec` and `mcp` tasks do not automatically count as success just
 because they produced output.
 
 The reviewer decides whether the task:
@@ -234,27 +234,28 @@ Semantic memory is about durable knowledge:
 This split matters because a runtime should not treat "what just happened in
 this plan" the same as "what we know about the project".
 
-### Wrappers and Connectors
+### Skills, MCP, and Connectors
 
-Kiso stays general-purpose by treating wrappers and connectors as plugins.
+Kiso stays general-purpose by reasoning about **two orthogonal
+extension primitives** plus a delivery layer:
 
-Wrappers extend execution abilities:
+- **Agent Skills** (`~/.kiso/skills/<name>/`) — packaged planner
+  instructions on *how to think* about a class of problem. Skills
+  are installed from URLs, optionally bundle scripts / references,
+  and project role-scoped sections into planner / worker / reviewer
+  / messenger prompts.
+- **MCP servers** — the standardised protocol for *what to call*.
+  Browser automation, OCR, code editing, external APIs, and
+  domain-specific tools are all MCP servers in v0.10. Kiso is a
+  consumer: it handles install-from-URL, per-session client pools,
+  schema validation, trust policy, and recovery.
+- **Connectors** — intake and delivery bridges: CLI, Discord,
+  email, anything else that can create sessions and receive
+  outputs. Connectors run under a supervisor-config model, not as
+  installable plug-ins.
 
-- browser automation
-- OCR
-- code editing
-- external API calls
-- domain-specific operators
-
-Connectors extend intake and delivery:
-
-- CLI
-- Discord
-- email
-- anything else that can create sessions and receive outputs
-
-Each plugin runs in its own isolated environment, which keeps the core smaller
-and reduces coupling.
+Skills and MCP servers are the two capability surfaces. Exec
+remains the universal fallback for unstructured shell commands.
 
 ## End-to-End Flow
 
@@ -278,7 +279,7 @@ Kiso is a strong fit when you need:
 - open-ended planning with real execution
 - multi-step recovery and replanning
 - durable context across sessions or projects
-- plugin-based extension through wrappers and connectors
+- plug-in extension through skills, MCP servers, and connectors
 - a runtime that remains general-purpose while still enforcing structure
 
 Kiso is a weak fit when the problem is already:
@@ -306,9 +307,9 @@ and explicit contracts.
 
 Each LLM step in kiso is a separately-named role with its own model, its own
 prompt file in `~/.kiso/roles/`, and its own narrow output schema. The full
-catalogue (currently 12 roles: classifier, inflight-classifier, briefer,
-planner, reviewer, worker, messenger, searcher, summarizer, curator,
-consolidator, paraphraser) is defined in `kiso/brain/roles_registry.py` —
+catalogue (currently 11 roles: classifier, briefer, planner, reviewer,
+worker, messenger, summarizer, curator, consolidator, paraphraser,
+mcp_sampling) is defined in `kiso/brain/roles_registry.py` —
 the single source of truth for role metadata. Default models are derived
 from `kiso/config.py:_MODEL_METADATA` at access time, so the registry and
 the config cannot drift. The user-facing entry point is `kiso roles`
@@ -334,8 +335,8 @@ not leave orphans holding the parent's pipes), drains the communicate task
 naturally so the StreamReaders unwind cleanly, and reaps the OS process via
 `proc.wait()` before re-raising `TimeoutError`. Callers must create the
 subprocess with `start_new_session=True` so the helper has a real process
-group to target. This is the M1295 fix; without it, hook and wrapper-repair
-timeouts left orphan subprocesses and leaked
+group to target. Without it, hook and MCP-subprocess timeouts would
+leave orphan subprocesses and leaked
 `_UnixSubprocessTransport` instances that would later fire `__del__` on a
 closed event loop.
 
@@ -356,26 +357,52 @@ Use real boundaries where possible:
 
 ## Extension surfaces
 
-Kiso has three ways to add capabilities: **wrappers** (local
-install + manage + workspace integration, e.g. aider, browser,
-ocr), **MCP servers** (remote APIs via the Model Context Protocol,
-consumer-only — Kiso does not publish or curate servers), and
-**recipes** (reusable planner instructions, pure markdown).
+Kiso has two extension primitives plus exec as the fallback:
 
-The boundary rule: if a capability installs software on the host
-and needs lifecycle management, it is a wrapper. If it is a pure
-remote-API proxy, it belongs to MCP. If it is neither, a recipe
-is enough.
+- **Agent Skills** — reusable planner (+ worker / reviewer /
+  messenger) instructions bundled as a standard
+  [`agentskills.io`](https://agentskills.io) package. Installed
+  from any URL via `kiso skill install --from-url <...>`.
+- **MCP servers** — standard [MCP](https://modelcontextprotocol.io)
+  capability providers. Installed from any URL via
+  `kiso mcp install --from-url <...>`. Kiso is a consumer and
+  does not publish or curate a registry.
+- **Exec** — unstructured shell commands. Universal fallback for
+  anything not covered by a skill or MCP method.
 
-See [extensibility.md](extensibility.md) for the full decision
-tree and [mcp.md](mcp.md) for the MCP consumer guide with
-concrete examples.
+The boundary rule: if the capability is a way of *thinking* about a
+problem, it is a skill. If it is a way of *calling* an external
+capability, it is an MCP server. Otherwise, it is exec.
+
+See [skills.md](skills.md) for skill authoring,
+[mcp.md](mcp.md) for the MCP consumer guide, and
+[extensibility.md](extensibility.md) for the full decision tree.
+
+## Session Lifecycle
+
+Each session owns:
+
+- a row in the `sessions` table plus the per-session rows in
+  `messages`, `plans`, `tasks`, `facts`, `learnings` (all keyed by
+  `session` column), and
+- a workspace directory at
+  `~/.kiso/instances/<name>/sessions/<id>/` holding `pub/`,
+  `uploads/`, and any files exec or MCP tasks produced.
+
+Both sides round-trip through
+`kiso/session_export.py::pack_session` /
+`unpack_session`. `kiso session export <id>` produces a
+deterministic `.tar.gz`; `kiso session import <file> [--as
+<new_id>]` restores it on any other machine running the same (or
+newer) schema version. This is the mechanism users rely on to
+archive completed sessions, migrate between machines, or hand off
+a debugging context.
 
 ## Where To Go Next
 
 - [README.md](/home/ymx1zq/Documents/software/kiso-run/core/README.md) for the product overview
-- [extensibility.md](extensibility.md) for the wrapper/MCP/recipe decision tree
-- [mcp.md](mcp.md) for the MCP consumer client user guide
+- [skills.md](skills.md) and [mcp.md](mcp.md) for the two v0.10 extension primitives
+- [extensibility.md](extensibility.md) for the skill-vs-MCP-vs-exec decision tree
 - [flow.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/flow.md) for the full execution lifecycle
 - [database.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/database.md) for persistence and runtime-state mapping
 - [llm-roles.md](/home/ymx1zq/Documents/software/kiso-run/core/docs/llm-roles.md) for role-specific prompt responsibilities
