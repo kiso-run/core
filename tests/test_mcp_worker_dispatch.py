@@ -17,6 +17,8 @@ import pytest
 from kiso.mcp.schemas import (
     MCPCallResult,
     MCPInvocationError,
+    MCPPromptMessage,
+    MCPPromptResult,
     MCPResourceContent,
     MCPTransportError,
 )
@@ -42,14 +44,19 @@ class FakeManager:
         available: bool = True,
         read_resource_return=None,
         read_resource_exc=None,
+        get_prompt_return=None,
+        get_prompt_exc=None,
     ) -> None:
         self._return_value = return_value
         self._exc = exc
         self._available = available
         self._read_resource_return = read_resource_return
         self._read_resource_exc = read_resource_exc
+        self._get_prompt_return = get_prompt_return
+        self._get_prompt_exc = get_prompt_exc
         self.call_args: tuple | None = None
         self.read_args: tuple | None = None
+        self.prompt_args: tuple | None = None
 
     def is_available(self, name: str) -> bool:
         return self._available
@@ -86,6 +93,20 @@ class FakeManager:
         if self._read_resource_exc is not None:
             raise self._read_resource_exc
         return self._read_resource_return
+
+    async def get_prompt(
+        self,
+        server: str,
+        name: str,
+        args: dict,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
+    ):
+        self.prompt_args = (server, name, args, session, sandbox_uid)
+        if self._get_prompt_exc is not None:
+            raise self._get_prompt_exc
+        return self._get_prompt_return
 
 
 def _config():
@@ -390,3 +411,107 @@ class TestResourceRead:
         assert pngs
         assert pngs[0].read_bytes() == b"pngdata"
         assert "Published files:" in rows[0]["output"]
+
+
+PROMPT_GET_METHOD = "__prompt_get"
+
+
+class TestPromptGet:
+    """``method="__prompt_get"`` is the synthetic MCP method the
+    planner emits to fetch a rendered prompt template. The worker
+    must route it to ``get_prompt`` rather than ``call_method``."""
+
+    async def test_routes_to_get_prompt(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        rendered = MCPPromptResult(
+            description="rendered:greet",
+            messages=[MCPPromptMessage(role="user", text="Hello Paolo!")],
+        )
+        mgr = FakeManager(get_prompt_return=rendered)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=PROMPT_GET_METHOD,
+            args={"name": "greet", "prompt_args": {"name": "Paolo"}},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        assert mgr.prompt_args is not None
+        assert mgr.prompt_args[:3] == ("github", "greet", {"name": "Paolo"})
+        assert mgr.call_args is None
+        assert mgr.read_args is None
+
+    async def test_rendered_messages_inlined_in_output(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        rendered = MCPPromptResult(
+            description="rendered:greet",
+            messages=[
+                MCPPromptMessage(role="user", text="Hello Paolo!"),
+                MCPPromptMessage(role="assistant", text="Hi there."),
+            ],
+        )
+        mgr = FakeManager(get_prompt_return=rendered)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=PROMPT_GET_METHOD,
+            args={"name": "greet", "prompt_args": {"name": "Paolo"}},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "done"
+        out = rows[0]["output"]
+        assert "[prompt: github:greet]" in out
+        assert "Hello Paolo!" in out
+        assert "Hi there." in out
+        assert "user:" in out
+        assert "assistant:" in out
+
+    async def test_missing_name_arg_fails(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        mgr = FakeManager()
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=PROMPT_GET_METHOD,
+            args={"prompt_args": {"x": 1}},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "failed"
+        assert mgr.prompt_args is None
+
+    async def test_prompt_args_optional(self, db):
+        """Prompts with no required arguments may omit ``prompt_args`` —
+        the worker must accept that and default to ``{}``."""
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        rendered = MCPPromptResult(
+            description="rendered:hello",
+            messages=[MCPPromptMessage(role="user", text="hi")],
+        )
+        mgr = FakeManager(get_prompt_return=rendered)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=PROMPT_GET_METHOD,
+            args={"name": "hello"},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        assert mgr.prompt_args is not None
+        assert mgr.prompt_args[2] == {}
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "done"
+
+    async def test_invocation_error_marks_failed(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        mgr = FakeManager(
+            get_prompt_exc=MCPInvocationError("no such prompt"),
+        )
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=PROMPT_GET_METHOD,
+            args={"name": "missing", "prompt_args": {}},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "failed"

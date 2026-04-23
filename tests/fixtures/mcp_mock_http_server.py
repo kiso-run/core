@@ -25,6 +25,10 @@ Scenarios are parameterised at app-construction time via
   initialize and exposes two resources via ``resources/list``; text
   body returned by ``resources/read``.
 - ``resources_error``: ``resources/read`` returns a JSON-RPC error.
+- ``prompts_happy``: declares the ``prompts`` capability and
+  exposes one prompt ``greet(name)`` via ``prompts/list``; a
+  successful ``prompts/get`` renders a single user message.
+- ``prompts_error``: ``prompts/get`` returns a JSON-RPC error.
 
 The app is minimal and deliberately not a full MCP spec
 implementation; it only covers the shapes the tests need.
@@ -44,6 +48,8 @@ def _initialize_result(req_id, scenario: str = "") -> dict:
     caps: dict = {"tools": {"listChanged": False}}
     if scenario.startswith("resources_"):
         caps["resources"] = {"listChanged": False}
+    if scenario.startswith("prompts_"):
+        caps["prompts"] = {"listChanged": False}
     return {
         "jsonrpc": "2.0",
         "id": req_id,
@@ -76,6 +82,42 @@ def _resources_list_result(req_id) -> dict:
                     "name": "row-7",
                     "description": "HTTP row 7",
                     "mimeType": "application/json",
+                },
+            ],
+        },
+    }
+
+
+def _prompts_list_result(req_id) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "prompts": [
+                {
+                    "name": "greet",
+                    "description": "Greet a person",
+                    "arguments": [
+                        {"name": "name", "description": "who to greet",
+                         "required": True},
+                    ],
+                },
+            ],
+        },
+    }
+
+
+def _prompts_get_result(req_id, name: str, args: dict) -> dict:
+    who = args.get("name", "world")
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "description": f"rendered:{name}",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": {"type": "text", "text": f"Hello {who}!"},
                 },
             ],
         },
@@ -247,6 +289,27 @@ def make_app(scenario: str = "happy_json") -> FastAPI:
                 return JSONResponse(_resources_read_result(req_id, uri))
             return JSONResponse(
                 _error_response(req_id, -32601, "resources not supported")
+            )
+
+        if method == "prompts/list":
+            if scenario.startswith("prompts_"):
+                return JSONResponse(_prompts_list_result(req_id))
+            return JSONResponse(
+                _error_response(req_id, -32601, "prompts not supported")
+            )
+
+        if method == "prompts/get":
+            params = body.get("params") or {}
+            name = params.get("name", "")
+            args = params.get("arguments") or {}
+            if scenario == "prompts_error":
+                return JSONResponse(
+                    _error_response(req_id, -32602, f"cannot render {name}")
+                )
+            if scenario.startswith("prompts_"):
+                return JSONResponse(_prompts_get_result(req_id, name, args))
+            return JSONResponse(
+                _error_response(req_id, -32601, "prompts not supported")
             )
 
         return JSONResponse(_error_response(req_id, -32601, f"unknown: {method}"))

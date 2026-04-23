@@ -59,9 +59,12 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 
 **MCP Resources** — servers may also expose data objects (logs, DB rows, doc pages) under `## MCP Resources` as `server:uri` entries. To read one, emit an `mcp` task with the synthetic method name `__resource_read` and `args: {"uri": "<the uri>"}`. The server field is the server that owns the resource. Do not invent URIs — use only the ones listed in `## MCP Resources`. `__resource_read` accepts exactly one arg (`uri`); any other arg is rejected.
 
+**MCP Prompts** — servers may also expose prompt templates under `## MCP Prompts` as `server:name(args)` entries. Fetch a rendered prompt with an `mcp` task using the synthetic method `__prompt_get` and `args: {"name": "<prompt name>", "prompt_args": {...}}`. Use only prompt names listed in `## MCP Prompts`; do not invent them. `prompt_args` is optional — omit it when the prompt declares no arguments. The output is a rendered conversation the next task can consume (typically as natural-language instruction for an exec or another mcp call).
+
 **Routing heuristics:**
 - Task has an `inputSchema` in the MCP catalog → use `type="mcp"` with that server+method.
 - Task requests the *contents* of something listed in `## MCP Resources` → use `type="mcp"` with `method="__resource_read"` and `args={"uri": "..."}`.
+- Task wants a template/brief listed in `## MCP Prompts` → use `type="mcp"` with `method="__prompt_get"` and `args={"name": "...", "prompt_args": {...}}`.
 - Task is obvious shell work (ls, grep, git status, file create/edit with raw content) → use `type="exec"`.
 - Task fits a pattern described by an installed skill → follow the skill's `## Planner` guidance; the plan may still be exec or mcp tasks, but shape them per the skill.
 

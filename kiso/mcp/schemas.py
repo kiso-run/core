@@ -139,6 +139,85 @@ class MCPResourceContent:
 
 
 @dataclass(frozen=True)
+class MCPPromptArgument:
+    """A single formal argument declared by an MCP prompt template.
+
+    Fields mirror the MCP spec prompt-argument shape. ``required``
+    defaults to ``False`` when the server omits the field, matching
+    the spec's default.
+    """
+
+    name: str
+    description: str
+    required: bool
+
+
+@dataclass(frozen=True)
+class MCPPrompt:
+    """A server-exposed prompt template.
+
+    Prompts are the MCP spec's third primitive (alongside tools and
+    resources). They are parameterised prompt blueprints the server
+    owns: the client sends ``prompts/get`` with the argument values,
+    the server does the templating, and returns a ready-to-use list
+    of conversation messages. Kiso routes fetches through the
+    synthetic ``__prompt_get`` method dispatched by the worker MCP
+    task handler, so the rendered messages flow into the standard
+    task output pipeline.
+
+    Fields:
+
+    - ``server``: the name of the MCP server this prompt belongs to
+    - ``name``: server-local prompt identifier (e.g. ``code_review``)
+    - ``description``: human-readable purpose
+    - ``arguments``: list of :class:`MCPPromptArgument` describing the
+      parameters the ``prompts/get`` call accepts
+
+    The ``qualified`` property returns ``"server:name"`` — the
+    canonical form used in catalogs and user-facing displays.
+    """
+
+    server: str
+    name: str
+    description: str
+    arguments: list[MCPPromptArgument]
+
+    @property
+    def qualified(self) -> str:
+        return f"{self.server}:{self.name}"
+
+
+@dataclass(frozen=True)
+class MCPPromptMessage:
+    """One conversation message rendered by ``prompts/get``.
+
+    The MCP spec allows the ``content`` field to be either a single
+    content block or a list of blocks, with types ``text``, ``image``,
+    ``audio``, and ``resource``. Kiso flattens the content to a single
+    UTF-8 ``text`` string per message — image/audio blocks degrade to
+    a ``[image: <mime>]`` / ``[audio: <mime>]`` placeholder and
+    embedded resources inline their ``text`` when present.
+    """
+
+    role: str
+    text: str
+
+
+@dataclass(frozen=True)
+class MCPPromptResult:
+    """The rendered outcome of a ``prompts/get`` call.
+
+    Holds the optional server-side ``description`` and the list of
+    flattened messages. Downstream consumers (worker MCP task
+    handler, exec tasks that receive the rendered prompt as input)
+    read these as natural-language instruction.
+    """
+
+    description: str
+    messages: list[MCPPromptMessage]
+
+
+@dataclass(frozen=True)
 class MCPServerInfo:
     """Server identity and capabilities negotiated during initialize.
 

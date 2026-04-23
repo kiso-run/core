@@ -78,6 +78,7 @@ from .common import (
     _GIT_URL_RE,
     build_recent_context,
     format_mcp_catalog,
+    format_mcp_prompts,
     format_mcp_resources,
     run_briefer,
 )
@@ -263,6 +264,35 @@ def _validate_plan_tasks(
                         errors.append(
                             f"Task {i}: mcp __resource_read args must "
                             f"contain only 'uri' (got extras: {sorted(extra)})"
+                        )
+            elif method == "__prompt_get":
+                args_raw = task.get("args")
+                if not isinstance(args_raw, dict):
+                    errors.append(
+                        f"Task {i}: mcp __prompt_get requires an args "
+                        f"object with a 'name' string and optional "
+                        f"'prompt_args' object"
+                    )
+                else:
+                    pname = args_raw.get("name")
+                    if not isinstance(pname, str) or not pname:
+                        errors.append(
+                            f"Task {i}: mcp __prompt_get requires "
+                            f"args.name to be a non-empty string"
+                        )
+                    if "prompt_args" in args_raw and not isinstance(
+                        args_raw.get("prompt_args"), dict
+                    ):
+                        errors.append(
+                            f"Task {i}: mcp __prompt_get args.prompt_args "
+                            f"must be a JSON object when present"
+                        )
+                    extra = set(args_raw) - {"name", "prompt_args"}
+                    if extra:
+                        errors.append(
+                            f"Task {i}: mcp __prompt_get args must "
+                            f"contain only 'name' and optional 'prompt_args' "
+                            f"(got extras: {sorted(extra)})"
                         )
             elif (
                 mcp_methods_pool is not None
@@ -720,6 +750,7 @@ async def build_planner_messages(
     investigate: bool = False,
     mcp_catalog_text: str | None = None,
     mcp_resources_text: str | None = None,
+    mcp_prompts_text: str | None = None,
     out_state: "dict | None" = None,
 ) -> list[dict]:
     """Build the message list for the planner LLM call.
@@ -808,6 +839,12 @@ async def build_planner_messages(
     # reads through the synthetic ``__resource_read`` method.
     if mcp_resources_text:
         context_pool["mcp_resources"] = mcp_resources_text
+
+    # MCP prompt catalog — parallel to mcp_methods. Prompts are
+    # server-templated instructions fetched via the synthetic
+    # ``__prompt_get`` method.
+    if mcp_prompts_text:
+        context_pool["mcp_prompts"] = mcp_prompts_text
 
     # Connector discovery — show configured connectors to planner
     connectors = discover_connectors()
@@ -1042,6 +1079,11 @@ async def build_planner_messages(
             f"## MCP Resources\n{context_pool['mcp_resources']}"
         )
 
+    if context_pool.get("mcp_prompts"):
+        context_parts.append(
+            f"## MCP Prompts\n{context_pool['mcp_prompts']}"
+        )
+
     # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
     _add_section(context_parts, "Safety Rules (MUST OBEY)",
@@ -1110,6 +1152,9 @@ async def run_planner(
     _mcp_resources_text = (
         format_mcp_resources(mcp_manager) if mcp_manager else None
     )
+    _mcp_prompts_text = (
+        format_mcp_prompts(mcp_manager) if mcp_manager else None
+    )
     planner_out_state: dict = {}
     messages = await build_planner_messages(
         db, config, session, user_role, new_message,
@@ -1118,6 +1163,7 @@ async def run_planner(
         install_approved=install_approved, investigate=investigate,
         mcp_catalog_text=_mcp_catalog_text,
         mcp_resources_text=_mcp_resources_text,
+        mcp_prompts_text=_mcp_prompts_text,
         out_state=planner_out_state,
     )
     if on_context_ready:

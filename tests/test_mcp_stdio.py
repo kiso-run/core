@@ -21,6 +21,8 @@ from kiso.mcp.config import MCPServer
 from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPMethod,
+    MCPPrompt,
+    MCPPromptResult,
     MCPProtocolError,
     MCPResource,
     MCPResourceContent,
@@ -328,6 +330,73 @@ class TestReadResource:
         client = MCPStdioClient(_make_server("resources_happy"))
         with pytest.raises(MCPProtocolError):
             await client.read_resource("kiso://logs/today")
+
+
+class TestListPrompts:
+    async def test_happy_list(self):
+        client = MCPStdioClient(_make_server("prompts_happy"))
+        await client.initialize()
+        prompts = await client.list_prompts()
+        assert len(prompts) == 2
+        assert all(isinstance(p, MCPPrompt) for p in prompts)
+        names = {p.name for p in prompts}
+        assert names == {"code_review", "translate"}
+        by_name = {p.name: p for p in prompts}
+        code_review = by_name["code_review"]
+        assert code_review.server == "mock"
+        assert code_review.qualified == "mock:code_review"
+        arg_names = {a.name for a in code_review.arguments}
+        assert arg_names == {"repo", "focus"}
+        required = {a.name for a in code_review.arguments if a.required}
+        assert required == {"repo"}
+        await client.shutdown()
+
+    async def test_empty_when_no_prompts_capability(self):
+        client = MCPStdioClient(_make_server("happy"))
+        await client.initialize()
+        prompts = await client.list_prompts()
+        assert prompts == []
+        await client.shutdown()
+
+    async def test_pagination_follows_cursor(self):
+        client = MCPStdioClient(_make_server("prompts_pagination"))
+        await client.initialize()
+        prompts = await client.list_prompts()
+        assert len(prompts) == 25
+        assert {p.name for p in prompts} == {f"prompt_{i}" for i in range(25)}
+        await client.shutdown()
+
+    async def test_list_before_initialize_fails(self):
+        client = MCPStdioClient(_make_server("prompts_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.list_prompts()
+
+
+class TestGetPrompt:
+    async def test_get_rendered_prompt(self):
+        client = MCPStdioClient(_make_server("prompts_happy"))
+        await client.initialize()
+        rendered = await client.get_prompt(
+            "code_review", {"repo": "kiso-run", "focus": "mcp"},
+        )
+        assert isinstance(rendered, MCPPromptResult)
+        assert rendered.description == "rendered:code_review"
+        assert len(rendered.messages) == 1
+        assert rendered.messages[0].role == "user"
+        assert "Review kiso-run focusing on mcp." in rendered.messages[0].text
+        await client.shutdown()
+
+    async def test_get_error_surfaces_invocation_error(self):
+        client = MCPStdioClient(_make_server("prompts_error"))
+        await client.initialize()
+        with pytest.raises(MCPInvocationError):
+            await client.get_prompt("anything", {})
+        await client.shutdown()
+
+    async def test_get_before_initialize_fails(self):
+        client = MCPStdioClient(_make_server("prompts_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.get_prompt("code_review", {})
 
 
 class TestIsHealthy:

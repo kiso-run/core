@@ -50,6 +50,7 @@ def _config(briefer_enabled=True) -> Config:
 
 def _briefing(
     modules=None, wrappers=None, mcp_methods=None, mcp_resources=None,
+    mcp_prompts=None,
     context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
 ) -> dict:
@@ -58,6 +59,7 @@ def _briefing(
         "skills": wrappers or [],
         "mcp_methods": mcp_methods or [],
         "mcp_resources": mcp_resources or [],
+        "mcp_prompts": mcp_prompts or [],
         "context": context,
         "output_indices": output_indices or [],
         "relevant_tags": relevant_tags or [],
@@ -398,7 +400,7 @@ class TestBrieferPromptBudget:
             BRIEFER_SCHEMA["json_schema"]["schema"]["required"]
         )
         expected = {
-            "modules", "skills", "mcp_methods", "mcp_resources",
+            "modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts",
             "context", "output_indices", "relevant_tags", "relevant_entities",
         }
         assert schema_required == expected

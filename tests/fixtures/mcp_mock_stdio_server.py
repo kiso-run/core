@@ -38,6 +38,14 @@ Scenarios:
   binary blob (1x1 PNG) for ``kiso://img/logo``.
 - ``resources_error``: ``resources/read`` returns a JSON-RPC error
   for any URI.
+- ``prompts_happy``: same lifecycle as ``happy``, plus two prompts
+  (``code_review(repo, focus?)`` and ``translate(text, lang)``)
+  exposed via ``prompts/list`` and a working ``prompts/get``
+  returning a single user message with rendered text.
+- ``prompts_pagination``: ``prompts/list`` returns 25 prompts
+  paginated across 3 pages (page_size=10).
+- ``prompts_error``: ``prompts/get`` returns a JSON-RPC error for
+  any prompt name.
 
 Each JSON-RPC message on stdin is a single line of JSON terminated
 by ``\\n``. No embedded newlines, per MCP spec.
@@ -67,6 +75,8 @@ def _initialize_result(req_id) -> dict:
     caps: dict = {"tools": {"listChanged": False}}
     if SCENARIO.startswith("resources_"):
         caps["resources"] = {"listChanged": False}
+    if SCENARIO.startswith("prompts_"):
+        caps["prompts"] = {"listChanged": False}
     return {
         "jsonrpc": "2.0",
         "id": req_id,
@@ -116,6 +126,76 @@ def _resources_list_large_page(cursor):
     ]
     next_cursor = str(end) if end < total else None
     return page, next_cursor
+
+
+def _prompts_list_happy() -> list[dict]:
+    return [
+        {
+            "name": "code_review",
+            "description": "Review a repository for a given focus",
+            "arguments": [
+                {
+                    "name": "repo",
+                    "description": "repository path",
+                    "required": True,
+                },
+                {
+                    "name": "focus",
+                    "description": "what to focus on",
+                    "required": False,
+                },
+            ],
+        },
+        {
+            "name": "translate",
+            "description": "Translate a text snippet",
+            "arguments": [
+                {"name": "text", "description": "text to translate",
+                 "required": True},
+                {"name": "lang", "description": "target language",
+                 "required": True},
+            ],
+        },
+    ]
+
+
+def _prompts_list_large_page(cursor):
+    total = 25
+    page_size = 10
+    start = 0 if cursor is None else int(cursor)
+    end = min(start + page_size, total)
+    page = [
+        {
+            "name": f"prompt_{i}",
+            "description": f"auto-generated prompt {i}",
+            "arguments": [],
+        }
+        for i in range(start, end)
+    ]
+    next_cursor = str(end) if end < total else None
+    return page, next_cursor
+
+
+def _prompts_get_happy(name: str, args: dict) -> dict:
+    if name == "code_review":
+        repo = args.get("repo", "")
+        focus = args.get("focus", "overall quality")
+        text = f"Review {repo} focusing on {focus}."
+    elif name == "translate":
+        snippet = args.get("text", "")
+        lang = args.get("lang", "")
+        text = f"Translate '{snippet}' to {lang}."
+    else:
+        text = f"Unknown prompt {name}"
+    return {
+        "description": f"rendered:{name}",
+        "messages": [
+            {
+                "role": "user",
+                "content": {"type": "text", "text": text},
+            },
+        ],
+    }
 
 
 _BINARY_PNG = base64.b64encode(
@@ -329,6 +409,41 @@ def _handle(req: dict) -> dict | None:
                 },
             }
         return _error_response(req_id, -32601, "resources not exposed")
+
+    if method == "prompts/list":
+        if SCENARIO == "prompts_pagination":
+            cursor = params.get("cursor")
+            page, next_cursor = _prompts_list_large_page(cursor)
+            result = {"prompts": page}
+            if next_cursor is not None:
+                result["nextCursor"] = next_cursor
+            return {"jsonrpc": "2.0", "id": req_id, "result": result}
+        if SCENARIO.startswith("prompts_"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"prompts": _prompts_list_happy()},
+            }
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"prompts": []},
+        }
+
+    if method == "prompts/get":
+        name = params.get("name", "")
+        args = params.get("arguments") or {}
+        if SCENARIO == "prompts_error":
+            return _error_response(
+                req_id, -32602, f"cannot render prompt {name}"
+            )
+        if SCENARIO.startswith("prompts_"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": _prompts_get_happy(name, args),
+            }
+        return _error_response(req_id, -32601, "prompts not exposed")
 
     if req_id is not None:
         return _error_response(req_id, -32601, f"unknown RPC method: {method}")

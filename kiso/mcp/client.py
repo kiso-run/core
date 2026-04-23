@@ -21,6 +21,8 @@ from typing import Any
 from kiso.mcp.schemas import (
     MCPCallResult,
     MCPMethod,
+    MCPPrompt,
+    MCPPromptResult,
     MCPResource,
     MCPResourceContent,
     MCPServerInfo,
@@ -99,6 +101,30 @@ class MCPClient(ABC):
         Raises:
             MCPInvocationError: uri unknown, not readable, or server
                 returned an error
+            MCPTransportError: transport layer failed mid-call
+        """
+
+    @abstractmethod
+    async def list_prompts(self) -> list[MCPPrompt]:
+        """Fetch and return every prompt template the server exposes.
+
+        Parallel to :meth:`list_resources`. Servers that do not
+        declare the ``prompts`` capability during initialize return
+        ``[]`` (no error). Implementations handle ``prompts/list``
+        pagination internally.
+        """
+
+    @abstractmethod
+    async def get_prompt(self, name: str, args: dict) -> MCPPromptResult:
+        """Fetch the rendered prompt template ``name`` with ``args``.
+
+        Issues ``prompts/get`` with ``{"name": name, "arguments": args}``
+        and returns a :class:`MCPPromptResult` holding the server-side
+        ``description`` and the flattened conversation messages.
+
+        Raises:
+            MCPInvocationError: unknown prompt name, missing required
+                argument, or server-side error
             MCPTransportError: transport layer failed mid-call
         """
 

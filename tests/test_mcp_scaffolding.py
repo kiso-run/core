@@ -236,6 +236,13 @@ class TestMCPClientABC:
             async def read_resource(self, uri: str) -> list:
                 return []
 
+            async def list_prompts(self) -> list:
+                return []
+
+            async def get_prompt(self, name: str, args: dict):
+                from kiso.mcp.schemas import MCPPromptResult
+                return MCPPromptResult(description="", messages=[])
+
             async def cancel(self, request_id: Any) -> None:
                 return None
 

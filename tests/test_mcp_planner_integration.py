@@ -233,6 +233,57 @@ class TestValidateMCPTask:
         )
         assert errors == []
 
+    def test_prompt_get_allowed_with_name_arg(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__prompt_get", args={"name": "greet"})]),
+        )
+        assert errors == []
+
+    def test_prompt_get_allowed_with_name_and_prompt_args(self):
+        errors = validate_plan(
+            _plan([_mcp_task(
+                method="__prompt_get",
+                args={"name": "greet", "prompt_args": {"who": "Paolo"}},
+            )]),
+        )
+        assert errors == []
+
+    def test_prompt_get_without_name_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__prompt_get", args={})]),
+        )
+        assert any("__prompt_get" in e and "name" in e for e in errors)
+
+    def test_prompt_get_with_non_string_name_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__prompt_get", args={"name": 42})]),
+        )
+        assert any("__prompt_get" in e for e in errors)
+
+    def test_prompt_get_with_non_dict_prompt_args_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__prompt_get", args={
+                "name": "greet", "prompt_args": "not a dict",
+            })]),
+        )
+        assert any("__prompt_get" in e and "prompt_args" in e for e in errors)
+
+    def test_prompt_get_with_extra_args_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(
+                method="__prompt_get",
+                args={"name": "greet", "prompt_args": {}, "stray": "x"},
+            )]),
+        )
+        assert any("__prompt_get" in e and "extras" in e for e in errors)
+
+    def test_prompt_get_bypasses_methods_pool_check(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__prompt_get", args={"name": "greet"})]),
+            mcp_methods_pool={"github": [_method("github", "create_issue")]},
+        )
+        assert errors == []
+
     def test_mcp_task_with_wrapper_field_rejected(self):
         task = _mcp_task()
         task["wrapper"] = "aider"

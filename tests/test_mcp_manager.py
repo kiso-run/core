@@ -14,6 +14,10 @@ from kiso.mcp.schemas import (
     MCPCallResult,
     MCPInvocationError,
     MCPMethod,
+    MCPPrompt,
+    MCPPromptArgument,
+    MCPPromptMessage,
+    MCPPromptResult,
     MCPResource,
     MCPResourceContent,
     MCPServerInfo,
@@ -63,6 +67,17 @@ def _resource(uri: str, server: str = "s1") -> MCPResource:
     )
 
 
+def _prompt(name: str, server: str = "s1") -> MCPPrompt:
+    return MCPPrompt(
+        server=server,
+        name=name,
+        description="",
+        arguments=[
+            MCPPromptArgument(name="x", description="", required=True),
+        ],
+    )
+
+
 class FakeClient:
     """Minimal MCPClient stand-in for manager tests. Records calls."""
 
@@ -72,6 +87,7 @@ class FakeClient:
         *,
         methods: list[MCPMethod] | None = None,
         resources: list[MCPResource] | None = None,
+        prompts: list[MCPPrompt] | None = None,
     ) -> None:
         self.server = server
         self._methods = methods or [_method("echo", server.name)]
@@ -79,6 +95,11 @@ class FakeClient:
             resources
             if resources is not None
             else [_resource("kiso://r/1", server.name)]
+        )
+        self._prompts = (
+            prompts
+            if prompts is not None
+            else [_prompt("p1", server.name)]
         )
         self._initialized = False
         self._healthy = True
@@ -89,6 +110,8 @@ class FakeClient:
         self._list_call_count = 0
         self._list_resources_call_count = 0
         self._read_resource_calls: list[str] = []
+        self._list_prompts_call_count = 0
+        self._get_prompt_calls: list[tuple[str, dict]] = []
 
     async def initialize(self) -> MCPServerInfo:
         self._initialized = True
@@ -110,6 +133,22 @@ class FakeClient:
                 text=f"body:{uri}", blob=None,
             ),
         ]
+
+    async def list_prompts(self) -> list[MCPPrompt]:
+        self._list_prompts_call_count += 1
+        return list(self._prompts)
+
+    async def get_prompt(self, name: str, args: dict) -> MCPPromptResult:
+        self._get_prompt_calls.append((name, dict(args or {})))
+        return MCPPromptResult(
+            description=f"rendered:{name}",
+            messages=[
+                MCPPromptMessage(
+                    role="user",
+                    text=f"{name}({args or {}})",
+                ),
+            ],
+        )
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._call_count += 1
@@ -333,6 +372,80 @@ class TestReadResource:
         mgr = MCPManager({}, client_factory=fake_factory)
         with pytest.raises(KeyError):
             await mgr.read_resource("ghost", "kiso://x")
+
+
+# ---------------------------------------------------------------------------
+# Prompts: list + get + cache
+# ---------------------------------------------------------------------------
+
+
+class TestListPrompts:
+    async def test_first_call_queries_client(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        prompts = await mgr.list_prompts("s1")
+        assert [p.name for p in prompts] == ["p1"]
+        assert fake_factory.created[0]._list_prompts_call_count == 1
+        await mgr.shutdown_all()
+
+    async def test_cache_hit_within_ttl(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_prompts("s1")
+        await mgr.list_prompts("s1")
+        assert fake_factory.created[0]._list_prompts_call_count == 1
+        await mgr.shutdown_all()
+
+    async def test_invalidate_cache_forces_reload(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_prompts("s1")
+        mgr.invalidate_cache("s1")
+        await mgr.list_prompts("s1")
+        assert fake_factory.created[0]._list_prompts_call_count == 2
+        await mgr.shutdown_all()
+
+
+class TestListPromptsCachedOnly:
+    async def test_unknown_server_returns_empty(self, fake_factory):
+        mgr = MCPManager({}, client_factory=fake_factory)
+        assert mgr.list_prompts_cached_only("ghost") == []
+
+    async def test_never_queried_returns_empty(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        assert mgr.list_prompts_cached_only("s1") == []
+        assert len(fake_factory.created) == 0
+
+    async def test_returns_cached_after_warm(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_prompts("s1")
+        cached = mgr.list_prompts_cached_only("s1")
+        assert [p.name for p in cached] == ["p1"]
+        assert fake_factory.created[0]._list_prompts_call_count == 1
+        await mgr.shutdown_all()
+
+
+class TestGetPrompt:
+    async def test_get_dispatches_to_client(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        rendered = await mgr.get_prompt("s1", "p1", {"x": "y"})
+        assert rendered.description == "rendered:p1"
+        assert fake_factory.created[0]._get_prompt_calls == [("p1", {"x": "y"})]
+        await mgr.shutdown_all()
+
+    async def test_unknown_server_raises_keyerror(self, fake_factory):
+        mgr = MCPManager({}, client_factory=fake_factory)
+        with pytest.raises(KeyError):
+            await mgr.get_prompt("ghost", "p1", {})
 
 
 # ---------------------------------------------------------------------------

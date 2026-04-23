@@ -549,7 +549,7 @@ class TestMsgTask:
             "context": "",
             "output_indices": [],
             "relevant_tags": ["website"],
-            "relevant_entities": ["Guidance.Studio"], "mcp_methods": [], "mcp_resources": [],  # mixed case
+            "relevant_entities": ["Guidance.Studio"], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],  # mixed case
         }
         with patch("kiso.worker.loop.run_briefer", new_callable=AsyncMock, return_value=briefing), \
              patch("kiso.brain.call_llm", side_effect=_capture):
@@ -9493,7 +9493,7 @@ class TestMsgTaskBrieferIntegration:
                 return json.dumps({
                     "modules": [],
                     "skills": [],
-                    "mcp_methods": [], "mcp_resources": [],
+                    "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
                     "context": "",
                     "output_indices": [2],  # only the search result
                     "relevant_tags": [],
@@ -9644,7 +9644,7 @@ class TestMsgTaskEntityEnrichment:
                     "modules": [], "skills": [], "exclude_recipes": [],
                     "context": "Instance info.",
                     "output_indices": [], "relevant_tags": [],
-                    "relevant_entities": ["self"], "mcp_methods": [], "mcp_resources": [],
+                    "relevant_entities": ["self"], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
                 })
             # messenger
             messenger_msgs.append(messages)

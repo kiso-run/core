@@ -28,6 +28,8 @@ class FakeManager:
         errors: dict[str, Exception] | None = None,
         resources: dict[str, list] | None = None,
         resource_errors: dict[str, Exception] | None = None,
+        prompts: dict[str, list] | None = None,
+        prompt_errors: dict[str, Exception] | None = None,
     ) -> None:
         self._available = available
         self._methods = methods or {}
@@ -35,8 +37,11 @@ class FakeManager:
         self._errors = errors or {}
         self._resources = resources or {}
         self._resource_errors = resource_errors or {}
+        self._prompts = prompts or {}
+        self._prompt_errors = prompt_errors or {}
         self.calls: list[str] = []
         self.resource_calls: list[str] = []
+        self.prompt_calls: list[str] = []
 
     def available_servers(self) -> list[str]:
         return list(self._available)
@@ -54,6 +59,12 @@ class FakeManager:
         if name in self._resource_errors:
             raise self._resource_errors[name]
         return list(self._resources.get(name, []))
+
+    async def list_prompts(self, name: str, *, session=None):
+        self.prompt_calls.append(name)
+        if name in self._prompt_errors:
+            raise self._prompt_errors[name]
+        return list(self._prompts.get(name, []))
 
 
 class TestWarmCatalog:
@@ -131,6 +142,24 @@ class TestWarmCatalog:
         await warm_catalog(mgr)
         assert mgr.calls == ["a"]
         assert mgr.resource_calls == ["a"]
+
+    async def test_warms_prompts_alongside_methods(self):
+        mgr = FakeManager(
+            available=["a", "b"],
+            prompts={"a": ["p1"], "b": []},
+        )
+        await warm_catalog(mgr)
+        assert sorted(mgr.calls) == ["a", "b"]
+        assert sorted(mgr.prompt_calls) == ["a", "b"]
+
+    async def test_prompt_failure_does_not_affect_methods(self):
+        mgr = FakeManager(
+            available=["a"],
+            prompt_errors={"a": RuntimeError("no prompts")},
+        )
+        await warm_catalog(mgr)
+        assert mgr.calls == ["a"]
+        assert mgr.prompt_calls == ["a"]
 
     async def test_manager_without_list_resources_still_warms_methods(self):
         """Older managers (pre-resources) that lack ``list_resources``

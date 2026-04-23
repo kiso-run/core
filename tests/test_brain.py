@@ -1180,7 +1180,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             # Mock briefer to return empty modules (simulates aggressive filtering)
             patch("kiso.brain.run_briefer", return_value={
-                "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [], "exclude_recipes": [], "context": "",
+                "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [], "exclude_recipes": [], "context": "",
                 "output_indices": [], "relevant_tags": [],
             }),
         ):
@@ -1241,7 +1241,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.run_briefer", return_value={
                 "modules": ["plugin_install"], "skills": [],
                 "context": "", "output_indices": [],
-                "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [],
+                "relevant_tags": [], "exclude_recipes": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             }),
             patch("kiso.brain.build_install_context", return_value="Package manager: apt\nAvailable binaries: git"),
         ):
@@ -1287,7 +1287,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "skills": [], "exclude_recipes": [], "context": "",
-                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [],
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             }),
         ):
             msgs = await build_planner_messages(db, cfg, "sess1", "admin", "install flask")
@@ -1331,7 +1331,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.discover_connectors", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "skills": [], "exclude_recipes": [], "context": "",
-                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [],
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             }),
         ):
             msgs = await build_planner_messages(db, cfg, "sess1", "admin", "install timg")
@@ -1366,7 +1366,7 @@ class TestBuildPlannerMessages:
             patch("kiso.brain.planner.discover_skills", return_value=[]),
             patch("kiso.brain.run_briefer", return_value={
                 "modules": [], "skills": [], "exclude_recipes": [], "context": "",
-                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [],
+                "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             }),
         ):
             msgs = await build_planner_messages(
@@ -5521,7 +5521,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": ["web"],
             "skills": ["browser: navigate, screenshot"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants to visit a website",
             "output_indices": [0, 2],
             "relevant_tags": ["browser"],
@@ -5533,7 +5533,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5545,7 +5545,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": ["web", "nonexistent_module"],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5559,7 +5559,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": "web",
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5572,7 +5572,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": None,
             "output_indices": [],
             "relevant_tags": [],
@@ -5585,7 +5585,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": list(BRIEFER_MODULES),
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5598,7 +5598,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": "browser",  # should be array
@@ -5611,7 +5611,7 @@ class TestValidateBriefing:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
         }
@@ -5638,7 +5638,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": ["web"],
             "skills": ["browser"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants to browse",
             "output_indices": [1],
             "relevant_tags": ["browser"],
@@ -5681,7 +5681,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": ["browser"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "Navigate to guidance.studio and screenshot.",
             "output_indices": [],
             "relevant_tags": [],
@@ -5702,7 +5702,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5733,7 +5733,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": ["browser", "cpu-info"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5752,7 +5752,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": ["search"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5770,7 +5770,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": ["browser: navigate", "aider: code refactoring"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5787,7 +5787,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": ["browser: navigate"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5803,7 +5803,7 @@ class TestRunBriefer:
         response = json.dumps({
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5821,7 +5821,7 @@ class TestBrieferSchema:
         valid = {
             "modules": ["web", "replan"],
             "skills": ["browser: navigate"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "some context",
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
@@ -5833,7 +5833,7 @@ class TestBrieferSchema:
         invalid = {
             "modules": ["web"],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             # missing output_indices and relevant_tags
         }
@@ -5844,7 +5844,7 @@ class TestBrieferSchema:
         invalid = {
             "modules": "web",  # should be array
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5858,7 +5858,7 @@ class TestBrieferSchema:
         valid = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -5980,7 +5980,7 @@ class TestBrieferPlannerIntegration:
         briefing = {
             "modules": ["web"],
             "skills": ["browser"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants to browse a website.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6100,7 +6100,7 @@ class TestBrieferPlannerIntegration:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "Synthesized context from briefer.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6132,7 +6132,7 @@ class TestBrieferPlannerIntegration:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants to install a wrapper.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6195,7 +6195,7 @@ class TestBrieferTagRetrieval:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User asks about infrastructure.",
             "output_indices": [],
             "relevant_tags": ["infra", "cache"],
@@ -6228,7 +6228,7 @@ class TestBrieferTagRetrieval:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User asks about Python.",
             "output_indices": [],
             "relevant_tags": ["tech-stack"],
@@ -6257,7 +6257,7 @@ class TestBrieferTagRetrieval:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "Simple question.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6372,7 +6372,7 @@ class TestBrieferEntityRetrieval:
             "modules": [], "skills": [], "exclude_recipes": [],
             "context": "User asks about their company.",
             "output_indices": [], "relevant_tags": [],
-            "relevant_entities": ["acmecorp"], "mcp_methods": [], "mcp_resources": [],
+            "relevant_entities": ["acmecorp"], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6401,7 +6401,7 @@ class TestBrieferEntityRetrieval:
         briefing = {
             "modules": [], "skills": [], "exclude_recipes": [], "context": "About Flask.",
             "output_indices": [], "relevant_tags": [],
-            "relevant_entities": ["flask"], "mcp_methods": [], "mcp_resources": [],
+            "relevant_entities": ["flask"], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
         }
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -6555,7 +6555,7 @@ class TestSysEnvAndGapFiltering:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6599,7 +6599,7 @@ class TestSysEnvAndGapFiltering:
                 return json.dumps({
                     "modules": [],
                     "skills": [],
-                    "mcp_methods": [], "mcp_resources": [],
+                    "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
                     "context": "Simple request.",
                     "output_indices": [],
                     "relevant_tags": [],
@@ -6660,7 +6660,7 @@ class TestBrowserAvailability:
         briefing = {
             "modules": [],
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "User wants a joke.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6842,7 +6842,7 @@ class TestBrieferModuleCoverage:
         briefing = {
             "modules": modules,
             "skills": [],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "Briefer context.",
             "output_indices": [],
             "relevant_tags": [],
@@ -6930,7 +6930,7 @@ class TestMessengerContextReduction:
         async def _fake_llm(cfg, role, messages, **kw):
             if role == "briefer":
                 return json.dumps({
-                    "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [],
+                    "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
                     "context": "User asked about weather in Rome.",
                     "output_indices": [4, 5],
                     "relevant_tags": [],
@@ -7926,7 +7926,7 @@ class TestBrieferModuleValidationSkip:
         """With check_modules=False, any module names pass validation."""
         briefing = {
             "modules": ["hallucinated_module", "another_fake"],
-            "skills": [], "mcp_methods": [], "mcp_resources": [], "context": "",
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [], "context": "",
             "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -7936,7 +7936,7 @@ class TestBrieferModuleValidationSkip:
         """Even with check_modules=False, modules must be an array."""
         briefing = {
             "modules": "not_a_list",
-            "skills": [], "mcp_methods": [], "mcp_resources": [], "context": "",
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [], "context": "",
             "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
         errors = validate_briefing(briefing, check_modules=False)
@@ -7947,7 +7947,7 @@ class TestBrieferModuleValidationSkip:
         briefing = {
             "modules": ["whatever"],
             "skills": "not_a_list",  # invalid
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": None,  # invalid
             "output_indices": [], "relevant_tags": [], "relevant_entities": [],
         }
@@ -7975,7 +7975,7 @@ class TestRunBrieferSimpleConsumers:
         """Messenger briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["install_skill", "navigate_and_summarize"],
-            "skills": [], "mcp_methods": [], "mcp_resources": [],
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "About to install browser", "output_indices": [],
             "relevant_tags": [], "relevant_entities": [],
         })
@@ -7989,7 +7989,7 @@ class TestRunBrieferSimpleConsumers:
         """Worker briefer doesn't retry on hallucinated module names."""
         response = json.dumps({
             "modules": ["BrowserSkill"],
-            "skills": [], "mcp_methods": [], "mcp_resources": [],
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "", "output_indices": [],
             "relevant_tags": [], "relevant_entities": [],
         })
@@ -8001,7 +8001,7 @@ class TestRunBrieferSimpleConsumers:
         """Planner briefer still rejects unknown module names."""
         response = json.dumps({
             "modules": ["nonexistent_module"],
-            "skills": [], "mcp_methods": [], "mcp_resources": [],
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "", "output_indices": [],
             "relevant_tags": [], "relevant_entities": [],
         })
@@ -8013,7 +8013,7 @@ class TestRunBrieferSimpleConsumers:
         """Messenger briefer with hallucinated modules uses exactly 1 LLM call."""
         response = json.dumps({
             "modules": ["fake_module"],
-            "skills": [], "mcp_methods": [], "mcp_resources": [],
+            "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "test", "output_indices": [],
             "relevant_tags": [], "relevant_entities": [],
         })
@@ -9034,7 +9034,7 @@ class TestBuildStrictSchema:
         from kiso.brain import BRIEFER_SCHEMA
         schema = BRIEFER_SCHEMA["json_schema"]["schema"]
         assert set(schema["required"]) == {
-            "modules", "skills", "mcp_methods", "mcp_resources",
+            "modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts",
             "context", "output_indices", "relevant_tags", "relevant_entities",
         }
 

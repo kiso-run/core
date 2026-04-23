@@ -14,6 +14,8 @@ from kiso.mcp.config import MCPServer
 from kiso.mcp.http import MCPStreamableHTTPClient
 from kiso.mcp.schemas import (
     MCPInvocationError,
+    MCPPrompt,
+    MCPPromptResult,
     MCPProtocolError,
     MCPResource,
     MCPResourceContent,
@@ -252,6 +254,47 @@ class TestReadResource:
         await client.initialize()
         with pytest.raises(MCPInvocationError):
             await client.read_resource("kiso://missing")
+        await client.shutdown()
+
+
+class TestListPrompts:
+    async def test_happy(self):
+        client = _client_for_app(make_app("prompts_happy"))
+        await client.initialize()
+        prompts = await client.list_prompts()
+        assert [p.name for p in prompts] == ["greet"]
+        assert prompts[0].server == "mock"
+        arg_names = {a.name for a in prompts[0].arguments}
+        assert arg_names == {"name"}
+        await client.shutdown()
+
+    async def test_empty_when_no_capability(self):
+        client = _client_for_app(make_app("happy_json"))
+        await client.initialize()
+        prompts = await client.list_prompts()
+        assert prompts == []
+        await client.shutdown()
+
+    async def test_list_before_initialize_fails(self):
+        client = _client_for_app(make_app("prompts_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.list_prompts()
+
+
+class TestGetPrompt:
+    async def test_get_rendered(self):
+        client = _client_for_app(make_app("prompts_happy"))
+        await client.initialize()
+        rendered = await client.get_prompt("greet", {"name": "Paolo"})
+        assert isinstance(rendered, MCPPromptResult)
+        assert rendered.messages[0].text == "Hello Paolo!"
+        await client.shutdown()
+
+    async def test_get_error_surfaces(self):
+        client = _client_for_app(make_app("prompts_error"))
+        await client.initialize()
+        with pytest.raises(MCPInvocationError):
+            await client.get_prompt("greet", {"name": "x"})
         await client.shutdown()
 
 

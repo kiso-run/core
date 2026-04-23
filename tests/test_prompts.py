@@ -88,10 +88,10 @@ class TestPromptBudgetSmoke:
         # when the relevant flag is set or the briefer opts in. The
         # actual loaded prompt for default plan/chat/chat_kb paths is
         # smaller because the modular loader excludes non-selected
-        # sections. Bumped from 15600 to 15800 in M1368 to fit the
-        # new "npx -y" routing rule next to the existing "uv pip
-        # install" rule in the core install-routing paragraph.
-        ("planner.md", 15800),
+        # sections. The MCP Prompts routing paragraph in `skills_and_mcp`
+        # describing `__prompt_get` pushes the worst-case size up
+        # accordingly.
+        ("planner.md", 16800),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

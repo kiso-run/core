@@ -50,6 +50,10 @@ from kiso.mcp.schemas import (
     MCPError,
     MCPInvocationError,
     MCPMethod,
+    MCPPrompt,
+    MCPPromptArgument,
+    MCPPromptMessage,
+    MCPPromptResult,
     MCPProtocolError,
     MCPResource,
     MCPResourceContent,
@@ -277,6 +281,46 @@ class MCPStdioClient(MCPClient):
             raise MCPInvocationError(f"resources/read {uri}: {msg}")
         result = response.get("result") or {}
         return _build_resource_blocks(result)
+
+    async def list_prompts(self) -> list[MCPPrompt]:
+        self._require_initialized()
+        caps = (self._server_info.capabilities if self._server_info else {}) or {}
+        if "prompts" not in caps:
+            return []
+        prompts: list[MCPPrompt] = []
+        cursor: str | None = None
+        while True:
+            params: dict = {}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await self._request(
+                "prompts/list", params, timeout=self._server.timeout_s
+            )
+            if "error" in response:
+                raise MCPInvocationError(
+                    f"prompts/list failed: {response['error']}"
+                )
+            result = response.get("result") or {}
+            for raw in result.get("prompts") or []:
+                prompts.append(_build_prompt(self._server.name, raw))
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return prompts
+
+    async def get_prompt(self, name: str, args: dict) -> MCPPromptResult:
+        self._require_initialized()
+        response = await self._request(
+            "prompts/get",
+            {"name": name, "arguments": args or {}},
+            timeout=self._server.timeout_s,
+        )
+        if "error" in response:
+            err = response["error"]
+            msg = err.get("message") or str(err)
+            raise MCPInvocationError(f"prompts/get {name}: {msg}")
+        result = response.get("result") or {}
+        return _build_prompt_result(result)
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._require_initialized()
@@ -625,6 +669,74 @@ class MCPStdioClient(MCPClient):
             log.error(
                 "mcp[%s] did not exit even after SIGKILL", self._server.name
             )
+
+
+def _build_prompt(server: str, raw: dict) -> MCPPrompt:
+    arguments: list[MCPPromptArgument] = []
+    for arg in raw.get("arguments") or []:
+        if not isinstance(arg, dict):
+            continue
+        arguments.append(
+            MCPPromptArgument(
+                name=str(arg.get("name", "")),
+                description=str(arg.get("description", "") or ""),
+                required=bool(arg.get("required", False)),
+            )
+        )
+    return MCPPrompt(
+        server=server,
+        name=str(raw.get("name", "")),
+        description=str(raw.get("description", "") or ""),
+        arguments=arguments,
+    )
+
+
+def _flatten_prompt_content(content: Any) -> str:
+    """Flatten an MCP prompt message ``content`` into a single string.
+
+    The spec accepts either a single content block or a list; text
+    blocks contribute their ``text``, image/audio blocks degrade to a
+    typed placeholder, embedded resources inline their ``text``.
+    """
+    items: list[dict]
+    if isinstance(content, dict):
+        items = [content]
+    elif isinstance(content, list):
+        items = [c for c in content if isinstance(c, dict)]
+    else:
+        return "" if content is None else str(content)
+
+    lines: list[str] = []
+    for item in items:
+        itype = item.get("type")
+        if itype == "text":
+            lines.append(str(item.get("text", "")))
+        elif itype in ("image", "audio"):
+            mime = item.get("mimeType", f"{itype}/?")
+            lines.append(f"[{itype}: {mime}]")
+        elif itype == "resource":
+            res = item.get("resource") or {}
+            uri = res.get("uri", "")
+            text = res.get("text")
+            if isinstance(text, str):
+                lines.append(f"[resource: {uri}]\n{text}")
+            else:
+                lines.append(f"[resource: {uri}]")
+        else:
+            lines.append(f"[content type {itype!r}]")
+    return "\n".join(lines)
+
+
+def _build_prompt_result(result: dict) -> MCPPromptResult:
+    messages: list[MCPPromptMessage] = []
+    for raw in result.get("messages") or []:
+        if not isinstance(raw, dict):
+            continue
+        role = str(raw.get("role", "user"))
+        text = _flatten_prompt_content(raw.get("content"))
+        messages.append(MCPPromptMessage(role=role, text=text))
+    description = str(result.get("description", "") or "")
+    return MCPPromptResult(description=description, messages=messages)
 
 
 def _build_resource_blocks(result: dict) -> list[MCPResourceContent]:

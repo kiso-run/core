@@ -47,13 +47,20 @@ from kiso.mcp.schemas import (
     MCPError,
     MCPInvocationError,
     MCPMethod,
+    MCPPrompt,
+    MCPPromptResult,
     MCPProtocolError,
     MCPResource,
     MCPResourceContent,
     MCPServerInfo,
     MCPTransportError,
 )
-from kiso.mcp.stdio import _build_call_result, _build_resource_blocks  # reuse renderers
+from kiso.mcp.stdio import (
+    _build_call_result,
+    _build_prompt,
+    _build_prompt_result,
+    _build_resource_blocks,
+)  # reuse renderers
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +235,42 @@ class MCPStreamableHTTPClient(MCPClient):
             raise MCPInvocationError(f"resources/read {uri}: {msg}")
         result = response_body.get("result") or {}
         return _build_resource_blocks(result)
+
+    async def list_prompts(self) -> list[MCPPrompt]:
+        self._require_initialized()
+        caps = (self._server_info.capabilities if self._server_info else {}) or {}
+        if "prompts" not in caps:
+            return []
+        prompts: list[MCPPrompt] = []
+        cursor: str | None = None
+        while True:
+            params: dict = {}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response_body, _ = await self._post_rpc("prompts/list", params)
+            if "error" in response_body:
+                raise MCPInvocationError(
+                    f"prompts/list failed: {response_body['error']}"
+                )
+            result = response_body.get("result") or {}
+            for raw in result.get("prompts") or []:
+                prompts.append(_build_prompt(self._server.name, raw))
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return prompts
+
+    async def get_prompt(self, name: str, args: dict) -> MCPPromptResult:
+        self._require_initialized()
+        response_body, _ = await self._post_rpc(
+            "prompts/get", {"name": name, "arguments": args or {}}
+        )
+        if "error" in response_body:
+            err = response_body["error"]
+            msg = err.get("message") or str(err)
+            raise MCPInvocationError(f"prompts/get {name}: {msg}")
+        result = response_body.get("result") or {}
+        return _build_prompt_result(result)
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._require_initialized()

@@ -26,7 +26,11 @@ import logging
 import time
 from typing import Any
 
-from kiso.mcp.result import render_mcp_resource_result, render_mcp_result
+from kiso.mcp.result import (
+    render_mcp_prompt_result,
+    render_mcp_resource_result,
+    render_mcp_result,
+)
 from kiso.mcp.schemas import (
     MCPError,
     MCPInvocationError,
@@ -36,6 +40,7 @@ from kiso.mcp.validate import validate_mcp_args
 from kiso.worker.utils import _session_workspace
 
 RESOURCE_READ_METHOD = "__resource_read"
+PROMPT_GET_METHOD = "__prompt_get"
 
 
 def _preflight_validate(
@@ -122,12 +127,41 @@ async def _handle_mcp_task(
         )
 
     is_resource_read = method_name == RESOURCE_READ_METHOD
+    is_prompt_get = method_name == PROMPT_GET_METHOD
+    prompt_name: str | None = None
+    prompt_args: dict = {}
     if is_resource_read:
         uri = args.get("uri") if isinstance(args, dict) else None
         if not isinstance(uri, str) or not uri:
             msg = (
                 f"MCP {server_name}:{RESOURCE_READ_METHOD} requires "
                 f"a non-empty string 'uri' arg"
+            )
+            return await _fail_task_and_audit(
+                ctx, task_id, "mcp", detail, msg, i + 1,
+                replan_reason=msg,
+            )
+    elif is_prompt_get:
+        pname_raw = args.get("name") if isinstance(args, dict) else None
+        if not isinstance(pname_raw, str) or not pname_raw:
+            msg = (
+                f"MCP {server_name}:{PROMPT_GET_METHOD} requires "
+                f"a non-empty string 'name' arg"
+            )
+            return await _fail_task_and_audit(
+                ctx, task_id, "mcp", detail, msg, i + 1,
+                replan_reason=msg,
+            )
+        prompt_name = pname_raw
+        pargs_raw = args.get("prompt_args", {}) if isinstance(args, dict) else {}
+        if pargs_raw is None:
+            prompt_args = {}
+        elif isinstance(pargs_raw, dict):
+            prompt_args = dict(pargs_raw)
+        else:
+            msg = (
+                f"MCP {server_name}:{PROMPT_GET_METHOD} 'prompt_args' "
+                f"must be a JSON object"
             )
             return await _fail_task_and_audit(
                 ctx, task_id, "mcp", detail, msg, i + 1,
@@ -159,6 +193,15 @@ async def _handle_mcp_task(
             )
             raw_result = render_mcp_resource_result(
                 server_name, args["uri"], task_id, pub_dir, blocks,
+            )
+        elif is_prompt_get:
+            rendered = await ctx.mcp_manager.get_prompt(
+                server_name, prompt_name, prompt_args,
+                session=ctx.session,
+                sandbox_uid=ctx.sandbox_uid,
+            )
+            raw_result = render_mcp_prompt_result(
+                server_name, prompt_name, rendered,
             )
         else:
             raw_result = await ctx.mcp_manager.call_method(

@@ -120,7 +120,7 @@ class TestMessengerBrieferTagInjection:
             if role == "briefer":
                 briefer_msgs.append(messages)
                 return json.dumps({
-                    "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [], "context": "",
+                    "modules": [], "skills": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [], "context": "",
                     "output_indices": [], "relevant_tags": [],
                 })
             return "ok"
@@ -188,7 +188,7 @@ class TestBrieferToolFilterNoTools:
         response = json.dumps({
             "modules": [],
             "skills": ["browser", "aider"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "Some context",
             "output_indices": [],
             "relevant_tags": [],
@@ -204,7 +204,7 @@ class TestBrieferToolFilterNoTools:
         response = json.dumps({
             "modules": [],
             "skills": ["browser", "fake_skill"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],
@@ -222,7 +222,7 @@ class TestBrieferToolFilterNoTools:
         response = json.dumps({
             "modules": [],
             "skills": ["github", "git"],
-            "mcp_methods": [], "mcp_resources": [],
+            "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
             "relevant_tags": [],

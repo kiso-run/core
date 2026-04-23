@@ -32,7 +32,7 @@ import json
 import logging
 from pathlib import Path
 
-from kiso.mcp.schemas import MCPCallResult, MCPResourceContent
+from kiso.mcp.schemas import MCPCallResult, MCPPromptResult, MCPResourceContent
 
 log = logging.getLogger(__name__)
 
@@ -238,6 +238,40 @@ def render_mcp_resource_result(
     return MCPCallResult(
         stdout_text=stdout_text,
         published_files=[(name, str(path)) for name, path in published],
+        structured_content=None,
+        is_error=False,
+    )
+
+
+def render_mcp_prompt_result(
+    server: str,
+    prompt_name: str,
+    rendered: MCPPromptResult,
+) -> MCPCallResult:
+    """Flatten a :class:`MCPPromptResult` into an :class:`MCPCallResult`.
+
+    stdout_text starts with a ``[prompt: server:name]`` header
+    (matching ``render_mcp_resource_result``'s idiom) optionally
+    followed by the server's rendered description on the next line,
+    then one ``role: text`` line per message. Downstream tasks read
+    this as natural-language instruction ready to feed into an exec
+    or another MCP call.
+    """
+    lines: list[str] = [f"[prompt: {server}:{prompt_name}]"]
+    description = (rendered.description or "").strip()
+    if description:
+        lines.append(description)
+    for msg in rendered.messages:
+        role = (msg.role or "user").strip() or "user"
+        text = msg.text or ""
+        if "\n" in text:
+            lines.append(f"{role}:")
+            lines.append(text)
+        else:
+            lines.append(f"{role}: {text}")
+    return MCPCallResult(
+        stdout_text="\n".join(lines),
+        published_files=[],
         structured_content=None,
         is_error=False,
     )
