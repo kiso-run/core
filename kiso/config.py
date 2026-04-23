@@ -106,6 +106,8 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     # MCP catalog warm-up (daemon boot)
     ("mcp_warmup_concurrency", 3),
     ("mcp_warmup_deadline_s", 10),
+    # MCP client-side LLM sampling (servers delegating completions to us)
+    ("mcp_sampling_enabled", True),
     # webhooks
     ("webhook_allow_list", []),
     ("webhook_require_https", True),
@@ -127,6 +129,7 @@ _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
     ("messenger",    "deepseek/deepseek-v3.2",       "writes human-readable responses"),
     ("consolidator", "google/gemini-2.5-flash-lite", "periodic knowledge quality review"),
+    ("mcp_sampling",  "google/gemini-2.5-flash",      "fulfils sampling/createMessage requests from MCP servers"),
 )
 
 # Derived legacy exports — preserved for backward compatibility.
@@ -182,6 +185,7 @@ summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, che
 paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
 messenger   = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
 consolidator = "google/gemini-2.5-flash-lite" # periodic knowledge quality review (async, cheap)
+mcp_sampling = "google/gemini-2.5-flash"      # fulfils sampling/createMessage from MCP servers
 
 [settings]
 # --- conversation ---
@@ -246,6 +250,7 @@ mcp_session_idle_timeout  = 1800     # shut down a per-session MCP client idle f
 mcp_max_session_clients_per_server = 32  # LRU bound on per-session clients for a single MCP server (1-256)
 mcp_warmup_concurrency    = 3        # parallelism for daemon-boot MCP catalog warm-up (1-16)
 mcp_warmup_deadline_s     = 10       # total wall-clock deadline for warm-up to complete (1-120)
+mcp_sampling_enabled      = true     # allow MCP servers to request LLM completions via sampling/createMessage
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check

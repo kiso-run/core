@@ -46,6 +46,11 @@ Scenarios:
   paginated across 3 pages (page_size=10).
 - ``prompts_error``: ``prompts/get`` returns a JSON-RPC error for
   any prompt name.
+- ``sampling_request``: on ``tools/call`` for any method, first
+  emits a server-to-client ``sampling/createMessage`` request, waits
+  for the client's response on stdin, and then returns the sampled
+  text (or ``METHOD_NOT_SUPPORTED`` when the client refuses) as the
+  tool call's text content.
 
 Each JSON-RPC message on stdin is a single line of JSON terminated
 by ``\\n``. No embedded newlines, per MCP spec.
@@ -300,6 +305,59 @@ def _handle(req: dict) -> dict | None:
             sys.exit(1)
         name = params.get("name")
         args = params.get("arguments") or {}
+        if SCENARIO == "sampling_request":
+            # Emit a server-to-client sampling/createMessage request,
+            # wait for the client's response on stdin, and relay the
+            # sampled text back as the tool call's content.
+            sampling_req = {
+                "jsonrpc": "2.0",
+                "id": f"sampling-{req_id}",
+                "method": "sampling/createMessage",
+                "params": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {"type": "text", "text": "do the thing"},
+                        },
+                    ],
+                    "maxTokens": 64,
+                },
+            }
+            _emit(sampling_req)
+            # Block until the client replies with a JSON line. Skip any
+            # non-matching messages (shouldn't happen in the test setup,
+            # but keep the scenario robust).
+            sampled_text = "NO_RESPONSE"
+            for raw in sys.stdin:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    reply = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if reply.get("id") != sampling_req["id"]:
+                    continue
+                if "error" in reply:
+                    code = reply["error"].get("code", 0)
+                    if code == -32601:
+                        sampled_text = "METHOD_NOT_SUPPORTED"
+                    else:
+                        sampled_text = f"ERROR:{code}"
+                else:
+                    content = (reply.get("result") or {}).get("content") or {}
+                    if isinstance(content, dict):
+                        sampled_text = content.get("text", "") or ""
+                    else:
+                        sampled_text = str(content)
+                break
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": sampled_text}],
+                },
+            }
         if SCENARIO == "is_error":
             return {
                 "jsonrpc": "2.0",

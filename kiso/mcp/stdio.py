@@ -120,6 +120,7 @@ class MCPStdioClient(MCPClient):
         *,
         extra_env: dict[str, str] | None = None,
         sandbox_uid: int | None = None,
+        config: Any | None = None,
     ) -> None:
         if server.transport != "stdio":
             raise ValueError(
@@ -128,6 +129,7 @@ class MCPStdioClient(MCPClient):
         self._server = server
         self._extra_env = dict(extra_env or {})
         self._sandbox_uid = sandbox_uid
+        self._config = config
         self._proc: asyncio.subprocess.Process | None = None
         self._stdout_reader_task: asyncio.Task | None = None
         self._stderr_reader_task: asyncio.Task | None = None
@@ -165,7 +167,7 @@ class MCPStdioClient(MCPClient):
                 "initialize",
                 {
                     "protocolVersion": CLIENT_PROTOCOL_VERSION,
-                    "capabilities": {},
+                    "capabilities": self._build_client_capabilities(),
                     "clientInfo": {
                         "name": CLIENT_NAME,
                         "title": "Kiso MCP Client",
@@ -409,9 +411,29 @@ class MCPStdioClient(MCPClient):
         data = b"".join(self._stderr_ring)
         return data[-max_bytes:]
 
+    @property
+    def advertises_sampling(self) -> bool:
+        """Whether the initialize handshake declared ``sampling`` support."""
+        caps = self._build_client_capabilities()
+        return "sampling" in caps
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _build_client_capabilities(self) -> dict:
+        caps: dict = {}
+        config = self._config
+        if config is not None:
+            try:
+                from kiso.config import setting_bool
+                if setting_bool(
+                    config.settings, "mcp_sampling_enabled", default=True
+                ):
+                    caps["sampling"] = {}
+            except Exception:  # noqa: BLE001 — defensive
+                pass
+        return caps
 
     def _require_initialized(self) -> None:
         if not self._initialized:
@@ -539,20 +561,82 @@ class MCPStdioClient(MCPClient):
             self._dispatch(msg)
 
     def _dispatch(self, msg: dict) -> None:
-        # Responses have an id matching a pending request; notifications
-        # have a method but no id; requests FROM the server (rare, would
-        # require roots/sampling capabilities we don't advertise) also
-        # have a method.
+        # Responses have an id matching a pending request; server-to-client
+        # requests have both ``method`` and ``id`` (we reply by writing a
+        # response with the same id); notifications have ``method`` but no
+        # id (we ignore them unless we care about a specific one).
         if "id" in msg and ("result" in msg or "error" in msg):
             req_id = msg.get("id")
             fut = self._pending.pop(req_id, None)
             if fut is not None and not fut.done():
                 fut.set_result(msg)
             return
-        # Any other message type (notification, unexpected request) is
-        # ignored for now — we did not advertise capabilities that would
-        # let a server initiate requests toward us.
-        log.debug("mcp[%s] dispatched non-response: %s", self._server.name, msg.get("method"))
+        method = msg.get("method")
+        if "id" in msg and method:
+            asyncio.create_task(
+                self._handle_incoming_request(msg),
+                name=f"mcp-stdio-{self._server.name}-incoming-{msg.get('id')}",
+            )
+            return
+        log.debug("mcp[%s] dispatched non-response: %s", self._server.name, method)
+
+    async def _handle_incoming_request(self, req: dict) -> None:
+        """Process a server-to-client JSON-RPC request and write the reply."""
+        from kiso.mcp.sampling import SAMPLING_METHOD, handle_sampling_request
+
+        method = req.get("method")
+        req_id = req.get("id")
+        try:
+            if method == SAMPLING_METHOD:
+                if self._config is None:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32601,
+                            "message": (
+                                "sampling/createMessage not supported: "
+                                "client has no config bound"
+                            ),
+                        },
+                    }
+                else:
+                    response = await handle_sampling_request(self._config, req)
+            else:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"method not found: {method!r}",
+                    },
+                }
+        except Exception as exc:  # noqa: BLE001 — never let the dispatch task die
+            log.exception(
+                "mcp[%s] incoming request handler crashed", self._server.name,
+            )
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32603, "message": f"handler crashed: {exc}"},
+            }
+        await self._write_raw(response)
+
+    async def _write_raw(self, payload: dict) -> None:
+        """Serialize *payload* as one JSON-RPC line and drain stdin."""
+        if self._proc is None or self._proc.stdin is None:
+            return
+        line = (json.dumps(payload) + "\n").encode("utf-8")
+        try:
+            self._proc.stdin.write(line)
+            await self._proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as exc:  # noqa: BLE001
+            log.debug(
+                "mcp[%s] stdin write failed for %s: %s",
+                self._server.name, payload.get("method") or "response", exc,
+            )
 
     def _abort_pending(self, exc: Exception) -> None:
         for fut in list(self._pending.values()):

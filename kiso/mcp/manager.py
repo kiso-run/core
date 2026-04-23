@@ -96,14 +96,16 @@ def _default_factory(
     *,
     extra_env: dict[str, str] | None = None,
     sandbox_uid: int | None = None,
+    config: Any | None = None,
 ) -> MCPClient:
     if server.transport == "stdio":
         return MCPStdioClient(
-            server, extra_env=extra_env, sandbox_uid=sandbox_uid
+            server, extra_env=extra_env, sandbox_uid=sandbox_uid,
+            config=config,
         )
     if server.transport == "http":
         # HTTP transports have no subprocess — sandbox_uid is a no-op.
-        return MCPStreamableHTTPClient(server)
+        return MCPStreamableHTTPClient(server, config=config)
     raise ValueError(f"unknown transport: {server.transport!r}")
 
 
@@ -113,6 +115,7 @@ class MCPManager:
         servers: dict[str, MCPServer],
         *,
         client_factory: Callable[..., MCPClient] | None = None,
+        config: Any | None = None,
         cache_ttl_s: float = _DEFAULT_CACHE_TTL_S,
         restart_limit: int = _DEFAULT_RESTART_LIMIT,
         restart_window_s: float = _DEFAULT_RESTART_WINDOW_S,
@@ -123,6 +126,7 @@ class MCPManager:
     ) -> None:
         self._servers = servers
         self._factory = client_factory or _default_factory
+        self._config = config
         self._cache_ttl_s = cache_ttl_s
         self._restart_limit = restart_limit
         self._restart_window_s = restart_window_s
@@ -511,9 +515,18 @@ class MCPManager:
                 await self._evict_to_bound(name, exclude_key=key)
                 extra_env = self._session_env.get(session, {})  # type: ignore[arg-type]
 
-            client = self._factory(
-                server, extra_env=extra_env, sandbox_uid=key[2]
-            )
+            try:
+                client = self._factory(
+                    server, extra_env=extra_env, sandbox_uid=key[2],
+                    config=self._config,
+                )
+            except TypeError:
+                # Test factories predating the ``config=`` kwarg: fall
+                # back to the older signature so the existing fakes
+                # keep working.
+                client = self._factory(
+                    server, extra_env=extra_env, sandbox_uid=key[2],
+                )
             try:
                 await client.initialize()
             except Exception:

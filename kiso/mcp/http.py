@@ -77,6 +77,7 @@ class MCPStreamableHTTPClient(MCPClient):
         server: MCPServer,
         *,
         _http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+        config: Any | None = None,
     ) -> None:
         if server.transport != "http":
             raise ValueError(
@@ -93,6 +94,7 @@ class MCPStreamableHTTPClient(MCPClient):
         self._http: httpx.AsyncClient | None = None
         self._server_info: MCPServerInfo | None = None
         self._auth_token: str | None = None
+        self._config = config
 
     # ------------------------------------------------------------------
     # Public API
@@ -117,7 +119,7 @@ class MCPStreamableHTTPClient(MCPClient):
             "initialize",
             {
                 "protocolVersion": CLIENT_PROTOCOL_VERSION,
-                "capabilities": {},
+                "capabilities": self._build_client_capabilities(),
                 "clientInfo": {
                     "name": CLIENT_NAME,
                     "title": "Kiso MCP Client",
@@ -320,6 +322,19 @@ class MCPStreamableHTTPClient(MCPClient):
 
     def is_healthy(self) -> bool:
         return self._initialized and not self._shut_down
+
+    @property
+    def advertises_sampling(self) -> bool:
+        return "sampling" in self._build_client_capabilities()
+
+    def _build_client_capabilities(self) -> dict:
+        # http transport does not yet implement bidirectional dispatch
+        # of server-initiated `sampling/createMessage` requests. Until
+        # the SSE event pump gains inline-request handling, the client
+        # does not advertise sampling over http even when the config
+        # allows it — servers can use the stdio transport to get the
+        # capability.
+        return {}
 
     # ------------------------------------------------------------------
     # Internal
