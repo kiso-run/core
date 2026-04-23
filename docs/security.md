@@ -616,3 +616,149 @@ overfitted to a single category, break benign rule-churn flows
 (experimenting with rules, single-turn rules), and only partially
 mitigate the compromise anyway. The session-reset lever gives
 operators explicit, auditable control.
+
+## 12. Installation Trust Model (v0.10)
+
+v0.10 replaces the wrapper/recipe world with two installable
+capability primitives: **Agent Skills** (role-scoped planner /
+worker / reviewer / messenger instructions) and **MCP servers**
+(Model Context Protocol services). Both can be installed from a
+URL at runtime, so a single trust model governs both.
+
+### Trust tiers
+
+Every install source resolves to one of three tiers:
+
+| Tier | Meaning | Where defined |
+|------|---------|---------------|
+| `tier1` | Shipped-curated source (Anthropic skills, official MCP servers, `kiso-run/*`). Installs silently. | Hardcoded in `kiso/mcp/trust.py` (`MCP_TIER1_PREFIXES`) and `kiso/skill_trust.py` (`SKILL_TIER1_PREFIXES`). |
+| `custom` | Operator has added the prefix to `~/.kiso/trust.json` via `kiso mcp trust add ...` / `kiso skill trust add ...`. Installs silently for that operator. | `~/.kiso/trust.json` (`{mcp: [...], skill: [...]}`). |
+| `untrusted` | Neither. Install requires explicit confirmation (`--yes` or an interactive prompt); chat-mediated approvals must surface this tier in the proposal msg. | Default for any unknown source. |
+
+Prefix matching is **segment-anchored**: `github.com/anthropic*`
+covers `github.com/anthropic/...` but not
+`github.com/anthropic-fake/...`. Adding a glob (`*`) is equivalent
+to the bare path-prefix form — there is no substring match.
+
+### Risk factors (orthogonal to trust)
+
+Trust classifies the *source*; risk factors describe the
+*payload*. `kiso/skill_trust.py:detect_risk_factors` inspects a
+staged skill and surfaces:
+
+- bundled `scripts/` directory — **executable content**;
+- `allowed-tools` frontmatter granting broad shell/edit access
+  (`Bash(*)`, `Write(*)`, `Edit(*)`);
+- oversized `SKILL.md` (>50 KB) or `assets/` (>5 MB).
+
+Risk factors never auto-block; they are surfaced alongside the
+trust tier so the user / operator can decide. **Trust applies to
+the skill's instructions, not its code**: a trusted skill that
+ships `scripts/` still surfaces the script risk, and the planner
+must gate any `scripts/<file>` exec behind the usual exec
+approval flow rather than silently running it.
+
+### Chat-mediated install trust surface
+
+When a user interacts with kiso through a connector (Telegram,
+Slack, email), `needs_install` approvals happen as a chat reply.
+The daemon host cannot pop an interactive prompt, so the trust
+decision collapses to whatever the planner's proposal msg
+disclosed.
+
+The planner's `skills_and_mcp` module therefore **requires** the
+proposal msg to state:
+
+1. the resolved **source key** (`github.com/<owner>/<repo>` or
+   `npm:@<scope>/<pkg>`) — a bare name is not enough;
+2. the **trust tier** (`tier1` / `custom` / `untrusted`);
+3. the **risk factors** (`scripts/`, broad `allowed-tools`,
+   oversized assets — or "none detected").
+
+A proposal that omits any of these is equivalent to no trust
+gate for that user.
+
+### Skill path traversal
+
+Skill installs always resolve to `~/.kiso/skills/<name>/` where
+`<name>` comes from the skill's YAML frontmatter. The loader
+validates names against `^[a-z0-9][a-z0-9-]{0,63}$`, which
+rejects `../..`, `/`, uppercase, and empty strings — path
+traversal through a crafted name is structurally impossible.
+
+## 13. MCP Session Isolation
+
+Each session that uses a session-scoped MCP server gets its own
+subprocess. The pool key is `(server_name, scope_key,
+sandbox_uid)`:
+
+- `scope_key = "_global"` for servers with no `${session:*}`
+  tokens — one shared subprocess across all sessions;
+- `scope_key = <session_id>` for servers that reference
+  `${session:workspace}` or `${session:id}` — one subprocess
+  per session, independent env.
+
+### Per-session env never crosses sessions
+
+`MCPManager.set_session_env(session, env)` registers per-session
+env (e.g. OAuth tokens resolved in a device flow) to merge into
+any session-scoped client spawned for that session. Because the
+pool key pins the client to its session, env set for session A
+cannot reach a client for session B even when both target the
+same server.
+
+### `${session:*}` substitution is literal
+
+`resolve_session_tokens` replaces `${session:workspace}` and
+`${session:id}` with literal strings inside `command`, `args`,
+`env`, `cwd`, `url`, `headers`, and `auth`. Substitution is
+single-pass (no recursion) and shell-agnostic — the spawned
+subprocess runs through `asyncio.create_subprocess_exec(command,
+*args)` with no shell, so session ids containing shell
+metacharacters (`;`, `$(...)`, backticks, newlines) pass through
+as literal argv entries and never reach a shell.
+
+## 14. OAuth Token Storage
+
+Runtime-acquired OAuth credentials (device flow, browser
+redirect) persist under `~/.kiso/mcp/credentials/<server>.json`:
+
+- directory mode `0700`, file mode `0600`;
+- writes use `O_NOFOLLOW`, so a pre-planted symlink at the
+  credential path fails with `ELOOP` instead of writing through
+  to an attacker-controlled target;
+- reads refuse to follow symlinks too — a symlink at the path
+  raises `CredentialsError` rather than silently reading a
+  different file.
+
+Server names are validated against path-traversal characters
+(`/`, `\\`, `..`) before path construction, so
+`load_credential("../other")` cannot escape the credentials
+directory.
+
+## 15. Webhook Replay Protection
+
+`deliver_webhook` signs the payload with HMAC-SHA256
+(`X-Kiso-Signature: sha256=<hex>`) and includes a `sent_at`
+Unix timestamp inside the signed body:
+
+```json
+{
+  "session": "...",
+  "task_id": 1,
+  "type": "msg",
+  "content": "...",
+  "final": true,
+  "sent_at": 1712690400
+}
+```
+
+Because `sent_at` is inside the signed body, tampering with it
+invalidates the HMAC. Verifiers should reject deliveries where
+`abs(now - sent_at)` exceeds a freshness window; kiso's contract
+is **5 minutes**. HMAC alone proves the sender knew the secret;
+`sent_at` is what closes replay.
+
+`follow_redirects=False` on the delivery client prevents a
+validated public URL from redirecting to a private IP at
+delivery time (SSRF defence in depth; see section 7).

@@ -79,6 +79,8 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 2. After the user approves, the next turn runs with `install_approved=True` and an `Install Status` section. Emit the install exec (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`) directly, then a replan so the new capability is picked up.
 3. Never decompose the install command. Install execs are atomic.
 
+**Trust surface in the proposal msg.** Chat approvals can't pop an interactive prompt on the daemon host, so the `needs_install` msg MUST state: (a) the resolved source key (`github.com/<owner>/<repo>` or `npm:@<scope>/<pkg>`), (b) the trust tier (`tier1` / `custom` / `untrusted`), (c) risk factors (`scripts/`, broad `allowed-tools` like `Bash(*)`, oversized assets — or "none detected"). Omitting any of these is equivalent to no trust gate for chat users.
+
 **Secrets hard rule.** If the user pastes a token / key / password in chat, produce a msg-only plan refusing to store it and instructing `kiso mcp env <server> set <KEY> <value>` (MCP) or `kiso env set <KEY> <value>` (generic env). Secrets must not enter session history.
 
 <!-- MODULE: data_flow -->

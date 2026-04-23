@@ -92,20 +92,25 @@ def remove_prefix(scope: str, prefix: str) -> None:
 def matches_any_prefix(source: str, prefixes: list[str] | tuple[str, ...]) -> bool:
     """True iff *source* is covered by any prefix in *prefixes*.
 
-    - ``prefix*`` — glob. Matches when *source* starts with the head.
-    - bare or ``prefix/`` — path-prefix. Matches when *source* equals
-      the prefix or starts with ``<prefix>/`` (trailing ``/`` is
-      treated as equivalent to its absence so both forms work).
+    Matches are **segment-anchored**: a prefix always aligns with a
+    path boundary (``/``). ``github.com/anthropic*`` covers
+    ``github.com/anthropic/...`` but never ``github.com/anthropic-fake/...``
+    — a bare character next to the prefix is not a segment boundary.
+
+    Supported forms, all equivalent to a segment-anchored path prefix:
+
+    - ``prefix`` — bare, matches the prefix and any child segment.
+    - ``prefix/`` — trailing slash, same as bare.
+    - ``prefix*`` — trailing star (glob sugar), same as bare.
+    - ``prefix/*`` — slash + star, same as bare.
 
     Case-sensitive — GitHub preserves case on owner/repo.
     """
     for p in prefixes:
-        if p.endswith("*"):
-            if source.startswith(p[:-1]):
-                return True
-            continue
-        head = p.rstrip("/")
-        if source == head or source.startswith(head + "/"):
+        head = p.rstrip("*").rstrip("/")
+        if source == head:
+            return True
+        if source.startswith(head + "/"):
             return True
     return False
 

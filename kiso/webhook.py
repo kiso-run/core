@@ -9,6 +9,7 @@ import ipaddress
 import json
 import logging
 import socket
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -97,6 +98,11 @@ async def deliver_webhook(
         "type": "msg",
         "content": content,
         "final": final,
+        # sent_at is inside the signed body so tampering invalidates
+        # the HMAC. Verifiers should reject deliveries where
+        # abs(now - sent_at) exceeds their freshness window
+        # (kiso's contract: 5 minutes).
+        "sent_at": int(time.time()),
     }
     raw_body = json.dumps(payload).encode()
 

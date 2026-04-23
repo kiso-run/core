@@ -106,8 +106,7 @@ def save_credential(name: str, payload: dict) -> Path:
         ) from exc
 
     try:
-        path.write_text(text)
-        os.chmod(path, _FILE_MODE)
+        _write_nofollow(path, text)
     except OSError as exc:
         raise CredentialsError(
             f"failed to write credential file {path}: {exc}"
@@ -119,19 +118,53 @@ def load_credential(name: str) -> dict | None:
     """Return the persisted credential dict for server *name*, or None.
 
     Returns ``None`` when no credential has been saved (the file is
-    missing). Raises :class:`CredentialsError` on path validation
-    or JSON decode failure — corruption is a real error worth
-    surfacing.
+    missing). Raises :class:`CredentialsError` on path validation,
+    JSON decode failure, or when the path is a symlink — symlinks
+    are rejected to prevent another user on the host from
+    redirecting kiso's reads/writes to a file they own.
     """
     path = server_credentials_path(name)
+    if path.is_symlink():
+        raise CredentialsError(
+            f"credential path {path} is a symlink — refusing to follow"
+        )
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text())
+        return json.loads(_read_nofollow(path))
     except (OSError, json.JSONDecodeError) as exc:
         raise CredentialsError(
             f"failed to read credential file {path}: {exc}"
         ) from exc
+
+
+def _write_nofollow(path: Path, text: str) -> None:
+    """Write *text* to *path* without following symlinks.
+
+    If *path* already exists as a symlink, ``O_NOFOLLOW`` makes the
+    open fail with ELOOP rather than writing through the link to
+    an attacker-controlled target. The file is created with mode
+    ``_FILE_MODE`` directly (no separate chmod window).
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    fd = os.open(path, flags, _FILE_MODE)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    os.chmod(path, _FILE_MODE)
+
+
+def _read_nofollow(path: Path) -> str:
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        return fh.read()
 
 
 def delete_credential(name: str) -> None:

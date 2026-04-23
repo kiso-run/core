@@ -89,9 +89,9 @@ class TestPromptBudgetSmoke:
         # actual loaded prompt for default plan/chat/chat_kb paths is
         # smaller because the modular loader excludes non-selected
         # sections. The MCP Prompts routing paragraph in `skills_and_mcp`
-        # describing `__prompt_get` pushes the worst-case size up
-        # accordingly.
-        ("planner.md", 16800),
+        # and the chat-mediated install trust-surface note push the
+        # worst-case size up accordingly.
+        ("planner.md", 17100),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

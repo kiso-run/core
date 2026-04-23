@@ -198,6 +198,8 @@ class TestDeliverWebhook:
         assert attempts == 1
         assert captured["url"] == "https://example.com/hook"
         body = json.loads(captured["kwargs"]["content"])
+        sent_at = body.pop("sent_at")
+        assert isinstance(sent_at, int)
         assert body == {
             "session": "sess1",
             "task_id": 42,
@@ -294,6 +296,8 @@ class TestDeliverWebhook:
             )
 
         body = json.loads(captured["content"])
+        sent_at = body.pop("sent_at")
+        assert isinstance(sent_at, int)
         assert body == {
             "session": "my-session",
             "task_id": 99,
