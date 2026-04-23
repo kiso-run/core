@@ -389,6 +389,8 @@ _KISO_DIR_MODULES = [
     "kiso.audit",
     "kiso.sysenv",
     "kiso.connectors",
+    "kiso.skill_loader",
+    "kiso.mcp.manager",
     "kiso.worker.loop",
     "kiso.worker.utils",
 ]

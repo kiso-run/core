@@ -536,6 +536,8 @@ async def _persist_plan_tasks(
             args=args_payload,
             expect=contract.expect,
             parallel_group=t.get("group"),
+            server=t.get("server"),
+            method=t.get("method"),
         )
         task_ids.append(tid)
     return task_ids
@@ -1260,6 +1262,7 @@ async def _execute_plan(
     install_approved: bool = False,
     plan_has_needs_install: bool = False,
     selected_skills: "list | None" = None,
+    mcp_manager: "Any | None" = None,
 ) -> tuple[bool, str | None, str | None, list[dict], list[dict], list[dict]]:
     """Execute a plan's tasks. Returns (success, replan_reason, stuck_reason, completed, remaining, plan_outputs).
 
@@ -1303,6 +1306,7 @@ async def _execute_plan(
         sandbox_uid=None,
         task_contracts={},
         selected_skills=list(selected_skills or []),
+        mcp_manager=mcp_manager,
     )
     for task in tasks:
         ctx.task_contracts[task["id"]] = task["contract"]
@@ -1951,6 +1955,7 @@ async def _run_planning_loop(
             install_approved=install_approved,
             plan_has_needs_install=_current_needs_install,
             selected_skills=_current_selected_skills,
+            mcp_manager=mcp_manager,
         )
 
         if success:
