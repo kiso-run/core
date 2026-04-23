@@ -342,10 +342,11 @@ def build_parser() -> argparse.ArgumentParser:
     es.add_parser("reload", help="hot-reload .env into the server")
 
     # Stats
-    p = sub.add_parser("stats", help="show token usage stats (admin only)")
-    p.add_argument("--since", type=int, default=30, metavar="N", help="look back N days (default: 30)")
+    p = sub.add_parser("stats", help="show token usage + cost stats (admin only)")
+    p.add_argument("--since", default="30", metavar="SPEC", help="look back N days — accepts `7` or `7d` form (default: 30)")
     p.add_argument("--session", default=None, metavar="NAME", help="filter by session name")
     p.add_argument("--by", default="model", choices=["model", "session", "role"], help="group by dimension (default: model)")
+    p.add_argument("--costs", action="store_true", help="show only cost columns (no token breakdown)")
 
     sub.add_parser("completion", help="print shell completion script").add_argument("shell", choices=["bash", "zsh"], help="target shell")
     sub.add_parser("version", help="print version and exit").add_argument("--stats", action="store_true", help="show line count breakdown")

@@ -695,10 +695,12 @@ Secrets are stored in `~/.kiso/instances/{name}/.env` and loaded into the proces
 
 ```bash
 kiso stats                              # usage for last 30 days, grouped by model
-kiso stats --since 7                    # last 7 days
+kiso stats --since 7                    # last 7 days (plain N days)
+kiso stats --since 7d                   # same — 7d form accepted for readability
 kiso stats --session alice              # filter to a specific session
 kiso stats --by session                 # group by session instead of model
 kiso stats --by role                    # group by LLM role (planner, reviewer, …)
+kiso stats --costs                      # cost-only view: no token columns, just dollars
 kiso stats --all                        # loop over all instances (wrapper command)
 ```
 
@@ -717,8 +719,15 @@ Token usage — last 30 days  (by model)
 ```
 
 - Token counts use space as thousands separator + `k` suffix (e.g. `1 234 k`).
-- `est. cost` is computed from a built-in price table (substring match on model name). The column is omitted entirely if no model in the table has a known price.
-- `—` means the model is not in the price table.
+- `est. cost` is computed from a built-in price table (substring match on model name) at
+  `kiso/stats.py::MODEL_PRICES`. The table covers every model in
+  `MODEL_DEFAULTS` and all common OpenRouter-routed alternatives. The
+  column is omitted entirely if no model in the table has a known
+  price.
+- `—` means the model is not in the price table (no regression — the
+  call still runs, it just can't be priced).
+- `--costs` drops the `input` / `output` token columns and shows only
+  `key`, `calls`, `est. cost` for a spend-focused read.
 - `--all` (wrapper only): iterates all instances in `instances.json` and prints a `── name ──` header before each. Instances that are not running show a `(not running)` message instead of an error.
 
 The API token must have the `cli` key in `config.toml`, and the Linux user must be configured as admin. See [security.md — Roles](security.md#roles).

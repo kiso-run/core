@@ -2257,18 +2257,23 @@ class TestStatsSubcommand:
         assert args.command == "stats"
 
     def test_stats_flags_registered(self):
-        """'kiso stats' must accept --since, --session, and --by flags."""
-        args = build_parser().parse_args(["stats", "--since", "7", "--session", "alice", "--by", "session"])
-        assert args.since == 7
+        """'kiso stats' must accept --since, --session, --by, --costs flags."""
+        args = build_parser().parse_args(
+            ["stats", "--since", "7d", "--session", "alice", "--by", "session", "--costs"]
+        )
+        # `--since` is now a string spec parsed at run time.
+        assert args.since == "7d"
         assert args.session == "alice"
         assert args.by == "session"
+        assert args.costs is True
 
     def test_stats_defaults(self):
-        """'kiso stats' defaults: since=30, session=None, by=model."""
+        """'kiso stats' defaults: since='30', session=None, by=model, costs=False."""
         args = build_parser().parse_args(["stats"])
-        assert args.since == 30
+        assert args.since == "30"
         assert args.session is None
         assert args.by == "model"
+        assert args.costs is False
 
 
 # ── _should_stop_polling ──────────────────────────────────────

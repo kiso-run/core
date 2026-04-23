@@ -43,7 +43,7 @@ class TestRunStatsCommand:
         ):
             run_stats_command(_make_args())
 
-        mock_print.assert_called_once_with(mock_resp.json.return_value)
+        mock_print.assert_called_once_with(mock_resp.json.return_value, costs_only=False)
 
     def test_no_cli_token_exits(self, capsys):
         with (
