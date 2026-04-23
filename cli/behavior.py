@@ -21,7 +21,7 @@ def behavior_list(args: argparse.Namespace) -> None:
 
 def behavior_add(args: argparse.Namespace) -> None:
     """Add a behavioral guideline."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     content = args.content
     if not content.strip():
@@ -36,7 +36,7 @@ def behavior_add(args: argparse.Namespace) -> None:
 
 def behavior_remove(args: argparse.Namespace) -> None:
     """Remove a behavioral guideline by ID."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_delete(args, f"/knowledge/{args.behavior_id}",
                       params={"expected_category": "behavior"})

@@ -187,7 +187,7 @@ class TestConnectorStart:
         fake_proc.pid = 12345
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=connector),
             patch("cli.connector._state_dir", return_value=state_dir),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
@@ -212,7 +212,7 @@ class TestConnectorStart:
         pid_file.write_text("99999")
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=connector),
             patch("cli.connector._state_dir", return_value=state_dir),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
@@ -229,7 +229,7 @@ class TestConnectorStart:
         connector = _connector_config(enabled=False)
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=connector),
         ):
             with pytest.raises(SystemExit):
@@ -253,7 +253,7 @@ class TestConnectorStart:
                 raise ProcessLookupError()
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=connector),
             patch("cli.connector._state_dir", return_value=state_dir),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
@@ -288,7 +288,7 @@ class TestConnectorStop:
             raise ProcessLookupError()  # subsequent alive-checks → gone
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=_connector_config()),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
             patch("cli.connector.os.kill", side_effect=_kill),
@@ -301,7 +301,7 @@ class TestConnectorStop:
         from cli.connector import _connector_stop
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=_connector_config()),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
         ):
@@ -317,7 +317,7 @@ class TestConnectorStop:
         (state_dir / ".pid").write_text("99999")
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=_connector_config()),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
             patch("cli.connector.os.kill", side_effect=ProcessLookupError()),
@@ -340,7 +340,7 @@ class TestConnectorStop:
             # Always alive — so SIGKILL should fire after the 50-iteration wait.
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector._load_connector", return_value=_connector_config()),
             patch("cli.connector.CONNECTORS_DIR", tmp_path),
             patch("cli.connector.os.kill", side_effect=_kill),
@@ -467,7 +467,7 @@ class TestConnectorAdd:
         cfg_path.write_text('[tokens]\nadmin = "t"\n[providers.p]\nbase_url = "u"\n[users.u]\nrole = "admin"\n')
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector.CONFIG_PATH", cfg_path),
         ):
             _connector_add(
@@ -492,7 +492,7 @@ class TestConnectorAdd:
         cfg_path.write_text('[tokens]\nadmin = "t"\n[providers.p]\nbase_url = "u"\n[users.u]\nrole = "admin"\n')
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector.CONFIG_PATH", cfg_path),
         ):
             _connector_add(
@@ -514,7 +514,7 @@ class TestConnectorAdd:
     def test_rejects_invalid_name(self, tmp_path, capsys):
         from cli.connector import _connector_add
 
-        with patch("cli.connector._require_admin"):
+        with patch("cli.connector.require_admin"):
             with pytest.raises(SystemExit):
                 _connector_add(
                     _args(
@@ -536,7 +536,7 @@ class TestConnectorAdd:
         cfg_path.write_text('[tokens]\nadmin = "t"\n[providers.p]\nbase_url = "u"\n[users.u]\nrole = "admin"\n')
 
         with (
-            patch("cli.connector._require_admin"),
+            patch("cli.connector.require_admin"),
             patch("cli.connector.CONFIG_PATH", cfg_path),
         ):
             with pytest.raises(SystemExit):

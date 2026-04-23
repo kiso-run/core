@@ -30,7 +30,7 @@ def cron_list(args: argparse.Namespace) -> None:
 
 def cron_add(args: argparse.Namespace) -> None:
     """Add a cron job."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
 
     # Client-side validation
@@ -56,7 +56,7 @@ def cron_add(args: argparse.Namespace) -> None:
 
 def cron_remove(args: argparse.Namespace) -> None:
     """Remove a cron job by ID."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_delete(args, f"/cron/{args.job_id}")
     data = resp.json()
@@ -68,7 +68,7 @@ def cron_remove(args: argparse.Namespace) -> None:
 
 def cron_enable(args: argparse.Namespace) -> None:
     """Enable a cron job."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_patch(args, f"/cron/{args.job_id}", params={"enabled": "true"})
     print(f"Cron job {args.job_id} enabled.")
@@ -76,7 +76,7 @@ def cron_enable(args: argparse.Namespace) -> None:
 
 def cron_disable(args: argparse.Namespace) -> None:
     """Disable a cron job."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_patch(args, f"/cron/{args.job_id}", params={"enabled": "false"})
     print(f"Cron job {args.job_id} disabled.")

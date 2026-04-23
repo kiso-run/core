@@ -49,7 +49,7 @@ class TestRulesAdd:
 
         args = make_cli_args(rule_content="No network access after 6pm")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"id": 10, "content": "No network access after 6pm"}):
             rules_add(args)
         out = capsys.readouterr().out
@@ -60,7 +60,7 @@ class TestRulesAdd:
         from cli.rules import rules_add
 
         args = make_cli_args(rule_content="  ")
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              pytest.raises(SystemExit):
             rules_add(args)
         assert "empty" in capsys.readouterr().err
@@ -69,7 +69,7 @@ class TestRulesAdd:
         from cli.rules import rules_add
 
         args = make_cli_args(rule_content="Some rule")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             rules_add(args)
 
@@ -83,7 +83,7 @@ class TestRulesRemove:
 
         args = make_cli_args(rule_id=5)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": True}):
             rules_remove(args)
         assert "5 removed" in capsys.readouterr().out
@@ -93,7 +93,7 @@ class TestRulesRemove:
 
         args = make_cli_args(rule_id=99)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": False}), \
              pytest.raises(SystemExit):
             rules_remove(args)
@@ -103,6 +103,6 @@ class TestRulesRemove:
         from cli.rules import rules_remove
 
         args = make_cli_args(rule_id=1)
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             rules_remove(args)

@@ -34,6 +34,7 @@ from pathlib import Path
 
 import tomli_w
 
+from cli._admin import require_admin
 from cli.render import die
 from kiso.config import CONFIG_PATH
 from kiso.connector_config import NAME_RE, ConnectorConfig, ConnectorConfigError, parse_connectors_section
@@ -124,7 +125,7 @@ def _state_of(name: str) -> str:
 
 def _connector_start(args: argparse.Namespace) -> None:
     """Spawn the supervisor as a detached daemon."""
-    _require_admin()
+    require_admin()
     name = args.name
     connector = _load_connector(name)
     if not connector.enabled:
@@ -167,7 +168,7 @@ def _connector_start(args: argparse.Namespace) -> None:
 
 
 def _connector_stop(args: argparse.Namespace) -> None:
-    _require_admin()
+    require_admin()
     name = args.name
     _load_connector(name)  # verify declared — supervisor PID file may exist independently
     pid_file = CONNECTORS_DIR / name / ".pid"
@@ -281,7 +282,7 @@ def _connector_logs(args: argparse.Namespace) -> None:
 
 
 def _connector_add(args: argparse.Namespace) -> None:
-    _require_admin()
+    require_admin()
     name = args.name
     if not NAME_RE.match(name):
         die(f"invalid connector name: {name!r} (must match {NAME_RE.pattern})")
@@ -540,12 +541,3 @@ def _load_connector(name: str) -> ConnectorConfig:
     if connector is None:
         die(f"connector '{name}' is not declared in config.toml")
     return connector
-
-
-def _require_admin() -> None:
-    """Connector lifecycle is admin-only to avoid surprising other users."""
-    try:
-        from cli.plugin_ops import require_admin
-    except ImportError:
-        return
-    require_admin()

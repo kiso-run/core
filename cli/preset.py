@@ -9,8 +9,9 @@ import shutil
 import subprocess
 import tempfile
 
+from cli._admin import require_admin
 from cli._http import cli_get
-from cli.plugin_ops import fetch_registry, render_aligned_list
+from cli._registry import fetch_registry, render_aligned_list, search_entries
 from cli.render import die
 
 
@@ -65,7 +66,6 @@ def preset_list(args: argparse.Namespace) -> None:
 
 def preset_search(args: argparse.Namespace) -> None:
     """Search presets by name or description."""
-    from cli.plugin_ops import search_entries
 
     registry = fetch_registry()
     presets = registry.get("presets", [])
@@ -78,7 +78,6 @@ def preset_search(args: argparse.Namespace) -> None:
 
 def preset_install(args: argparse.Namespace) -> None:
     """Install a preset from a local path or registry name."""
-    from cli.plugin_ops import require_admin
     require_admin()
 
     target = args.target
@@ -179,7 +178,6 @@ def preset_installed(args: argparse.Namespace) -> None:
 
 def preset_remove(args: argparse.Namespace) -> None:
     """Remove an installed preset."""
-    from cli.plugin_ops import require_admin
     require_admin()
 
     from cli.preset_ops import remove_preset

@@ -5,7 +5,7 @@ from __future__ import annotations
 import getpass
 from pathlib import Path
 
-from cli.plugin_ops import require_admin
+from cli._admin import require_admin
 from cli.render import die
 from kiso.config import KISO_DIR
 
@@ -14,7 +14,7 @@ ENV_FILE = KISO_DIR / ".env"
 
 def run_env_command(args) -> None:
     """Dispatch to the appropriate env subcommand."""
-    from cli.plugin_ops import dispatch_subcommand
+    from cli._admin import dispatch_subcommand
     dispatch_subcommand(args, "env_command", {
         "set": _env_set, "get": _env_get, "list": _env_list,
         "delete": _env_delete, "reload": _env_reload,

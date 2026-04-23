@@ -42,7 +42,7 @@ def knowledge_list(args: argparse.Namespace) -> None:
 
 def knowledge_add(args: argparse.Namespace) -> None:
     """Add a knowledge fact."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     content = args.content
     if not content.strip():
@@ -81,7 +81,7 @@ def knowledge_search(args: argparse.Namespace) -> None:
 
 def knowledge_remove(args: argparse.Namespace) -> None:
     """Remove a knowledge fact by ID."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_delete(args, f"/knowledge/{args.fact_id}")
     data = resp.json()
@@ -161,7 +161,7 @@ def knowledge_import(args: argparse.Namespace) -> None:
     """Import knowledge from a markdown file."""
     from pathlib import Path
 
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
 
     from kiso.knowledge_import import parse_knowledge_markdown

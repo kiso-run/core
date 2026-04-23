@@ -22,7 +22,7 @@ def project_list(args: argparse.Namespace) -> None:
 
 def project_create(args: argparse.Namespace) -> None:
     """Create a new project."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     body: dict = {"name": args.name}
     if getattr(args, "description", None):
@@ -49,7 +49,7 @@ def project_show(args: argparse.Namespace) -> None:
 
 def project_bind(args: argparse.Namespace) -> None:
     """Bind a session to a project."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_post(args, f"/projects/{args.project}/bind/{args.session}")
     data = resp.json()
@@ -59,7 +59,7 @@ def project_bind(args: argparse.Namespace) -> None:
 
 def project_unbind(args: argparse.Namespace) -> None:
     """Unbind a session from its project."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_post(args, f"/projects/{args.project}/unbind/{args.session}")
     data = resp.json()
@@ -69,7 +69,7 @@ def project_unbind(args: argparse.Namespace) -> None:
 
 def project_add_member(args: argparse.Namespace) -> None:
     """Add a member to a project."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     body = {"username": args.username, "role": getattr(args, "role", "member") or "member"}
     resp = cli_post(args, f"/projects/{args.project}/members", json_body=body)
@@ -80,7 +80,7 @@ def project_add_member(args: argparse.Namespace) -> None:
 
 def project_remove_member(args: argparse.Namespace) -> None:
     """Remove a member from a project."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_delete(args, f"/projects/{args.project}/members/{args.username}")
     data = resp.json()

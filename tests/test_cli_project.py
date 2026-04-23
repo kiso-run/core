@@ -73,7 +73,7 @@ class TestProjectCreate:
 
         args = make_cli_args(name="my-project")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"id": 5, "name": "my-project"}):
             project_create(args)
         out = capsys.readouterr().out
@@ -85,7 +85,7 @@ class TestProjectCreate:
 
         args = make_cli_args(name="proj", description="A test project")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"id": 1, "name": "proj"}):
             project_create(args)
         assert "proj" in capsys.readouterr().out
@@ -94,7 +94,7 @@ class TestProjectCreate:
         from cli.project import project_create
 
         args = make_cli_args(name="proj")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             project_create(args)
 
@@ -154,7 +154,7 @@ class TestProjectBind:
 
         args = make_cli_args(project="alpha", session="sess1")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"bound": True}):
             project_bind(args)
         out = capsys.readouterr().out
@@ -166,7 +166,7 @@ class TestProjectBind:
         from cli.project import project_bind
 
         args = make_cli_args(project="alpha", session="s")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             project_bind(args)
 
@@ -177,7 +177,7 @@ class TestProjectUnbind:
 
         args = make_cli_args(project="alpha", session="sess1")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"unbound": True}):
             project_unbind(args)
         out = capsys.readouterr().out
@@ -188,7 +188,7 @@ class TestProjectUnbind:
         from cli.project import project_unbind
 
         args = make_cli_args(project="alpha", session="s")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             project_unbind(args)
 
@@ -202,7 +202,7 @@ class TestProjectAddMember:
 
         args = make_cli_args(project="proj", username="bob", role=None)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"added": True, "username": "bob", "role": "member"}):
             project_add_member(args)
         out = capsys.readouterr().out
@@ -214,7 +214,7 @@ class TestProjectAddMember:
 
         args = make_cli_args(project="proj", username="alice", role="admin")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"added": True, "username": "alice", "role": "admin"}):
             project_add_member(args)
         out = capsys.readouterr().out
@@ -225,7 +225,7 @@ class TestProjectAddMember:
         from cli.project import project_add_member
 
         args = make_cli_args(project="proj", username="bob", role=None)
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             project_add_member(args)
 
@@ -239,7 +239,7 @@ class TestProjectRemoveMember:
 
         args = make_cli_args(project="proj", username="bob")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"removed": True}):
             project_remove_member(args)
         out = capsys.readouterr().out
@@ -250,7 +250,7 @@ class TestProjectRemoveMember:
         from cli.project import project_remove_member
 
         args = make_cli_args(project="proj", username="bob")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             project_remove_member(args)
 

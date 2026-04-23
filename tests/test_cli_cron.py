@@ -91,7 +91,7 @@ class TestCronAdd:
         mock_croniter.is_valid.return_value = True
         args = make_cli_args(session="daily", schedule="0 9 * * *", prompt="Run backup")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              patch.dict("sys.modules", {"croniter": MagicMock(croniter=mock_croniter)}), \
              mock_http_response({"id": 5, "schedule": "0 9 * * *",
                                  "session": "daily", "next_run": "2026-04-09 09:00"}):
@@ -107,7 +107,7 @@ class TestCronAdd:
         mock_croniter = MagicMock()
         mock_croniter.is_valid.return_value = False
         args = make_cli_args(session="s", schedule="not valid", prompt="x")
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              patch.dict("sys.modules", {"croniter": MagicMock(croniter=mock_croniter)}), \
              pytest.raises(SystemExit):
             cron_add(args)
@@ -119,7 +119,7 @@ class TestCronAdd:
 
         args = make_cli_args(session="s", schedule="0 9 * * *", prompt="x")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              patch.dict("sys.modules", {"croniter": None}), \
              mock_http_response({"id": 1, "schedule": "0 9 * * *",
                                  "session": "s", "next_run": "?"}):
@@ -132,7 +132,7 @@ class TestCronAdd:
         from cli.cron import cron_add
 
         args = make_cli_args(session="s", schedule="0 * * * *", prompt="x")
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             cron_add(args)
 
@@ -146,7 +146,7 @@ class TestCronRemove:
 
         args = make_cli_args(job_id=7)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": True}):
             cron_remove(args)
         assert "7 removed" in capsys.readouterr().out
@@ -156,7 +156,7 @@ class TestCronRemove:
 
         args = make_cli_args(job_id=99)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": False}), \
              pytest.raises(SystemExit):
             cron_remove(args)
@@ -166,7 +166,7 @@ class TestCronRemove:
         from cli.cron import cron_remove
 
         args = make_cli_args(job_id=1)
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             cron_remove(args)
 
@@ -180,7 +180,7 @@ class TestCronEnable:
 
         args = make_cli_args(job_id=3)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({}):
             cron_enable(args)
         assert "3 enabled" in capsys.readouterr().out
@@ -189,7 +189,7 @@ class TestCronEnable:
         from cli.cron import cron_enable
 
         args = make_cli_args(job_id=3)
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             cron_enable(args)
 
@@ -200,7 +200,7 @@ class TestCronDisable:
 
         args = make_cli_args(job_id=4)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({}):
             cron_disable(args)
         assert "4 disabled" in capsys.readouterr().out
@@ -209,6 +209,6 @@ class TestCronDisable:
         from cli.cron import cron_disable
 
         args = make_cli_args(job_id=4)
-        with patch("cli.plugin_ops.require_admin", side_effect=SystemExit(1)), \
+        with patch("cli._admin.require_admin", side_effect=SystemExit(1)), \
              pytest.raises(SystemExit):
             cron_disable(args)

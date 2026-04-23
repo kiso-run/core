@@ -126,7 +126,7 @@ class TestKnowledgeImportCLI:
             api="http://localhost:8333", file=str(md_file),
             category=None, dry_run=True,
         )
-        with patch("cli.plugin_ops.require_admin"):
+        with patch("cli._admin.require_admin"):
             knowledge_import(args)
         out = capsys.readouterr().out
         assert "Dry run" in out
@@ -144,7 +144,7 @@ class TestKnowledgeImportCLI:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"id": 1, "content": "x", "category": "general"}
         mock_resp.raise_for_status = MagicMock()
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              patch("kiso.config.load_config", return_value=mock_cli_config()), \
              patch("httpx.request", return_value=mock_resp) as mock_req:
             knowledge_import(args)
@@ -157,7 +157,7 @@ class TestKnowledgeImportCLI:
             api="http://localhost:8333", file="/nonexistent/file.md",
             category=None, dry_run=False,
         )
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              pytest.raises(SystemExit):
             knowledge_import(args)
         assert "not found" in capsys.readouterr().err

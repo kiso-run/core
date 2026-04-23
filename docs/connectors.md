@@ -1,171 +1,174 @@
 # Connectors
 
-A connector bridges an external platform (Discord, Telegram, Slack, email, etc.) and kiso's API. Lives in `~/.kiso/instances/{instance}/connectors/{name}/`.
+A connector bridges an external platform (Discord, Slack, Telegram,
+email, …) and kiso's HTTP API. It is an **external process that kiso
+supervises** — kiso starts it, restarts it on crash, and captures its
+stdout/stderr to a log file. Kiso does **not** install connector
+binaries; you bring your own via `uvx`, `pip`, `docker`, a local clone,
+or any other mechanism of your choosing.
 
-## Structure
+Connectors are declared in `config.toml` under `[connectors.<name>]`,
+structurally parallel to `[mcp.<name>]`.
 
-```
-~/.kiso/instances/{instance}/connectors/
-├── discord/
-│   ├── kiso.toml            # manifest (required)
-│   ├── pyproject.toml       # python dependencies (required, uv-managed)
-│   ├── run.py               # entry point (required)
-│   ├── config.example.toml  # example config (in repo)
-│   ├── config.toml          # actual config (gitignored, NO secrets)
-│   ├── deps.sh              # system deps installer (optional, idempotent)
-│   ├── README.md            # setup instructions
-│   └── .venv/               # created by uv on install
-└── .../
-```
-
-A directory is a valid connector if it contains `kiso.toml` (with `type = "connector"`), `pyproject.toml`, and `run.py`.
-
-## kiso.toml
-
-The manifest. Same base format as wrappers (`kiso.toml` + `pyproject.toml` + `run.py`), different type and sections.
+## Config shape
 
 ```toml
-[kiso]
-type = "connector"
-name = "discord"
-version = "0.1.0"
-description = "Discord bridge for Kiso"
+[connectors.discord]
+command = "uvx"
+args    = ["kiso-discord-connector"]
 
-[kiso.connector]
-platform = "discord"
+# Optional: per-connector environment (${env:FOO} is expanded from the
+# kiso process env at config load; KISO_* keys are reserved).
+env = { DISCORD_TOKEN = "${env:DISCORD_TOKEN}" }
 
-[kiso.connector.env]
-bot_token = { required = true }        # → KISO_CONNECTOR_DISCORD_BOT_TOKEN
-webhook_secret = { required = false }  # → KISO_CONNECTOR_DISCORD_WEBHOOK_SECRET
+# Optional: working directory the command runs in.
+# cwd = "/opt/discord"
 
-[kiso.deps]
-python = ">=3.11"
+# Optional: per-connector API token used when the connector POSTs to
+# kiso's /msg endpoint. Resolved against config.toml [tokens].
+# token = "${env:KISO_CONNECTOR_DISCORD_TOKEN}"
+
+# Optional: webhook URL kiso posts results to. HMAC-signed with
+# config.webhook_secret.
+# webhook = "http://localhost:9001/kiso-results"
+
+# Optional: disable without removing.
+# enabled = false
 ```
 
-### Env Var Naming
+Required: `command`. Everything else is optional.
 
-Deploy secrets live in env vars named `KISO_CONNECTOR_{NAME}_{KEY}` — never in config files.
+Validation happens at config load and at `kiso connector add`:
+non-empty `command`, list-of-strings `args`, no `KISO_*` keys in
+`env`, valid `${env:VAR}` references.
 
-## config.toml
+## CLI
 
-Structural, non-secret, deployment-specific configuration. The repo ships `config.example.toml`, the real `config.toml` is gitignored and created by the user post-install.
+Kiso owns the **supervisor lifecycle**, not the install flow:
+
+```
+kiso connector list                     # configured connectors + run state
+kiso connector start  <name>            # spawn as a daemon, restart on crash
+kiso connector stop   <name>            # SIGTERM, wait 5s, SIGKILL fallback
+kiso connector status <name>            # running | stopped | gave up
+kiso connector logs   <name> [-n 50]    # tail connector.log
+kiso connector add    <name> --command X [--args ...] [--env K=V ...] \
+                             [--cwd P] [--token T] [--webhook U]
+kiso connector migrate                  # print suggested config blocks
+                                        # for legacy ~/.kiso/connectors/<n>/
+                                        # installs (pre-v0.10 only)
+```
+
+There is **no** `kiso connector install/update/remove/search/test` —
+the connector binary is not kiso's concern.
+
+## Supervisor state
+
+When you run `kiso connector start <name>`, kiso lazily creates
+`~/.kiso/connectors/<name>/` and writes three files there for as long
+as the supervisor is alive:
+
+```
+~/.kiso/connectors/<name>/
+├── .pid            # supervisor PID
+├── .status.json    # restart count, consecutive failures, gave_up flag
+└── connector.log   # merged stdout + stderr
+```
+
+Restart policy:
+
+- **Clean exit (code 0)** — supervisor exits, no restart.
+- **Crash (non-zero)** — restart with exponential backoff
+  (1s → 2s → 4s → … → 60s cap).
+- **Stable-run reset** — if the child ran for ≥ 60s before crashing,
+  the consecutive-failure counter resets.
+- **Give up** — after 5 consecutive quick failures the supervisor
+  stops trying and writes `gave_up: true` to `.status.json`.
+- **SIGTERM** — forwarded to the child; supervisor exits cleanly.
+
+## Protocol contract
+
+A connector is any process that speaks kiso's HTTP API. At minimum it
+must:
+
+1. **Authenticate.** Use the `--token` you declared (or read
+   `config.toml` directly). All requests to `/msg`, `/sessions`,
+   `/status/...` must carry an `Authorization: Bearer <token>` header.
+2. **Register sessions.** `POST /sessions` with at least `session`
+   (opaque string — the connector picks its own naming) and `webhook`
+   (the URL kiso will callback).
+3. **Submit messages.** `POST /msg` with `session`, `user`, `content`.
+4. **Receive results.** When kiso finishes a plan it calls your
+   `webhook` with an HMAC signature in `X-Kiso-Signature` (HMAC-SHA256
+   over the raw body, keyed on `config.webhook_secret`). Verify before
+   acting.
+5. **Poll on webhook drop.** If a webhook doesn't arrive within a
+   reasonable timeout, `GET /status/<session>?after=<last_task_id>` to
+   recover missed responses. This is a **protocol requirement** — kiso
+   may drop callbacks transiently under load.
+
+## Minimal example
+
+A ~40-line Python stub that registers a session, submits a message,
+and verifies the HMAC on the callback. No manifest, no venv, no
+`deps.sh` — everything you need is the config block above and this
+script.
+
+```python
+# runner.py — run with: uvx --from httpx httpx && python runner.py
+import hashlib, hmac, json, os, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import httpx
+
+API = "http://localhost:8333"
+TOKEN = os.environ["KISO_CONNECTOR_DEMO_TOKEN"]
+SECRET = os.environ["KISO_WEBHOOK_SECRET"].encode()
+WEBHOOK = "http://localhost:9001/kiso"
+
+
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        sig = self.headers.get("X-Kiso-Signature", "")
+        expect = hmac.new(SECRET, body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expect):
+            self.send_response(401); self.end_headers(); return
+        payload = json.loads(body)
+        print("kiso →", payload.get("reply") or payload)
+        self.send_response(204); self.end_headers()
+
+
+def serve() -> None:
+    HTTPServer(("0.0.0.0", 9001), H).serve_forever()
+
+
+threading.Thread(target=serve, daemon=True).start()
+
+headers = {"Authorization": f"Bearer {TOKEN}"}
+httpx.post(f"{API}/sessions", json={"session": "demo", "webhook": WEBHOOK}, headers=headers)
+httpx.post(f"{API}/msg", json={"session": "demo", "user": "alice", "content": "hello"}, headers=headers)
+threading.Event().wait()
+```
+
+Config:
 
 ```toml
-kiso_api = "http://localhost:8333"   # matches the instance's server port
-session_prefix = "discord"
-webhook_port = 9001                  # auto-assigned from the instance's connector range
-
-[channel_map]
-general = "discord-general"
-dev = "discord-dev"
+[connectors.demo]
+command = "python"
+args    = ["/home/me/demo/runner.py"]
+env     = { KISO_CONNECTOR_DEMO_TOKEN = "${env:DEMO_TOKEN}", KISO_WEBHOOK_SECRET = "${env:KISO_WEBHOOK_SECRET}" }
 ```
 
-No secrets. Deploy secrets come from env vars declared in `kiso.toml`.
+Then `kiso connector start demo`, and the connector is up under
+supervision.
 
-`webhook_port` is auto-assigned by the wrapper when the connector is installed (`kiso connector install`). The assigned port is from the instance's connector range (see [docker.md — Ports](docker.md#ports)) and is the same inside and outside the container.
+## Migrating from the pre-v0.10 layout
 
-## What a Connector Does
-
-1. **On startup**: registers sessions via `POST /sessions` with its webhook URL and description. Session IDs are chosen by the connector (opaque strings, e.g. `discord_dev`, `discord_dm_anna`). The connector decides the naming convention.
-2. Connects to the platform (Discord WebSocket, Telegram polling, etc.)
-3. Listens for messages
-4. POSTs to kiso's `/msg` endpoint:
-   - `session`: mapped from platform context (e.g. Discord channel → session name via `channel_map`)
-   - `user`: the platform identity as-is (e.g. `"Marco#1234"`) — kiso resolves it to a Linux user via `aliases.{token_name}` in `config.toml` (see [security.md — Connector Aliases](security.md#connector-aliases))
-   - `content`: message text
-5. Receives webhook callbacks from kiso (at the URL set in `POST /sessions`)
-6. Sends responses back to the platform
-7. **Polling fallback**: if no webhook callback arrives within a reasonable timeout after sending a message, polls `GET /status/{session}?after={last_task_id}` to recover missed responses. This is a **protocol requirement** — connectors must implement it for reliability.
-
-## File Attachments
-
-When a platform message includes file attachments (images, documents, audio, etc.), the connector should write them to the session's `uploads/` directory before — or alongside — posting the message:
-
-```
-~/.kiso/instances/{instance}/sessions/{session}/uploads/{filename}
-```
-
-The directory always exists (created automatically when the session workspace is initialised). The connector can derive the path from the `session` ID it chose on registration. Wrappers and exec tasks can then read from `uploads/` via the `workspace` input field.
-
-No upload API exists yet — write directly to the filesystem (connectors run inside the container and share the same paths).
-
-## deps.sh
-
-Optional, idempotent shell script that installs system-level dependencies inside the container. Runs after `git clone`, before `uv sync`. Non-zero exit aborts the install.
-
-## Installation
-
-Only admins can install connectors.
-
-### Via CLI
-
-```bash
-# official (resolves from kiso-run org)
-kiso connector install discord
-# → clones git@github.com:kiso-run/connector-discord.git
-# → ~/.kiso/instances/{instance}/connectors/discord/
-
-# unofficial (full git URL)
-kiso connector install git@github.com:someone/my-connector.git
-# → ~/.kiso/instances/{instance}/connectors/github-com_someone_my-connector/
-
-# unofficial with custom name
-kiso connector install git@github.com:someone/my-connector.git --name custom
-# → ~/.kiso/instances/{instance}/connectors/custom/
-```
-
-### Unofficial Repo Warning
-
-Unofficial repos trigger a confirmation prompt before install. Use `--no-deps` to skip `deps.sh`. See [security.md — Unofficial Package Warning](security.md#8-unofficial-package-warning) for the full warning text.
-
-### Naming Convention
-
-- `kiso connector install <name>` → resolves to `git@github.com:kiso-run/<name>-connector.git` (or the equivalent public URL) and installs to `~/.kiso/instances/{instance}/connectors/<name>/`.
-- `kiso connector install <git-url>` → installs to `~/.kiso/instances/{instance}/connectors/<sanitized-url>/`.
-- `kiso connector install <git-url> --name custom` → installs to `~/.kiso/instances/{instance}/connectors/custom/`.
-
-### Install Flow
-
-1. Validate target directory doesn't exist (or is a stale `.installing` marker).
-2. `git clone <url> <target>.installing`.
-3. Validate the repo has a `kiso.toml` with a `[kiso]` table and a plausible connector entry point.
-4. Run `deps.sh` if present.
-5. `uv sync` inside the target.
-6. If `config.example.toml` exists and `config.toml` does not, copy it.
-7. Rename `<target>.installing` → `<target>`.
-
-Failures at any step abort and clean up the `.installing` directory.
-
-### Via the Agent (manual install)
-
-A user can ask the agent to install a connector. The planner generates exec tasks replicating the CLI install flow (git clone → uv sync → deps.sh → copy config.example.toml) with a final `msg` listing next steps (set env vars, edit config, add aliases, run).
-
-The agent cannot start the connector but can set env vars via exec tasks (`kiso env set ... && kiso env reload`) if the user is an admin.
-
-### Update / Remove / Search
-
-```bash
-kiso connector update discord          # git pull + deps.sh + uv sync
-kiso connector update all
-kiso connector remove discord
-kiso connector list
-kiso connector search [query]              # local search across installed connectors
-```
-
-## Running
-
-Connectors run as daemon subprocesses managed by kiso:
-
-```bash
-kiso connector run discord             # start as daemon
-kiso connector stop discord            # stop the daemon
-kiso connector status discord          # check if running
-```
-
-Spawns as a background process, tracks PID, manages restarts. Logs: `~/.kiso/instances/{instance}/connectors/{name}/connector.log`.
-
-Under the hood: `.venv/bin/python KISO_DIR/connectors/{name}/run.py &` with a management loop that monitors the PID and respawns with backoff.
-
-### Restart Policy
-
-Exponential backoff on crash (hardcoded thresholds). Stops after repeated failures. For custom restart policies, run the connector externally (systemd, supervisord).
+If you have `~/.kiso/connectors/<name>/` dirs from a previous install
+(with `kiso.toml`, `pyproject.toml`, `run.py`, `.venv/`), kiso v0.10
+will log a one-line warning at startup. Run `kiso connector migrate`
+to see a suggested `[connectors.<name>]` block you can paste into your
+`config.toml`. The old directory is otherwise ignored — kiso no longer
+reads `kiso.toml` from it, and you can delete it once the config block
+is in place.

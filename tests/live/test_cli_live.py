@@ -5,7 +5,7 @@ Gated behind ``--live-network`` flag.
 
 These are optional smoke tests, not the primary semantic coverage for CLI
 search/install behavior. Stronger deterministic coverage lives in the unit
-tests for `cli.wrapper`, `cli.connector`, and `cli.plugin_ops`.
+tests for `cli.mcp`, `cli.skill`, and `cli.connector`.
 """
 
 from __future__ import annotations

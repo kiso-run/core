@@ -10,7 +10,7 @@ from cli._http import cli_get, cli_post
 
 def session_create(args) -> None:
     """: Create a named session."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     body: dict = {"session": args.name}
     if getattr(args, "description", None):

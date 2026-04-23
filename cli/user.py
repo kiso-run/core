@@ -11,7 +11,7 @@ from pathlib import Path
 
 import tomli_w
 
-from cli.plugin_ops import require_admin
+from cli._admin import require_admin
 from cli.render import die
 from kiso.config import CONFIG_PATH, NAME_RE
 
@@ -21,7 +21,7 @@ CONFIG_PATH_DEFAULT: Path = CONFIG_PATH
 
 def run_user_command(args) -> None:
     """Dispatch to the appropriate user subcommand."""
-    from cli.plugin_ops import dispatch_subcommand
+    from cli._admin import dispatch_subcommand
     dispatch_subcommand(args, "user_command", {
         "list": _user_list, "add": _user_add, "edit": _user_edit,
         "remove": _user_remove, "alias": _user_alias,

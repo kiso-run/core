@@ -308,12 +308,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", "-y", action="store_true",
                    help="skip confirmation for non-empty existing files")
 
-    # Plugin umbrella
-    ps = sub.add_parser("plugin", help="unified plugin view").add_subparsers(dest="plugin_command")
-    ps.add_parser("list", help="list all installed plugins")
-    p = ps.add_parser("search", help="search registry across all plugin types")
-    p.add_argument("query", nargs="?", default="", help="search filter")
-
     _add_connector_parser(sub)
     _add_user_parser(sub)
     _add_knowledge_parser(sub)
@@ -470,10 +464,6 @@ def main() -> None:
         from cli.roles import run_roles_command
 
         run_roles_command(args)
-    elif args.command == "plugin":
-        from cli.plugin import run_plugin_command
-
-        run_plugin_command(args)
     elif args.command == "connector":
         from cli.connector import run_connector_command
 

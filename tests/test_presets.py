@@ -164,7 +164,7 @@ class TestRegistryPresets:
             assert "description" in p and p["description"]
 
     def test_search_entries_on_presets(self):
-        from cli.plugin_ops import search_entries
+        from cli._registry import search_entries
         presets = [
             {"name": "performance-marketer", "description": "marketing"},
             {"name": "seo-specialist", "description": "SEO optimization"},
@@ -363,7 +363,7 @@ class TestPresetInstallCLI:
         path = _write_preset_toml(tmp_path)
         args = make_cli_args(target=str(path), dry_run=True)
 
-        with patch("cli.plugin_ops.require_admin"):
+        with patch("cli.preset.require_admin"):
             preset_install(args)
         out = capsys.readouterr().out
         assert "Dry run" in out
@@ -375,7 +375,7 @@ class TestPresetInstallCLI:
         _write_preset_toml(tmp_path)
         args = make_cli_args(target=str(tmp_path), dry_run=True)
 
-        with patch("cli.plugin_ops.require_admin"):
+        with patch("cli.preset.require_admin"):
             preset_install(args)
         out = capsys.readouterr().out
         assert "Dry run" in out
@@ -392,7 +392,7 @@ class TestPresetInstallCLI:
             name="test-preset", version="1.0.0", description="Test",
             wrappers=[], behaviors=["Always be helpful."],
         )
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli.preset.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
              patch("cli.preset._clone_and_load_preset", return_value=mock_manifest), \
              patch("cli.preset_ops.install_preset") as mock_install:
@@ -408,7 +408,7 @@ class TestPresetInstallCLI:
             wrappers=[], behaviors=["Be concise."],
         )
         args = make_cli_args(target="https://github.com/example/preset-custom.git", dry_run=False)
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli.preset.require_admin"), \
              patch("cli.preset._clone_and_load_preset", return_value=mock_manifest) as mock_clone, \
              patch("cli.preset_ops.install_preset"):
             preset_install(args)
@@ -428,7 +428,7 @@ class TestPresetInstallCLI:
         from cli.preset import preset_install
         reg = {"presets": []}
         args = make_cli_args(target="nonexistent", dry_run=False)
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli.preset.require_admin"), \
              patch("cli.preset.fetch_registry", return_value=reg), \
              pytest.raises(SystemExit):
             preset_install(args)
@@ -510,7 +510,7 @@ class TestPresetRemoveCLI:
     def test_remove_calls_ops(self, capsys):
         from cli.preset import preset_remove
         args = make_cli_args(name="test-rm")
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli.preset.require_admin"), \
              patch("cli.preset_ops.remove_preset") as mock_rm:
             preset_remove(args)
         mock_rm.assert_called_once_with(args, "test-rm")
@@ -707,15 +707,6 @@ class TestCleanProgressOutput:
         assert "Preset installed" in out
         assert "2 wrappers" in out
         assert "1 behaviors" in out
-
-    def test_deps_sh_runs_via_plugin_install(self):
-        """Verify deps.sh execution path: _auto_install → _wrapper_install → _plugin_install runs deps.sh."""
-        import inspect
-        from cli.plugin_ops import _plugin_install
-        source = inspect.getsource(_plugin_install)
-        assert "deps.sh" in source
-        assert 'bash' in source
-
 
 # ---------------------------------------------------------------------------
 # — Recipes in preset system

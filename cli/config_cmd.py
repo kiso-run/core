@@ -8,7 +8,7 @@ from pathlib import Path
 
 import tomli_w
 
-from cli.plugin_ops import require_admin
+from cli._admin import require_admin
 from cli.render import die
 from kiso.config import CONFIG_PATH, SETTINGS_DEFAULTS
 
@@ -18,7 +18,7 @@ CONFIG_PATH_DEFAULT: Path = CONFIG_PATH
 
 def run_config_command(args) -> None:
     """Dispatch to the appropriate config subcommand."""
-    from cli.plugin_ops import dispatch_subcommand
+    from cli._admin import dispatch_subcommand
     dispatch_subcommand(args, "config_cmd", {
         "set": config_set, "get": config_get, "list": config_list,
     }, "usage: kiso config {set,get,list}")

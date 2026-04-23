@@ -53,7 +53,7 @@ class TestKnowledgeAdd:
         args = make_cli_args(content="Project uses microservices",
                           category="general", entity=None, entity_kind=None, tags=None)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"id": 42, "content": "Project uses microservices", "category": "general"}):
             knowledge_add(args)
         out = capsys.readouterr().out
@@ -63,7 +63,7 @@ class TestKnowledgeAdd:
         from cli.knowledge import knowledge_add
         args = make_cli_args(content="  ", category="general",
                           entity=None, entity_kind=None, tags=None)
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              pytest.raises(SystemExit):
             knowledge_add(args)
         assert "empty" in capsys.readouterr().err
@@ -145,7 +145,7 @@ class TestKnowledgeRemove:
         from cli.knowledge import knowledge_remove
         args = make_cli_args(fact_id=42)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": True}):
             knowledge_remove(args)
         assert "42 removed" in capsys.readouterr().out
@@ -154,7 +154,7 @@ class TestKnowledgeRemove:
         from cli.knowledge import knowledge_remove
         args = make_cli_args(fact_id=99)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": False}), \
              pytest.raises(SystemExit):
             knowledge_remove(args)

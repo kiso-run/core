@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from kiso.config import KISO_DIR
-from cli.plugin_ops import require_admin
+from cli._admin import require_admin
 
 DB_PATH = KISO_DIR / "store.db"
 
@@ -159,7 +159,7 @@ def _reset_factory(args) -> None:
 def run_reset_command(args) -> None:
     """Dispatch to the appropriate reset subcommand."""
     require_admin()
-    from cli.plugin_ops import dispatch_subcommand
+    from cli._admin import dispatch_subcommand
     dispatch_subcommand(args, "reset_command", {
         "session": _reset_session, "knowledge": _reset_knowledge,
         "all": _reset_all, "factory": _reset_factory,

@@ -22,7 +22,7 @@ def rules_list(args: argparse.Namespace) -> None:
 
 def rules_add(args: argparse.Namespace) -> None:
     """Add a safety rule."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     content = args.rule_content
     if not content.strip():
@@ -34,7 +34,7 @@ def rules_add(args: argparse.Namespace) -> None:
 
 def rules_remove(args: argparse.Namespace) -> None:
     """Remove a safety rule by ID."""
-    from cli.plugin_ops import require_admin
+    from cli._admin import require_admin
     require_admin()
     resp = cli_delete(args, f"/safety-rules/{args.rule_id}")
     data = resp.json()

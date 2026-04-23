@@ -39,7 +39,7 @@ class TestBehaviorAdd:
         from cli.behavior import behavior_add
         args = make_cli_args(content="Always respond formally")
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"id": 10, "content": "Always respond formally", "category": "behavior"}):
             behavior_add(args)
         out = capsys.readouterr().out
@@ -48,7 +48,7 @@ class TestBehaviorAdd:
     def test_add_empty_rejected(self, capsys):
         from cli.behavior import behavior_add
         args = make_cli_args(content="  ")
-        with patch("cli.plugin_ops.require_admin"), \
+        with patch("cli._admin.require_admin"), \
              pytest.raises(SystemExit):
             behavior_add(args)
         assert "empty" in capsys.readouterr().err
@@ -59,7 +59,7 @@ class TestBehaviorRemove:
         from cli.behavior import behavior_remove
         args = make_cli_args(behavior_id=10)
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
-             patch("cli.plugin_ops.require_admin"), \
+             patch("cli._admin.require_admin"), \
              mock_http_response({"deleted": True}):
             behavior_remove(args)
         assert "10 removed" in capsys.readouterr().out
