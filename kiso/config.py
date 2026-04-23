@@ -277,6 +277,7 @@ class Config:
     settings: dict[str, int | float | str | list[str]]
     raw: dict  # full parsed TOML for future use
     mcp_servers: dict = field(default_factory=dict)  # name → MCPServer
+    connectors: dict = field(default_factory=dict)  # name → ConnectorConfig
 
 
 class ConfigError(Exception):
@@ -487,6 +488,14 @@ def _build_config(path: Path, on_error) -> Config:
     except MCPConfigError as e:
         on_error(str(e))
 
+    # --- Connectors (optional) ---
+    from kiso.connector_config import ConnectorConfigError, parse_connectors_section
+
+    try:
+        connectors = parse_connectors_section(raw.get("connectors"))
+    except ConnectorConfigError as e:
+        on_error(str(e))
+
     return Config(
         tokens=tokens,
         providers=providers,
@@ -495,6 +504,7 @@ def _build_config(path: Path, on_error) -> Config:
         settings=settings,
         raw=raw,
         mcp_servers=mcp_servers,
+        connectors=connectors,
     )
 
 
