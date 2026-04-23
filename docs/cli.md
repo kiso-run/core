@@ -370,6 +370,41 @@ The renderer detects terminal capabilities at startup:
 
 When stdout is not a TTY (piped), the CLI outputs plain text with no ANSI codes, no spinner, and no truncation. This makes `kiso --session dev | tee log.txt` work correctly.
 
+## Health Check
+
+### kiso doctor
+
+Run every built-in health check and report the results as a grouped
+table (or JSON, for CI consumption).
+
+```bash
+kiso doctor             # Rich-styled table grouped by category
+kiso doctor --json      # machine-readable output
+```
+
+Categories covered:
+
+- **Runtime** — `uv`, `uvx`, `npx`, `git` on `PATH`, Python 3.12+,
+  `KISO_DIR` writable
+- **Config** — `config.toml` parses and `OPENROUTER_API_KEY` is set
+- **LLM** — a cheap `GET /models` probe against the configured
+  OpenRouter base URL
+- **MCP** — for each configured server: `initialize` handshake plus
+  a single `tools/list` call
+- **Skills** — every entry under `~/.kiso/skills/<name>/` discovers
+  cleanly via `kiso.skill_loader.discover_skills`
+- **Sandbox** — when running as root, verify `useradd` is available
+  so per-session UID drops work
+- **Trust** — `~/.kiso/trust.json` parses as JSON (when present)
+- **Store** — the SQLite DB at `~/.kiso/kiso.db` opens and is in WAL
+  mode (or doesn't exist yet, which is also fine)
+- **Workspace** — `sessions/`, `pub/`, `uploads/` under `KISO_DIR`
+  are writable
+
+Exit code is `0` when every row is `OK` (warnings do not fail the
+command); any `FAIL` row exits non-zero so CI gates on the result.
+Each non-ok row carries a targeted remediation string.
+
 ## Configuration Management
 
 ### kiso config

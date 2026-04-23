@@ -433,6 +433,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="overwrite an existing config.toml",
     )
 
+    # Doctor — unified health check
+    doctor_p = sub.add_parser(
+        "doctor",
+        help="run health checks across runtime, config, LLM, MCP, skills, sandbox, trust, DB, workspace",
+    )
+    doctor_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON output for CI",
+    )
+
     return parser
 
 
@@ -456,6 +467,10 @@ def main() -> None:
         from cli.init import run_init_command
 
         sys.exit(run_init_command(args))
+    elif args.command == "doctor":
+        from cli.doctor import run_doctor_command
+
+        sys.exit(run_doctor_command(args))
     elif args.command == "role":
         from cli.role import run_role_command
 
