@@ -230,6 +230,12 @@ class TestMCPClientABC:
                     is_error=False,
                 )
 
+            async def list_resources(self) -> list:
+                return []
+
+            async def read_resource(self, uri: str) -> list:
+                return []
+
             async def cancel(self, request_id: Any) -> None:
                 return None
 

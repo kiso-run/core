@@ -51,6 +51,8 @@ from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPMethod,
     MCPProtocolError,
+    MCPResource,
+    MCPResourceContent,
     MCPServerInfo,
     MCPTransportError,
 )
@@ -229,6 +231,52 @@ class MCPStdioClient(MCPClient):
             if not cursor:
                 break
         return methods
+
+    async def list_resources(self) -> list[MCPResource]:
+        self._require_initialized()
+        caps = (self._server_info.capabilities if self._server_info else {}) or {}
+        if "resources" not in caps:
+            return []
+        resources: list[MCPResource] = []
+        cursor: str | None = None
+        while True:
+            params: dict = {}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await self._request(
+                "resources/list", params, timeout=self._server.timeout_s
+            )
+            if "error" in response:
+                raise MCPInvocationError(
+                    f"resources/list failed: {response['error']}"
+                )
+            result = response.get("result") or {}
+            for raw in result.get("resources") or []:
+                resources.append(
+                    MCPResource(
+                        server=self._server.name,
+                        uri=raw.get("uri", ""),
+                        name=raw.get("name", ""),
+                        description=raw.get("description", ""),
+                        mime_type=raw.get("mimeType"),
+                    )
+                )
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return resources
+
+    async def read_resource(self, uri: str) -> list[MCPResourceContent]:
+        self._require_initialized()
+        response = await self._request(
+            "resources/read", {"uri": uri}, timeout=self._server.timeout_s
+        )
+        if "error" in response:
+            err = response["error"]
+            msg = err.get("message") or str(err)
+            raise MCPInvocationError(f"resources/read {uri}: {msg}")
+        result = response.get("result") or {}
+        return _build_resource_blocks(result)
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._require_initialized()
@@ -577,6 +625,25 @@ class MCPStdioClient(MCPClient):
             log.error(
                 "mcp[%s] did not exit even after SIGKILL", self._server.name
             )
+
+
+def _build_resource_blocks(result: dict) -> list[MCPResourceContent]:
+    """Normalise a ``resources/read`` result into a list of content blocks."""
+    blocks: list[MCPResourceContent] = []
+    for item in result.get("contents") or []:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text") if isinstance(item.get("text"), str) else None
+        blob = item.get("blob") if isinstance(item.get("blob"), str) else None
+        blocks.append(
+            MCPResourceContent(
+                uri=item.get("uri", ""),
+                mime_type=item.get("mimeType"),
+                text=text,
+                blob=blob,
+            )
+        )
+    return blocks
 
 
 def _build_call_result(result: dict) -> MCPCallResult:

@@ -15,6 +15,8 @@ from kiso.mcp.http import MCPStreamableHTTPClient
 from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPProtocolError,
+    MCPResource,
+    MCPResourceContent,
     MCPTransportError,
 )
 from tests.fixtures.mcp_mock_http_server import make_app
@@ -209,6 +211,48 @@ class TestShutdown:
 # ---------------------------------------------------------------------------
 # is_healthy
 # ---------------------------------------------------------------------------
+
+
+class TestListResources:
+    async def test_happy(self):
+        client = _client_for_app(make_app("resources_happy"))
+        await client.initialize()
+        resources = await client.list_resources()
+        uris = {r.uri for r in resources}
+        assert uris == {"kiso://http/log", "kiso://http/row/7"}
+        assert all(r.server == "mock" for r in resources)
+        await client.shutdown()
+
+    async def test_empty_when_no_capability(self):
+        client = _client_for_app(make_app("happy_json"))
+        await client.initialize()
+        resources = await client.list_resources()
+        assert resources == []
+        await client.shutdown()
+
+    async def test_list_before_initialize_fails(self):
+        client = _client_for_app(make_app("resources_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.list_resources()
+
+
+class TestReadResource:
+    async def test_read_text(self):
+        client = _client_for_app(make_app("resources_happy"))
+        await client.initialize()
+        blocks = await client.read_resource("kiso://http/log")
+        assert len(blocks) == 1
+        assert isinstance(blocks[0], MCPResourceContent)
+        assert blocks[0].text == "http-body-of:kiso://http/log"
+        assert blocks[0].mime_type == "text/plain"
+        await client.shutdown()
+
+    async def test_read_error_surfaces(self):
+        client = _client_for_app(make_app("resources_error"))
+        await client.initialize()
+        with pytest.raises(MCPInvocationError):
+            await client.read_resource("kiso://missing")
+        await client.shutdown()
 
 
 class TestIsHealthy:

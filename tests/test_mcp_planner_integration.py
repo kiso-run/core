@@ -197,6 +197,42 @@ class TestValidateMCPTask:
         )
         assert any("integer" in e.lower() or "not" in e.lower() for e in errors)
 
+    def test_resource_read_allowed_with_uri_arg(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__resource_read", args={"uri": "kiso://x/1"})]),
+        )
+        assert errors == []
+
+    def test_resource_read_without_uri_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__resource_read", args={})]),
+        )
+        assert any("__resource_read" in e and "uri" in e for e in errors)
+
+    def test_resource_read_with_non_string_uri_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(method="__resource_read", args={"uri": 42})]),
+        )
+        assert any("__resource_read" in e for e in errors)
+
+    def test_resource_read_with_extra_args_rejected(self):
+        errors = validate_plan(
+            _plan([_mcp_task(
+                method="__resource_read",
+                args={"uri": "kiso://x/1", "extra": "bad"},
+            )]),
+        )
+        assert any("__resource_read" in e and "extras" in e for e in errors)
+
+    def test_resource_read_bypasses_methods_pool_check(self):
+        """__resource_read is a synthetic method; it must not be
+        rejected for "not existing" on the server's methods list."""
+        errors = validate_plan(
+            _plan([_mcp_task(method="__resource_read", args={"uri": "kiso://r/1"})]),
+            mcp_methods_pool={"github": [_method("github", "create_issue")]},
+        )
+        assert errors == []
+
     def test_mcp_task_with_wrapper_field_rejected(self):
         task = _mcp_task()
         task["wrapper"] = "aider"

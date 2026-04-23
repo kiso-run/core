@@ -48,10 +48,12 @@ from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPMethod,
     MCPProtocolError,
+    MCPResource,
+    MCPResourceContent,
     MCPServerInfo,
     MCPTransportError,
 )
-from kiso.mcp.stdio import _build_call_result  # reuse the shared renderer
+from kiso.mcp.stdio import _build_call_result, _build_resource_blocks  # reuse renderers
 
 log = logging.getLogger(__name__)
 
@@ -182,6 +184,50 @@ class MCPStreamableHTTPClient(MCPClient):
             if not cursor:
                 break
         return methods
+
+    async def list_resources(self) -> list[MCPResource]:
+        self._require_initialized()
+        caps = (self._server_info.capabilities if self._server_info else {}) or {}
+        if "resources" not in caps:
+            return []
+        resources: list[MCPResource] = []
+        cursor: str | None = None
+        while True:
+            params: dict = {}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response_body, _ = await self._post_rpc("resources/list", params)
+            if "error" in response_body:
+                raise MCPInvocationError(
+                    f"resources/list failed: {response_body['error']}"
+                )
+            result = response_body.get("result") or {}
+            for raw in result.get("resources") or []:
+                resources.append(
+                    MCPResource(
+                        server=self._server.name,
+                        uri=raw.get("uri", ""),
+                        name=raw.get("name", ""),
+                        description=raw.get("description", ""),
+                        mime_type=raw.get("mimeType"),
+                    )
+                )
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return resources
+
+    async def read_resource(self, uri: str) -> list[MCPResourceContent]:
+        self._require_initialized()
+        response_body, _ = await self._post_rpc(
+            "resources/read", {"uri": uri}
+        )
+        if "error" in response_body:
+            err = response_body["error"]
+            msg = err.get("message") or str(err)
+            raise MCPInvocationError(f"resources/read {uri}: {msg}")
+        result = response_body.get("result") or {}
+        return _build_resource_blocks(result)
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._require_initialized()

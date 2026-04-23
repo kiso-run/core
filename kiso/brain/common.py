@@ -912,11 +912,12 @@ BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "modules": {"type": "array", "items": {"type": "string"}},
     "skills": {"type": "array", "items": {"type": "string"}},
     "mcp_methods": {"type": "array", "items": {"type": "string"}},
+    "mcp_resources": {"type": "array", "items": {"type": "string"}},
     "context": {"type": "string"},
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "skills", "mcp_methods", "context", "output_indices", "relevant_tags", "relevant_entities"])
+}, ["modules", "skills", "mcp_methods", "mcp_resources", "context", "output_indices", "relevant_tags", "relevant_entities"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1148,6 +1149,7 @@ def _load_modular_prompt(role: str, modules: list[str]) -> str:
 _CONTEXT_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
     ("skills", "Available Skills"),
     ("mcp_methods", "Available MCP Methods"),
+    ("mcp_resources", "Available MCP Resources"),
     ("connectors", "Available Connectors"),
     ("system_env", "System Environment"),
     ("summary", "Session Summary"),
@@ -1329,6 +1331,55 @@ def format_mcp_catalog(manager: "Any") -> str:
     return "\n".join(header + lines)
 
 
+_MCP_RESOURCE_LINE_BUDGET = 200
+
+
+def format_mcp_resources(manager: "Any") -> str:
+    """Render an MCPManager-like object's *cached* resource catalog.
+
+    Produces one ``- server:uri — description (mime_type)`` line per
+    known resource. Servers with no cached resources are skipped.
+    ``mime_type`` and ``description`` are both optional; the line
+    adapts when either is absent.
+
+    *Cached only*: never spawns a server. Calls ``available_servers()``
+    and ``list_resources_cached_only(name)`` per server.
+    """
+    if manager is None:
+        return ""
+    try:
+        servers = manager.available_servers()
+    except Exception:  # pragma: no cover — defensive
+        return ""
+    lines: list[str] = []
+    for server in sorted(servers):
+        try:
+            resources = manager.list_resources_cached_only(server)
+        except Exception:  # pragma: no cover — defensive
+            continue
+        for r in resources:
+            lines.append(_format_mcp_resource_line(server, r))
+    return "\n".join(lines)
+
+
+def _format_mcp_resource_line(server: str, resource: "Any") -> str:
+    qualified = f"{server}:{resource.uri}"
+    description = (resource.description or "").strip()
+    mime = (resource.mime_type or "").strip()
+    head = f"- {qualified}"
+    if description and mime:
+        line = f"{head} — {description} ({mime})"
+    elif description:
+        line = f"{head} — {description}"
+    elif mime:
+        line = f"{head} ({mime})"
+    else:
+        line = head
+    if len(line) <= _MCP_RESOURCE_LINE_BUDGET:
+        return line
+    return line[: _MCP_RESOURCE_LINE_BUDGET - 3] + "..."
+
+
 def _format_mcp_method_line(server: str, method: "Any") -> str:
     qualified = f"{server}:{method.name}"
     args_str = _format_schema_summary(method.input_schema)
@@ -1462,6 +1513,8 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         errors.append("skills must be an array")
     if not isinstance(briefing.get("mcp_methods"), list):
         errors.append("mcp_methods must be an array")
+    if not isinstance(briefing.get("mcp_resources"), list):
+        errors.append("mcp_resources must be an array")
     if not isinstance(briefing.get("context"), str):
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
@@ -1548,14 +1601,23 @@ async def run_briefer(
             context_pool.get("mcp_methods"),
             "mcp method",
         )
+    if context_pool.get("mcp_resources"):
+        briefing["mcp_resources"] = _filter_briefer_names(
+            briefing.get("mcp_resources", []),
+            context_pool.get("mcp_resources"),
+            "mcp resource",
+        )
+    else:
+        briefing.setdefault("mcp_resources", [])
 
     log.info(
         "Briefer for %s: %d modules, %d skills, %d mcp_methods, "
-        "%d output_indices, %d tags",
+        "%d mcp_resources, %d output_indices, %d tags",
         consumer_role,
         len(briefing["modules"]),
         len(briefing["skills"]),
         len(briefing.get("mcp_methods", [])),
+        len(briefing.get("mcp_resources", [])),
         len(briefing["output_indices"]),
         len(briefing.get("relevant_tags", [])),
     )

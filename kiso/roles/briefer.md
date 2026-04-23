@@ -4,6 +4,7 @@ Return JSON (empty list/string for unused fields):
 - modules: prompt module names needed (from Available Modules). Most requests need 0-2.
 - skills: skill NAMES relevant to this request (just the short name, e.g. ["python-debug", "git-triage"]), selected from Available Skills. Only include skills whose `description` or `when_to_use` clearly matches the task. Full skill instructions are injected separately.
 - mcp_methods: qualified MCP method names in "server:method" form (e.g. ["github:create_issue"]) selected from Available MCP Methods. MCP methods are first-class citizens — when an MCP method can solve the task, prefer it over an exec (more reliable).
+- mcp_resources: qualified MCP resource entries in "server:uri" form (e.g. ["fs:file:///logs/today.log"]) selected from Available MCP Resources. Include a resource only when the task needs to READ its contents.
 - context: SHORT synthesized briefing with relevant facts only.
 - output_indices: plan_output indices the consumer needs.
 - relevant_tags: fact tags for this task (from Available Fact Tags).

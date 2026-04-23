@@ -17,6 +17,7 @@ import pytest
 from kiso.mcp.schemas import (
     MCPCallResult,
     MCPInvocationError,
+    MCPResourceContent,
     MCPTransportError,
 )
 from kiso.worker.loop import _TASK_HANDLERS, _PlanCtx, TASK_TYPE_MCP
@@ -33,16 +34,30 @@ from tests.conftest import full_models, full_settings
 class FakeManager:
     """Minimal MCPManager stand-in for _handle_mcp_task tests."""
 
-    def __init__(self, *, return_value=None, exc=None, available: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        return_value=None,
+        exc=None,
+        available: bool = True,
+        read_resource_return=None,
+        read_resource_exc=None,
+    ) -> None:
         self._return_value = return_value
         self._exc = exc
         self._available = available
+        self._read_resource_return = read_resource_return
+        self._read_resource_exc = read_resource_exc
         self.call_args: tuple | None = None
+        self.read_args: tuple | None = None
 
     def is_available(self, name: str) -> bool:
         return self._available
 
     def list_methods_cached_only(self, name: str) -> list:
+        return []
+
+    def list_resources_cached_only(self, name: str) -> list:
         return []
 
     async def call_method(
@@ -58,6 +73,19 @@ class FakeManager:
         if self._exc is not None:
             raise self._exc
         return self._return_value
+
+    async def read_resource(
+        self,
+        server: str,
+        uri: str,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
+    ):
+        self.read_args = (server, uri, session, sandbox_uid)
+        if self._read_resource_exc is not None:
+            raise self._read_resource_exc
+        return self._read_resource_return
 
 
 def _config():
@@ -248,3 +276,117 @@ class TestErrorPaths:
         await handler(ctx, task_row, 0, True, 0)
         rows = await get_tasks_for_plan(db, task_row["plan_id"])
         assert rows[0]["status"] == "failed"
+
+
+RESOURCE_READ_METHOD = "__resource_read"
+
+
+class TestResourceRead:
+    """``method="__resource_read"`` is the synthetic MCP method the
+    planner emits to read a resource. The worker must route it to
+    ``read_resource`` rather than ``call_method``."""
+
+    async def test_routes_to_read_resource(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        blocks = [
+            MCPResourceContent(
+                uri="kiso://logs/today",
+                mime_type="text/plain",
+                text="hello log",
+                blob=None,
+            ),
+        ]
+        mgr = FakeManager(read_resource_return=blocks)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=RESOURCE_READ_METHOD,
+            args={"uri": "kiso://logs/today"},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        assert mgr.read_args is not None
+        assert mgr.read_args[0] == "github"
+        assert mgr.read_args[1] == "kiso://logs/today"
+        # call_method must NOT have been invoked for a resource read
+        assert mgr.call_args is None
+
+    async def test_text_body_inlined_in_output(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        blocks = [
+            MCPResourceContent(
+                uri="kiso://logs/today",
+                mime_type="text/plain",
+                text="line-one\nline-two",
+                blob=None,
+            ),
+        ]
+        mgr = FakeManager(read_resource_return=blocks)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=RESOURCE_READ_METHOD,
+            args={"uri": "kiso://logs/today"},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "done"
+        assert "line-one" in rows[0]["output"]
+        assert "line-two" in rows[0]["output"]
+
+    async def test_missing_uri_arg_fails(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        mgr = FakeManager()
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=RESOURCE_READ_METHOD,
+            args={},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "failed"
+        assert mgr.read_args is None
+
+    async def test_invocation_error_marks_failed(self, db):
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        mgr = FakeManager(
+            read_resource_exc=MCPInvocationError("no such resource"),
+        )
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=RESOURCE_READ_METHOD,
+            args={"uri": "kiso://missing"},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "failed"
+
+    async def test_binary_block_written_to_pub(self, db, tmp_path):
+        import base64
+        handler = _TASK_HANDLERS[TASK_TYPE_MCP]
+        blocks = [
+            MCPResourceContent(
+                uri="kiso://img/logo",
+                mime_type="image/png",
+                text=None,
+                blob=base64.b64encode(b"pngdata").decode(),
+            ),
+        ]
+        mgr = FakeManager(read_resource_return=blocks)
+        ctx = await _make_ctx(db, mgr)
+        task_row = await _make_mcp_task_row(
+            db,
+            method=RESOURCE_READ_METHOD,
+            args={"uri": "kiso://img/logo"},
+        )
+        await handler(ctx, task_row, 0, True, 0)
+        rows = await get_tasks_for_plan(db, task_row["plan_id"])
+        assert rows[0]["status"] == "done"
+        # pub file was written under the session workspace
+        pub_dir = tmp_path / "sessions" / "s1" / "pub"
+        assert pub_dir.exists()
+        pngs = list(pub_dir.glob("*.png"))
+        assert pngs
+        assert pngs[0].read_bytes() == b"pngdata"
+        assert "Published files:" in rows[0]["output"]

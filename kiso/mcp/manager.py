@@ -56,6 +56,8 @@ from kiso.mcp.schemas import (
     MCPError,
     MCPInvocationError,
     MCPMethod,
+    MCPResource,
+    MCPResourceContent,
     MCPTransportError,
 )
 from kiso.mcp.stdio import MCPStdioClient
@@ -131,6 +133,7 @@ class MCPManager:
         self._pool: dict[PoolKey, MCPClient] = {}
         self._last_used: dict[PoolKey, float] = {}
         self._method_cache: dict[str, tuple[float, list[MCPMethod]]] = {}
+        self._resource_cache: dict[str, tuple[float, list[MCPResource]]] = {}
         self._restart_times: dict[str, Deque[float]] = {}
         self._unhealthy: set[str] = set()
         self._locks: dict[PoolKey, asyncio.Lock] = {}
@@ -185,6 +188,72 @@ class MCPManager:
         methods = await client.list_methods()
         self._method_cache[name] = (now, methods)
         return methods
+
+    async def list_resources(
+        self,
+        name: str,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
+    ) -> list[MCPResource]:
+        self._assert_known(name)
+        cached = self._resource_cache.get(name)
+        now = self._clock()
+        if cached is not None and now - cached[0] < self._cache_ttl_s:
+            return cached[1]
+        client = await self._get_or_spawn(name, session, sandbox_uid)
+        resources = await client.list_resources()
+        self._resource_cache[name] = (now, resources)
+        return resources
+
+    def list_resources_cached_only(self, name: str) -> list[MCPResource]:
+        """Return cached resources for *name* without spawning the server."""
+        if name not in self._servers:
+            return []
+        cached = self._resource_cache.get(name)
+        if cached is None:
+            return []
+        ts, resources = cached
+        if self._clock() - ts >= self._cache_ttl_s:
+            return []
+        return resources
+
+    async def read_resource(
+        self,
+        name: str,
+        uri: str,
+        *,
+        session: str | None = None,
+        sandbox_uid: int | None = None,
+    ) -> list[MCPResourceContent]:
+        self._assert_known(name)
+        if name in self._unhealthy:
+            raise UnhealthyServerError(
+                f"mcp[{name}] marked unhealthy after {self._restart_limit} "
+                f"consecutive failures; call MCPManager.reset_health() to retry"
+            )
+        client = await self._get_or_spawn(name, session, sandbox_uid)
+        try:
+            return await client.read_resource(uri)
+        except MCPInvocationError:
+            raise
+        except MCPTransportError as e:
+            log.warning(
+                "mcp[%s] transport error on read_resource, restarting: %s", name, e
+            )
+            await self._record_failure(name)
+            if name in self._unhealthy:
+                raise
+            key = self._scope_key(name, session, sandbox_uid)
+            await self._shutdown_key(key)
+            client = await self._get_or_spawn(
+                name, session, sandbox_uid, force=True
+            )
+            try:
+                return await client.read_resource(uri)
+            except MCPTransportError:
+                await self._record_failure(name)
+                raise
 
     def list_methods_cached_only(self, name: str) -> list[MCPMethod]:
         """Return cached methods for *name* without spawning the server."""
@@ -257,8 +326,10 @@ class MCPManager:
     def invalidate_cache(self, name: str | None = None) -> None:
         if name is None:
             self._method_cache.clear()
+            self._resource_cache.clear()
         else:
             self._method_cache.pop(name, None)
+            self._resource_cache.pop(name, None)
 
     def reset_health(self, name: str) -> None:
         self._unhealthy.discard(name)
@@ -283,6 +354,7 @@ class MCPManager:
                 )
         self._pool.clear()
         self._method_cache.clear()
+        self._resource_cache.clear()
         self._last_used.clear()
 
     async def shutdown_session(self, session: str) -> None:
@@ -388,6 +460,7 @@ class MCPManager:
         self._locks.pop(key, None)
         if key[1] == GLOBAL_SCOPE:
             self._method_cache.pop(key[0], None)
+            self._resource_cache.pop(key[0], None)
         else:
             self._maybe_prune_session(key[1])
         if client is None:
@@ -417,6 +490,8 @@ class MCPManager:
                 name, len(dq), self._restart_window_s,
             )
             self._unhealthy.add(name)
+            self._method_cache.pop(name, None)
+            self._resource_cache.pop(name, None)
             for key in [k for k in list(self._pool.keys()) if k[0] == name]:
                 await self._shutdown_key(key)
 

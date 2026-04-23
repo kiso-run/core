@@ -22,6 +22,8 @@ from kiso.mcp.schemas import (
     MCPInvocationError,
     MCPMethod,
     MCPProtocolError,
+    MCPResource,
+    MCPResourceContent,
     MCPTransportError,
 )
 from kiso.mcp.stdio import MCPStdioClient
@@ -254,6 +256,78 @@ class TestCancel:
 # ---------------------------------------------------------------------------
 # is_healthy
 # ---------------------------------------------------------------------------
+
+
+class TestListResources:
+    async def test_happy_list(self):
+        client = MCPStdioClient(_make_server("resources_happy"))
+        await client.initialize()
+        resources = await client.list_resources()
+        assert len(resources) == 2
+        assert all(isinstance(r, MCPResource) for r in resources)
+        uris = {r.uri for r in resources}
+        assert "kiso://logs/today" in uris
+        assert "kiso://db/row/42" in uris
+        by_uri = {r.uri: r for r in resources}
+        assert by_uri["kiso://logs/today"].mime_type == "text/plain"
+        assert by_uri["kiso://logs/today"].server == "mock"
+        await client.shutdown()
+
+    async def test_empty_when_no_resources_capability(self):
+        client = MCPStdioClient(_make_server("happy"))
+        await client.initialize()
+        resources = await client.list_resources()
+        assert resources == []
+        await client.shutdown()
+
+    async def test_pagination_follows_cursor(self):
+        client = MCPStdioClient(_make_server("resources_pagination"))
+        await client.initialize()
+        resources = await client.list_resources()
+        assert len(resources) == 25
+        assert {r.uri for r in resources} == {f"kiso://gen/{i}" for i in range(25)}
+        await client.shutdown()
+
+    async def test_list_before_initialize_fails(self):
+        client = MCPStdioClient(_make_server("resources_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.list_resources()
+
+
+class TestReadResource:
+    async def test_read_text_resource(self):
+        client = MCPStdioClient(_make_server("resources_happy"))
+        await client.initialize()
+        blocks = await client.read_resource("kiso://logs/today")
+        assert len(blocks) == 1
+        assert isinstance(blocks[0], MCPResourceContent)
+        assert blocks[0].uri == "kiso://logs/today"
+        assert blocks[0].mime_type == "text/plain"
+        assert blocks[0].text == "body-of:kiso://logs/today"
+        assert blocks[0].blob is None
+        await client.shutdown()
+
+    async def test_read_binary_resource(self):
+        client = MCPStdioClient(_make_server("resources_binary"))
+        await client.initialize()
+        blocks = await client.read_resource("kiso://img/logo")
+        assert len(blocks) == 1
+        assert blocks[0].mime_type == "image/png"
+        assert blocks[0].text is None
+        assert blocks[0].blob
+        await client.shutdown()
+
+    async def test_read_error_surfaces_invocation_error(self):
+        client = MCPStdioClient(_make_server("resources_error"))
+        await client.initialize()
+        with pytest.raises(MCPInvocationError):
+            await client.read_resource("kiso://missing")
+        await client.shutdown()
+
+    async def test_read_before_initialize_fails(self):
+        client = MCPStdioClient(_make_server("resources_happy"))
+        with pytest.raises(MCPProtocolError):
+            await client.read_resource("kiso://logs/today")
 
 
 class TestIsHealthy:

@@ -26,12 +26,17 @@ class FakeManager:
         methods: dict[str, list] | None = None,
         delays: dict[str, float] | None = None,
         errors: dict[str, Exception] | None = None,
+        resources: dict[str, list] | None = None,
+        resource_errors: dict[str, Exception] | None = None,
     ) -> None:
         self._available = available
         self._methods = methods or {}
         self._delays = delays or {}
         self._errors = errors or {}
+        self._resources = resources or {}
+        self._resource_errors = resource_errors or {}
         self.calls: list[str] = []
+        self.resource_calls: list[str] = []
 
     def available_servers(self) -> list[str]:
         return list(self._available)
@@ -43,6 +48,12 @@ class FakeManager:
         if name in self._errors:
             raise self._errors[name]
         return list(self._methods.get(name, []))
+
+    async def list_resources(self, name: str, *, session=None):
+        self.resource_calls.append(name)
+        if name in self._resource_errors:
+            raise self._resource_errors[name]
+        return list(self._resources.get(name, []))
 
 
 class TestWarmCatalog:
@@ -102,3 +113,40 @@ class TestWarmCatalog:
         mgr = FakeManager(available=[])
         await warm_catalog(mgr)
         assert mgr.calls == []
+
+    async def test_warms_resources_alongside_methods(self):
+        mgr = FakeManager(
+            available=["a", "b"],
+            resources={"a": ["r1"], "b": []},
+        )
+        await warm_catalog(mgr)
+        assert sorted(mgr.calls) == ["a", "b"]
+        assert sorted(mgr.resource_calls) == ["a", "b"]
+
+    async def test_resource_failure_does_not_affect_methods(self):
+        mgr = FakeManager(
+            available=["a"],
+            resource_errors={"a": RuntimeError("no resources")},
+        )
+        await warm_catalog(mgr)
+        assert mgr.calls == ["a"]
+        assert mgr.resource_calls == ["a"]
+
+    async def test_manager_without_list_resources_still_warms_methods(self):
+        """Older managers (pre-resources) that lack ``list_resources``
+        must not break warmup."""
+
+        class OldManager:
+            def __init__(self):
+                self.calls: list[str] = []
+
+            def available_servers(self):
+                return ["a"]
+
+            async def list_methods(self, name, *, session=None):
+                self.calls.append(name)
+                return []
+
+        mgr = OldManager()
+        await warm_catalog(mgr)
+        assert mgr.calls == ["a"]

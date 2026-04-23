@@ -18,7 +18,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from kiso.mcp.schemas import MCPCallResult, MCPMethod, MCPServerInfo
+from kiso.mcp.schemas import (
+    MCPCallResult,
+    MCPMethod,
+    MCPResource,
+    MCPResourceContent,
+    MCPServerInfo,
+)
 
 
 class MCPClient(ABC):
@@ -68,6 +74,31 @@ class MCPClient(ABC):
         Raises:
             MCPInvocationError: method unknown, args rejected by input
                 schema, or server returned isError: true
+            MCPTransportError: transport layer failed mid-call
+        """
+
+    @abstractmethod
+    async def list_resources(self) -> list[MCPResource]:
+        """Fetch and return every resource the server exposes.
+
+        Parallel to :meth:`list_methods` but semantically distinct:
+        resources are data, not callable functions. Implementations
+        handle ``resources/list`` pagination internally. Servers that
+        do not declare the ``resources`` capability during initialize
+        return ``[]`` (no error).
+        """
+
+    @abstractmethod
+    async def read_resource(self, uri: str) -> list[MCPResourceContent]:
+        """Read the resource identified by ``uri``.
+
+        Issues ``resources/read`` with ``{"uri": uri}`` and returns the
+        list of content blocks. Text resources populate ``text``;
+        binary resources populate ``blob`` (base64).
+
+        Raises:
+            MCPInvocationError: uri unknown, not readable, or server
+                returned an error
             MCPTransportError: transport layer failed mid-call
         """
 

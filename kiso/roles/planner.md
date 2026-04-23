@@ -52,13 +52,16 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 - Skills listed in `## Skills (planner guidance)` are already installed. Use their `## Planner` guidance as part of your planning — it is authoritative for problems the skill covers.
 - Skills are NOT invocable as a task type. They do not appear as `server` / `method`. They shape your plan shape; the actual work is still exec or mcp tasks.
 
-**MCP servers** (Model Context Protocol, `## MCP Methods`):
+**MCP servers** (Model Context Protocol, `## MCP Methods` + `## MCP Resources`):
 - Structured calls to any capability server (filesystem, browser, search, codegen, transcription, ...). Use `type="mcp"` with `server`, `method`, and `args` conforming to the method's `inputSchema`.
 - Never invent server/method names — use only what is listed in `## MCP Methods`.
 - Prefer MCP for remote APIs or structured capability calls. Prefer exec for raw shell one-shots and local file surgery.
 
+**MCP Resources** — servers may also expose data objects (logs, DB rows, doc pages) under `## MCP Resources` as `server:uri` entries. To read one, emit an `mcp` task with the synthetic method name `__resource_read` and `args: {"uri": "<the uri>"}`. The server field is the server that owns the resource. Do not invent URIs — use only the ones listed in `## MCP Resources`. `__resource_read` accepts exactly one arg (`uri`); any other arg is rejected.
+
 **Routing heuristics:**
 - Task has an `inputSchema` in the MCP catalog → use `type="mcp"` with that server+method.
+- Task requests the *contents* of something listed in `## MCP Resources` → use `type="mcp"` with `method="__resource_read"` and `args={"uri": "..."}`.
 - Task is obvious shell work (ls, grep, git status, file create/edit with raw content) → use `type="exec"`.
 - Task fits a pattern described by an installed skill → follow the skill's `## Planner` guidance; the plan may still be exec or mcp tasks, but shape them per the skill.
 

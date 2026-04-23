@@ -21,6 +21,10 @@ Scenarios are parameterised at app-construction time via
 - ``stateless``: initialize response omits the ``Mcp-Session-Id``
   header (server is stateless per MCP spec); subsequent requests
   must succeed without a session id header.
+- ``resources_happy``: declares the ``resources`` capability on
+  initialize and exposes two resources via ``resources/list``; text
+  body returned by ``resources/read``.
+- ``resources_error``: ``resources/read`` returns a JSON-RPC error.
 
 The app is minimal and deliberately not a full MCP spec
 implementation; it only covers the shapes the tests need.
@@ -36,18 +40,60 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 
-def _initialize_result(req_id) -> dict:
+def _initialize_result(req_id, scenario: str = "") -> dict:
+    caps: dict = {"tools": {"listChanged": False}}
+    if scenario.startswith("resources_"):
+        caps["resources"] = {"listChanged": False}
     return {
         "jsonrpc": "2.0",
         "id": req_id,
         "result": {
             "protocolVersion": "2025-06-18",
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": caps,
             "serverInfo": {
                 "name": "mock-http-mcp",
                 "title": "Mock HTTP MCP",
                 "version": "0.1.0",
             },
+        },
+    }
+
+
+def _resources_list_result(req_id) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "resources": [
+                {
+                    "uri": "kiso://http/log",
+                    "name": "http-log",
+                    "description": "HTTP transport log",
+                    "mimeType": "text/plain",
+                },
+                {
+                    "uri": "kiso://http/row/7",
+                    "name": "row-7",
+                    "description": "HTTP row 7",
+                    "mimeType": "application/json",
+                },
+            ],
+        },
+    }
+
+
+def _resources_read_result(req_id, uri: str) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "contents": [
+                {
+                    "uri": uri,
+                    "mimeType": "text/plain",
+                    "text": f"http-body-of:{uri}",
+                },
+            ],
         },
     }
 
@@ -129,7 +175,7 @@ def make_app(scenario: str = "happy_json") -> FastAPI:
             session_id = str(uuid.uuid4())
             state["session_id"] = session_id
             state["call_count"] = 0  # reset per-session counters on re-init
-            response_body = _initialize_result(req_id)
+            response_body = _initialize_result(req_id, scenario)
             if scenario == "stateless":
                 # Stateless server: no session id issued. Mirror the
                 # real-world behaviour of hosted MCP endpoints that do
@@ -183,6 +229,25 @@ def make_app(scenario: str = "happy_json") -> FastAPI:
 
         if method == "notifications/cancelled":
             return Response(status_code=202)
+
+        if method == "resources/list":
+            if scenario.startswith("resources_"):
+                return JSONResponse(_resources_list_result(req_id))
+            return JSONResponse(
+                _error_response(req_id, -32601, "resources not supported")
+            )
+
+        if method == "resources/read":
+            uri = (body.get("params") or {}).get("uri", "")
+            if scenario == "resources_error":
+                return JSONResponse(
+                    _error_response(req_id, -32002, f"cannot read {uri}")
+                )
+            if scenario.startswith("resources_"):
+                return JSONResponse(_resources_read_result(req_id, uri))
+            return JSONResponse(
+                _error_response(req_id, -32601, "resources not supported")
+            )
 
         return JSONResponse(_error_response(req_id, -32601, f"unknown: {method}"))
 

@@ -89,6 +89,56 @@ class MCPMethod:
 
 
 @dataclass(frozen=True)
+class MCPResource:
+    """A static or dynamic file-like object exposed by an MCP server.
+
+    Resources are the MCP spec's second primitive (alongside tools and
+    prompts). Semantically they are data, not functions: log files,
+    database rows, documentation pages, generated reports. Kiso lists
+    them, surfaces them to the planner, and reads them on demand via
+    the synthetic ``__resource_read`` method routed through the worker
+    MCP task handler.
+
+    Fields mirror the MCP spec resource shape:
+
+    - ``server``: the name of the MCP server this resource belongs to
+    - ``uri``: canonical resource identifier (e.g. ``file:///logs/today.log``)
+    - ``name``: server-local short name (may collide across servers)
+    - ``description``: human-readable description
+    - ``mime_type``: optional MIME hint (``text/plain``, ``image/png``)
+
+    The ``qualified`` property returns ``"server:uri"`` — the canonical
+    form used in log lines, briefer output, and user-facing displays.
+    """
+
+    server: str
+    uri: str
+    name: str
+    description: str
+    mime_type: str | None
+
+    @property
+    def qualified(self) -> str:
+        return f"{self.server}:{self.uri}"
+
+
+@dataclass(frozen=True)
+class MCPResourceContent:
+    """A single block returned by ``resources/read``.
+
+    MCP's ``resources/read`` response is a list of content blocks —
+    one resource can expand into multiple bodies (e.g. a paginated
+    report). Each block carries either ``text`` or a base64-encoded
+    ``blob``, plus optional MIME type and URI hints.
+    """
+
+    uri: str
+    mime_type: str | None
+    text: str | None
+    blob: str | None
+
+
+@dataclass(frozen=True)
 class MCPServerInfo:
     """Server identity and capabilities negotiated during initialize.
 

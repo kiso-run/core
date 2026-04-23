@@ -64,6 +64,25 @@ async def warm_catalog(
             except Exception as exc:  # noqa: BLE001
                 log.warning("mcp warmup: %s failed: %s", name, exc)
 
+            list_resources = getattr(manager, "list_resources", None)
+            if list_resources is None:
+                return
+            if loop.time() >= deadline:
+                return
+            try:
+                await list_resources(name, session=None)
+            except TypeError:
+                try:
+                    await list_resources(name)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "mcp warmup resources: %s failed: %s", name, exc
+                    )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "mcp warmup resources: %s failed: %s", name, exc
+                )
+
     tasks = [asyncio.create_task(_one(s)) for s in servers]
     remaining = max(0.0, deadline - loop.time())
     try:

@@ -32,7 +32,7 @@ import json
 import logging
 from pathlib import Path
 
-from kiso.mcp.schemas import MCPCallResult
+from kiso.mcp.schemas import MCPCallResult, MCPResourceContent
 
 log = logging.getLogger(__name__)
 
@@ -183,6 +183,94 @@ def render_mcp_result(
         structured_content=structured if isinstance(structured, dict) else None,
         is_error=is_error,
     )
+
+
+def render_mcp_resource_result(
+    server: str,
+    uri: str,
+    task_id: int | str,
+    session_pub_dir: Path | None,
+    blocks: list[MCPResourceContent],
+) -> MCPCallResult:
+    """Turn a list of resource content blocks into an ``MCPCallResult``.
+
+    Text blocks are concatenated into ``stdout_text`` prefixed with a
+    ``[resource: <uri>]`` header so the reviewer sees which URI it was.
+    Binary blocks (``blob`` set) are base64-decoded and written to
+    *session_pub_dir* using the same naming scheme as ``render_mcp_result``;
+    the standard ``Published files:`` marker block is appended so the
+    pub-serving machinery picks them up.
+    """
+    lines: list[str] = []
+    published: list[tuple[str, Path]] = []
+    idx = 0
+    for block in blocks:
+        block_uri = block.uri or uri
+        mime = (block.mime_type or "").strip()
+        if block.text is not None:
+            header = f"[resource: {block_uri}"
+            if mime:
+                header += f" ({mime})"
+            header += "]"
+            lines.append(f"{header}\n{block.text}")
+        elif block.blob is not None:
+            saved = _write_resource_blob(
+                server, uri, task_id, idx, block, session_pub_dir
+            )
+            if saved is not None:
+                published.append(saved)
+                name = saved[0]
+                tail = f" ({mime})" if mime else ""
+                lines.append(f"[resource saved: {block_uri}{tail}] {name}")
+            else:
+                tail = f" ({mime})" if mime else ""
+                lines.append(
+                    f"[resource: {block_uri}{tail} — blob not written]"
+                )
+            idx += 1
+        else:
+            tail = f" ({mime})" if mime else ""
+            lines.append(f"[resource: {block_uri}{tail} — empty block]")
+
+    stdout_text = "\n".join(lines)
+    if published:
+        stdout_text = _append_pub_marker(stdout_text, published, session_pub_dir)
+    return MCPCallResult(
+        stdout_text=stdout_text,
+        published_files=[(name, str(path)) for name, path in published],
+        structured_content=None,
+        is_error=False,
+    )
+
+
+def _write_resource_blob(
+    server: str,
+    uri: str,
+    task_id: int | str,
+    idx: int,
+    block: MCPResourceContent,
+    pub_dir: Path | None,
+) -> tuple[str, Path] | None:
+    if pub_dir is None:
+        return None
+    blob_b64 = block.blob
+    if not isinstance(blob_b64, str) or not blob_b64:
+        return None
+    try:
+        raw = base64.b64decode(blob_b64, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    ext = _ext_for_mime(block.mime_type)
+    # Reuse the same filename helper used by tool results to keep pub/
+    # naming consistent. ``method`` is the synthetic __resource_read.
+    name = _binary_filename(server, "__resource_read", task_id, idx, ext)
+    try:
+        pub_dir.mkdir(parents=True, exist_ok=True)
+        out_path = pub_dir / name
+        out_path.write_bytes(raw)
+    except OSError:
+        return None
+    return (name, out_path)
 
 
 # ---------------------------------------------------------------------------

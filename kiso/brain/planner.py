@@ -78,6 +78,7 @@ from .common import (
     _GIT_URL_RE,
     build_recent_context,
     format_mcp_catalog,
+    format_mcp_resources,
     run_briefer,
 )
 
@@ -243,7 +244,27 @@ def _validate_plan_tasks(
                     f"Task {i}: mcp task requires a non-empty 'method' field "
                     f"(the name of a method exposed by the server)"
                 )
-            if (
+            if method == "__resource_read":
+                args_raw = task.get("args")
+                if not isinstance(args_raw, dict):
+                    errors.append(
+                        f"Task {i}: mcp __resource_read requires an args "
+                        f"object with a single 'uri' string"
+                    )
+                else:
+                    uri = args_raw.get("uri")
+                    if not isinstance(uri, str) or not uri:
+                        errors.append(
+                            f"Task {i}: mcp __resource_read requires "
+                            f"args.uri to be a non-empty string"
+                        )
+                    extra = set(args_raw) - {"uri"}
+                    if extra:
+                        errors.append(
+                            f"Task {i}: mcp __resource_read args must "
+                            f"contain only 'uri' (got extras: {sorted(extra)})"
+                        )
+            elif (
                 mcp_methods_pool is not None
                 and isinstance(server, str)
                 and isinstance(method, str)
@@ -698,6 +719,7 @@ async def build_planner_messages(
     install_approved: bool = False,
     investigate: bool = False,
     mcp_catalog_text: str | None = None,
+    mcp_resources_text: str | None = None,
     out_state: "dict | None" = None,
 ) -> list[dict]:
     """Build the message list for the planner LLM call.
@@ -780,6 +802,12 @@ async def build_planner_messages(
         )
         if mcp_catalog_text:
             context_pool["mcp_methods"] = mcp_catalog_text
+
+    # MCP resource catalog — parallel to mcp_methods. Resources are
+    # data objects (logs, DB rows, doc pages) the planner can route
+    # reads through the synthetic ``__resource_read`` method.
+    if mcp_resources_text:
+        context_pool["mcp_resources"] = mcp_resources_text
 
     # Connector discovery — show configured connectors to planner
     connectors = discover_connectors()
@@ -1009,6 +1037,11 @@ async def build_planner_messages(
             f"## MCP Methods\n{context_pool['mcp_methods']}"
         )
 
+    if context_pool.get("mcp_resources"):
+        context_parts.append(
+            f"## MCP Resources\n{context_pool['mcp_resources']}"
+        )
+
     # always-inject safety facts (not gated by briefer)
     safety_facts = await get_safety_facts(db)
     _add_section(context_parts, "Safety Rules (MUST OBEY)",
@@ -1074,6 +1107,9 @@ async def run_planner(
     Raises PlanError if all retries exhausted.
     """
     _mcp_catalog_text = format_mcp_catalog(mcp_manager) if mcp_manager else None
+    _mcp_resources_text = (
+        format_mcp_resources(mcp_manager) if mcp_manager else None
+    )
     planner_out_state: dict = {}
     messages = await build_planner_messages(
         db, config, session, user_role, new_message,
@@ -1081,6 +1117,7 @@ async def run_planner(
         paraphrased_context=paraphrased_context, is_replan=is_replan,
         install_approved=install_approved, investigate=investigate,
         mcp_catalog_text=_mcp_catalog_text,
+        mcp_resources_text=_mcp_resources_text,
         out_state=planner_out_state,
     )
     if on_context_ready:

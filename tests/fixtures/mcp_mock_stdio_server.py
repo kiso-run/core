@@ -28,6 +28,16 @@ Scenarios:
   shut down on close. Used by the SIGTERM escalation test.
 - ``swallow_sigterm``: ignores SIGTERM, forcing the client to fall
   through to SIGKILL.
+- ``resources_happy``: same lifecycle as ``happy``, plus two
+  resources exposed via ``resources/list`` (``kiso://logs/today`` and
+  ``kiso://db/row/42``) and a working ``resources/read`` returning
+  a text body.
+- ``resources_pagination``: ``resources/list`` returns 25 resources
+  split across 3 pages via ``nextCursor`` (page_size=10).
+- ``resources_binary``: ``resources/read`` returns a base64-encoded
+  binary blob (1x1 PNG) for ``kiso://img/logo``.
+- ``resources_error``: ``resources/read`` returns a JSON-RPC error
+  for any URI.
 
 Each JSON-RPC message on stdin is a single line of JSON terminated
 by ``\\n``. No embedded newlines, per MCP spec.
@@ -54,12 +64,15 @@ def _emit(obj: dict) -> None:
 
 
 def _initialize_result(req_id) -> dict:
+    caps: dict = {"tools": {"listChanged": False}}
+    if SCENARIO.startswith("resources_"):
+        caps["resources"] = {"listChanged": False}
     return {
         "jsonrpc": "2.0",
         "id": req_id,
         "result": {
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": caps,
             "serverInfo": {
                 "name": "mock-mcp",
                 "title": "Mock MCP Server",
@@ -68,6 +81,50 @@ def _initialize_result(req_id) -> dict:
             "instructions": f"scenario={SCENARIO}",
         },
     }
+
+
+def _resources_list_happy() -> list[dict]:
+    return [
+        {
+            "uri": "kiso://logs/today",
+            "name": "today-log",
+            "description": "Today's application log",
+            "mimeType": "text/plain",
+        },
+        {
+            "uri": "kiso://db/row/42",
+            "name": "row-42",
+            "description": "Row 42 from the primary table",
+            "mimeType": "application/json",
+        },
+    ]
+
+
+def _resources_list_large_page(cursor):
+    total = 25
+    page_size = 10
+    start = 0 if cursor is None else int(cursor)
+    end = min(start + page_size, total)
+    page = [
+        {
+            "uri": f"kiso://gen/{i}",
+            "name": f"gen-{i}",
+            "description": f"auto-generated resource {i}",
+            "mimeType": "text/plain",
+        }
+        for i in range(start, end)
+    ]
+    next_cursor = str(end) if end < total else None
+    return page, next_cursor
+
+
+_BINARY_PNG = base64.b64encode(
+    bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+        "890000000d49444154789c6300010000000500010d0a2db400000000"
+        "49454e44ae426082"
+    )
+).decode()
 
 
 def _error_response(req_id, code: int, message: str) -> dict:
@@ -218,6 +275,60 @@ def _handle(req: dict) -> dict | None:
 
     if method == "notifications/cancelled":
         return None
+
+    if method == "resources/list":
+        if SCENARIO == "resources_pagination":
+            cursor = params.get("cursor")
+            page, next_cursor = _resources_list_large_page(cursor)
+            result = {"resources": page}
+            if next_cursor is not None:
+                result["nextCursor"] = next_cursor
+            return {"jsonrpc": "2.0", "id": req_id, "result": result}
+        if SCENARIO.startswith("resources_"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"resources": _resources_list_happy()},
+            }
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"resources": []},
+        }
+
+    if method == "resources/read":
+        uri = params.get("uri", "")
+        if SCENARIO == "resources_error":
+            return _error_response(req_id, -32002, f"cannot read {uri}")
+        if SCENARIO == "resources_binary":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "image/png",
+                            "blob": _BINARY_PNG,
+                        },
+                    ],
+                },
+            }
+        if SCENARIO.startswith("resources_"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "text/plain",
+                            "text": f"body-of:{uri}",
+                        },
+                    ],
+                },
+            }
+        return _error_response(req_id, -32601, "resources not exposed")
 
     if req_id is not None:
         return _error_response(req_id, -32601, f"unknown RPC method: {method}")

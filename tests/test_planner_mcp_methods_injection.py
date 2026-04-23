@@ -48,7 +48,7 @@ def _briefing(**overrides) -> dict:
     base = {
         "modules": [],
         "skills": [],
-        "mcp_methods": [],
+        "mcp_methods": [], "mcp_resources": [],
         "context": "",
         "output_indices": [],
         "relevant_tags": [],

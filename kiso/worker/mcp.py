@@ -26,7 +26,7 @@ import logging
 import time
 from typing import Any
 
-from kiso.mcp.result import render_mcp_result
+from kiso.mcp.result import render_mcp_resource_result, render_mcp_result
 from kiso.mcp.schemas import (
     MCPError,
     MCPInvocationError,
@@ -34,6 +34,8 @@ from kiso.mcp.schemas import (
 )
 from kiso.mcp.validate import validate_mcp_args
 from kiso.worker.utils import _session_workspace
+
+RESOURCE_READ_METHOD = "__resource_read"
 
 
 def _preflight_validate(
@@ -119,26 +121,51 @@ async def _handle_mcp_task(
             replan_reason=f"MCP task setup failed: {setup_error}",
         )
 
-    schema_errors = _preflight_validate(ctx.mcp_manager, server_name, method_name, args)
-    if schema_errors:
-        joined = "; ".join(schema_errors)
-        msg = (
-            f"MCP {server_name}:{method_name} args invalid: {joined}"
+    is_resource_read = method_name == RESOURCE_READ_METHOD
+    if is_resource_read:
+        uri = args.get("uri") if isinstance(args, dict) else None
+        if not isinstance(uri, str) or not uri:
+            msg = (
+                f"MCP {server_name}:{RESOURCE_READ_METHOD} requires "
+                f"a non-empty string 'uri' arg"
+            )
+            return await _fail_task_and_audit(
+                ctx, task_id, "mcp", detail, msg, i + 1,
+                replan_reason=msg,
+            )
+    else:
+        schema_errors = _preflight_validate(
+            ctx.mcp_manager, server_name, method_name, args
         )
-        return await _fail_task_and_audit(
-            ctx, task_id, "mcp", detail, msg, i + 1,
-            replan_reason=msg,
-        )
+        if schema_errors:
+            joined = "; ".join(schema_errors)
+            msg = (
+                f"MCP {server_name}:{method_name} args invalid: {joined}"
+            )
+            return await _fail_task_and_audit(
+                ctx, task_id, "mcp", detail, msg, i + 1,
+                replan_reason=msg,
+            )
 
     t0 = time.perf_counter()
     pub_dir = _session_workspace(ctx.session) / "pub"
 
     try:
-        raw_result = await ctx.mcp_manager.call_method(
-            server_name, method_name, args,
-            session=ctx.session,
-            sandbox_uid=ctx.sandbox_uid,
-        )
+        if is_resource_read:
+            blocks = await ctx.mcp_manager.read_resource(
+                server_name, args["uri"],
+                session=ctx.session,
+                sandbox_uid=ctx.sandbox_uid,
+            )
+            raw_result = render_mcp_resource_result(
+                server_name, args["uri"], task_id, pub_dir, blocks,
+            )
+        else:
+            raw_result = await ctx.mcp_manager.call_method(
+                server_name, method_name, args,
+                session=ctx.session,
+                sandbox_uid=ctx.sandbox_uid,
+            )
         # Some managers return a CallResult directly; some return the
         # raw dict. Adapter: both are supported. The test stubs return
         # MCPCallResult-like objects but real MCPManager.call_method

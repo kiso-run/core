@@ -68,7 +68,7 @@ class TestChatKBEntityFlow:
                     "modules": [], "skills": [], "exclude_recipes": [],
                     "context": "User asks about SSH key.",
                     "output_indices": [], "relevant_tags": ["ssh"],
-                    "relevant_entities": ["self"], "mcp_methods": [],
+                    "relevant_entities": ["self"], "mcp_methods": [], "mcp_resources": [],
                 })
             messenger_msgs.append(messages)
             return "Your SSH key is ssh-ed25519 AAAA"
@@ -90,7 +90,7 @@ class TestChatKBEntityFlow:
             if role == "briefer":
                 return json.dumps({
                     "modules": [], "skills": [],
-                    "mcp_methods": [], "context": "General chat.",
+                    "mcp_methods": [], "mcp_resources": [], "context": "General chat.",
                     "output_indices": [], "relevant_tags": [],
                 })
             return "Hello! How can I help?"

@@ -14,6 +14,8 @@ from kiso.mcp.schemas import (
     MCPCallResult,
     MCPInvocationError,
     MCPMethod,
+    MCPResource,
+    MCPResourceContent,
     MCPServerInfo,
     MCPTransportError,
 )
@@ -51,12 +53,33 @@ def _method(name: str, server: str = "s1") -> MCPMethod:
     )
 
 
+def _resource(uri: str, server: str = "s1") -> MCPResource:
+    return MCPResource(
+        server=server,
+        uri=uri,
+        name=uri.rsplit("/", 1)[-1] or uri,
+        description="",
+        mime_type="text/plain",
+    )
+
+
 class FakeClient:
     """Minimal MCPClient stand-in for manager tests. Records calls."""
 
-    def __init__(self, server: MCPServer, *, methods: list[MCPMethod] | None = None) -> None:
+    def __init__(
+        self,
+        server: MCPServer,
+        *,
+        methods: list[MCPMethod] | None = None,
+        resources: list[MCPResource] | None = None,
+    ) -> None:
         self.server = server
         self._methods = methods or [_method("echo", server.name)]
+        self._resources = (
+            resources
+            if resources is not None
+            else [_resource("kiso://r/1", server.name)]
+        )
         self._initialized = False
         self._healthy = True
         self._call_count = 0
@@ -64,6 +87,8 @@ class FakeClient:
         self._shutdown_called = False
         self._cancelled: list[Any] = []
         self._list_call_count = 0
+        self._list_resources_call_count = 0
+        self._read_resource_calls: list[str] = []
 
     async def initialize(self) -> MCPServerInfo:
         self._initialized = True
@@ -72,6 +97,19 @@ class FakeClient:
     async def list_methods(self) -> list[MCPMethod]:
         self._list_call_count += 1
         return list(self._methods)
+
+    async def list_resources(self) -> list[MCPResource]:
+        self._list_resources_call_count += 1
+        return list(self._resources)
+
+    async def read_resource(self, uri: str) -> list[MCPResourceContent]:
+        self._read_resource_calls.append(uri)
+        return [
+            MCPResourceContent(
+                uri=uri, mime_type="text/plain",
+                text=f"body:{uri}", blob=None,
+            ),
+        ]
 
     async def call_method(self, name: str, args: dict) -> MCPCallResult:
         self._call_count += 1
@@ -220,6 +258,81 @@ class TestListMethodsCachedOnly:
         # Calling cached_only does NOT increment the spawn count
         assert fake_factory.created[0]._list_call_count == 1
         await mgr.shutdown_all()
+
+
+# ---------------------------------------------------------------------------
+# Resources: list + read + cache
+# ---------------------------------------------------------------------------
+
+
+class TestListResources:
+    async def test_first_call_queries_client(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        resources = await mgr.list_resources("s1")
+        assert [r.uri for r in resources] == ["kiso://r/1"]
+        assert fake_factory.created[0]._list_resources_call_count == 1
+        await mgr.shutdown_all()
+
+    async def test_cache_hit_within_ttl(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_resources("s1")
+        await mgr.list_resources("s1")
+        assert fake_factory.created[0]._list_resources_call_count == 1
+        await mgr.shutdown_all()
+
+    async def test_invalidate_cache_forces_reload(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_resources("s1")
+        mgr.invalidate_cache("s1")
+        await mgr.list_resources("s1")
+        assert fake_factory.created[0]._list_resources_call_count == 2
+        await mgr.shutdown_all()
+
+
+class TestListResourcesCachedOnly:
+    async def test_unknown_server_returns_empty(self, fake_factory):
+        mgr = MCPManager({}, client_factory=fake_factory)
+        assert mgr.list_resources_cached_only("ghost") == []
+
+    async def test_never_queried_returns_empty(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        assert mgr.list_resources_cached_only("s1") == []
+        assert len(fake_factory.created) == 0
+
+    async def test_returns_cached_after_warm(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        await mgr.list_resources("s1")
+        cached = mgr.list_resources_cached_only("s1")
+        assert [r.uri for r in cached] == ["kiso://r/1"]
+        assert fake_factory.created[0]._list_resources_call_count == 1
+        await mgr.shutdown_all()
+
+
+class TestReadResource:
+    async def test_read_dispatches_to_client(self, fake_factory):
+        mgr = MCPManager(
+            {"s1": _server("s1")}, client_factory=fake_factory
+        )
+        blocks = await mgr.read_resource("s1", "kiso://r/1")
+        assert len(blocks) == 1
+        assert blocks[0].text == "body:kiso://r/1"
+        assert fake_factory.created[0]._read_resource_calls == ["kiso://r/1"]
+        await mgr.shutdown_all()
+
+    async def test_unknown_server_raises_keyerror(self, fake_factory):
+        mgr = MCPManager({}, client_factory=fake_factory)
+        with pytest.raises(KeyError):
+            await mgr.read_resource("ghost", "kiso://x")
 
 
 # ---------------------------------------------------------------------------
