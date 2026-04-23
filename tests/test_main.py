@@ -212,11 +212,16 @@ class TestInitKisoDirs:
 
     # -- All KISO_DIR subdirectories pre-created at init --
 
-    def test_creates_connectors_directory(self, tmp_path):
-        """_init_kiso_dirs creates connectors/ for installed connectors."""
+    def test_does_not_create_connectors_directory(self, tmp_path):
+        """_init_kiso_dirs does NOT pre-create connectors/ in v0.10.
+
+        Connectors are declared in config.toml under [connectors.<name>]
+        and kiso lazily creates ~/.kiso/connectors/<name>/ only when the
+        supervisor starts (for .pid, .status.json, connector.log).
+        """
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
-        assert (tmp_path / "connectors").is_dir()
+        assert not (tmp_path / "connectors").exists()
 
     def test_creates_sessions_directory(self, tmp_path):
         """_init_kiso_dirs creates sessions/ as the per-session
@@ -240,7 +245,7 @@ class TestInitKisoDirs:
         with patch("kiso.main.KISO_DIR", tmp_path):
             _init_kiso_dirs()
             _init_kiso_dirs()
-        for name in ("connectors", "sessions", "roles"):
+        for name in ("sessions", "roles"):
             assert (tmp_path / name).is_dir(), f"{name}/ missing after 2nd run"
 
     # -- Roles copied to user dir at init (no overwrite, self-heal) --

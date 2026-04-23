@@ -79,7 +79,8 @@ class TestWrapperRenameRuntimeInvariants:
 
     def test_install_detect_regex_matches_install_commands(self):
         from kiso.brain.common import _INSTALL_CMD_RE
-        assert _INSTALL_CMD_RE.search("kiso connector install discord")
+        assert _INSTALL_CMD_RE.search("kiso mcp install --from-url https://x")
+        assert _INSTALL_CMD_RE.search("kiso skill install --from-url https://x")
         assert _INSTALL_CMD_RE.search("apt-get install curl")
         assert _INSTALL_CMD_RE.search("uv pip install flask")
 

@@ -81,15 +81,6 @@ class TestValidatePlanInstallConfirmation:
         errors = validate_plan(plan, is_replan=True)
         assert not any("first plan" in e for e in errors)
 
-    def test_connector_install_also_caught(self):
-        """connector install + needs_install → blocked."""
-        plan = {"tasks": [
-            {"type": "exec", "detail": "kiso connector install slack", "expect": "ok"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ], "needs_install": ["slack"]}
-        errors = validate_plan(plan)
-        assert any("first plan" in e for e in errors)
-
     def test_msg_only_asking_to_install_accepted(self):
         """Plan with just a msg asking about install (no exec) → passes."""
         plan = {"tasks": [

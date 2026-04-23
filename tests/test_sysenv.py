@@ -219,26 +219,29 @@ class TestCollectConnectors:
         assert result == []
 
     def test_stopped_connector(self, tmp_path):
-        """Connector dir exists but no .pid file → stopped."""
-        connector_dir = tmp_path / "myconn"
-        connector_dir.mkdir()
-        connectors = [{"name": "myconn", "platform": "discord", "path": str(connector_dir)}]
-        with patch("kiso.connectors.discover_connectors", return_value=connectors):
+        """No state dir → stopped."""
+        connectors = [{"name": "myconn"}]
+        with (
+            patch("kiso.connectors.discover_connectors", return_value=connectors),
+            patch("kiso.connectors.CONNECTORS_DIR", tmp_path / "empty"),
+        ):
             result = _collect_connectors()
         assert len(result) == 1
         assert result[0]["name"] == "myconn"
         assert result[0]["status"] == "stopped"
 
     def test_running_connector(self, tmp_path):
-        """Connector with .pid file and live process → running."""
-        connector_dir = tmp_path / "myconn"
-        connector_dir.mkdir()
-        (connector_dir / ".pid").write_text("12345")
-        connectors = [{"name": "myconn", "platform": "telegram", "path": str(connector_dir)}]
+        """State dir with live .pid file → running."""
+        state_dir = tmp_path / "myconn"
+        state_dir.mkdir()
+        (state_dir / ".pid").write_text("12345")
+        connectors = [{"name": "myconn"}]
 
-        with patch("kiso.connectors.discover_connectors", return_value=connectors), \
-             patch("os.kill") as mock_kill:
-            # os.kill(pid, 0) succeeds → process alive
+        with (
+            patch("kiso.connectors.discover_connectors", return_value=connectors),
+            patch("kiso.connectors.CONNECTORS_DIR", tmp_path),
+            patch("os.kill") as mock_kill,
+        ):
             mock_kill.return_value = None
             result = _collect_connectors()
 
@@ -247,14 +250,17 @@ class TestCollectConnectors:
         mock_kill.assert_called_once_with(12345, 0)
 
     def test_stale_pid_shows_stopped(self, tmp_path):
-        """Connector with .pid file but dead process → stopped."""
-        connector_dir = tmp_path / "myconn"
-        connector_dir.mkdir()
-        (connector_dir / ".pid").write_text("99999")
-        connectors = [{"name": "myconn", "platform": "discord", "path": str(connector_dir)}]
+        """State dir with .pid file but dead process → stopped."""
+        state_dir = tmp_path / "myconn"
+        state_dir.mkdir()
+        (state_dir / ".pid").write_text("99999")
+        connectors = [{"name": "myconn"}]
 
-        with patch("kiso.connectors.discover_connectors", return_value=connectors), \
-             patch("os.kill", side_effect=ProcessLookupError):
+        with (
+            patch("kiso.connectors.discover_connectors", return_value=connectors),
+            patch("kiso.connectors.CONNECTORS_DIR", tmp_path),
+            patch("os.kill", side_effect=ProcessLookupError),
+        ):
             result = _collect_connectors()
 
         assert result[0]["status"] == "stopped"

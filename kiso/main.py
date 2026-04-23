@@ -208,6 +208,37 @@ def _migrate_summarizer_session_role(roles_dir: "Path") -> None:
         log.warning("Failed to migrate summarizer-session.md: %s", e)
 
 
+def _warn_on_legacy_connectors_layout(target: "Path") -> None:
+    """One-line stderr hint when the old plugin-install layout is detected.
+
+    Before v0.10, ``kiso connector install`` cloned into
+    ``~/.kiso/connectors/<name>/`` with a ``kiso.toml`` manifest. In
+    v0.10 connectors are declared in ``config.toml`` under
+    ``[connectors.<name>]``; the old directory is no longer managed and
+    nothing reads a ``kiso.toml`` there. Print a single-line hint so
+    any operator upgrading a dev install knows to migrate.
+    """
+    connectors_dir = target / "connectors"
+    if not connectors_dir.is_dir():
+        return
+    try:
+        legacy = [
+            p.name for p in connectors_dir.iterdir()
+            if p.is_dir() and (p / "kiso.toml").exists()
+        ]
+    except OSError:
+        return
+    if not legacy:
+        return
+    log.warning(
+        "Legacy connector install dirs found in %s: %s. "
+        "As of v0.10, connectors are declared under [connectors.<name>] "
+        "in config.toml — see `kiso connector migrate` for help.",
+        connectors_dir,
+        ", ".join(sorted(legacy)),
+    )
+
+
 def _populate_kiso_dir(target: Path) -> None:
     """Seed *target* with standard subdirs + bundled roles + reference docs.
 
@@ -218,9 +249,14 @@ def _populate_kiso_dir(target: Path) -> None:
 
     Behavior:
 
-    - Creates the standard subdirs (``connectors``, ``skills``,
-      ``sessions``, ``roles``, ``reference``, ``sys/bin``,
-      ``sys/ssh``).
+    - Creates the standard subdirs (``skills``, ``sessions``,
+      ``roles``, ``reference``, ``sys/bin``, ``sys/ssh``). The
+      ``connectors/`` directory is NOT pre-created — it is lazily
+      created by ``kiso connector start`` for supervisor state files
+      (``.pid``, ``.status.json``, ``connector.log``). Connectors are
+      declared in ``config.toml`` under ``[connectors.<name>]`` and
+      installed by the user via their own tool (``uvx``, ``pip``,
+      ``docker``, …); kiso does not manage connector binaries.
     - Runs the ``summarizer-session.md → summarizer.md``
       migration before copying bundled roles, so a stale legacy
       file does not land alongside the canonical filename.
@@ -245,13 +281,14 @@ def _populate_kiso_dir(target: Path) -> None:
         (target / "sys" / "bin").mkdir(parents=True, exist_ok=True)
         (target / "sys" / "ssh").mkdir(parents=True, exist_ok=True)
         (target / "reference").mkdir(parents=True, exist_ok=True)
-        (target / "connectors").mkdir(parents=True, exist_ok=True)
         (target / "skills").mkdir(parents=True, exist_ok=True)
         (target / "sessions").mkdir(parents=True, exist_ok=True)
         (target / "roles").mkdir(parents=True, exist_ok=True)
     except OSError as e:
         log.warning("Failed to create kiso directories under %s: %s", target, e)
         return
+
+    _warn_on_legacy_connectors_layout(target)
 
     # Sync bundled reference docs
     try:

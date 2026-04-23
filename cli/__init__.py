@@ -155,28 +155,26 @@ def _save_readline_history() -> None:
 
 def _add_connector_parser(sub) -> None:
     s = sub.add_parser("connector", help="manage connectors").add_subparsers(dest="connector_command")
-    s.add_parser("list", help="list installed connectors")
-    p = s.add_parser("search", help="search official connectors on GitHub")
-    p.add_argument("query", nargs="?", default="", help="search filter")
-    p = s.add_parser("install", help="install a connector")
-    p.add_argument("target", help="connector name or git URL")
-    p.add_argument("--name", default=None, help="custom install name")
-    p.add_argument("--no-deps", action="store_true", help="skip deps.sh")
-    p.add_argument("--show-deps", action="store_true", help="show deps.sh without installing")
-    p.add_argument("--force", action="store_true",
-                   help="force re-run deps.sh even if health_check passes")
-    p = s.add_parser("update", help="update a connector")
-    p.add_argument("target", help="connector name or 'all'")
-    p = s.add_parser("remove", help="remove a connector")
-    p.add_argument("name", help="connector name")
-    p = s.add_parser("run", help="start a connector daemon")
+    s.add_parser("list", help="list configured connectors")
+    p = s.add_parser("start", help="start a connector daemon")
     p.add_argument("name", help="connector name")
     p = s.add_parser("stop", help="stop a connector daemon")
     p.add_argument("name", help="connector name")
     p = s.add_parser("status", help="check connector status")
     p.add_argument("name", help="connector name")
-    p = s.add_parser("test", help="run a connector's test suite")
+    p = s.add_parser("logs", help="tail the connector log file")
     p.add_argument("name", help="connector name")
+    p.add_argument("-n", type=int, default=50, help="tail N lines (default: 50)")
+    p = s.add_parser("add", help="add a [connectors.<name>] entry to config.toml")
+    p.add_argument("name", help="connector name")
+    p.add_argument("--command", required=True, help="executable to spawn")
+    p.add_argument("--args", nargs="*", default=None, help="command arguments")
+    p.add_argument("--cwd", default=None, help="working directory")
+    p.add_argument("--env", nargs="*", default=None, metavar="KEY=VAL",
+                   help="per-connector env var (repeatable)")
+    p.add_argument("--token", default=None, help="per-connector API token for /msg auth")
+    p.add_argument("--webhook", default=None, help="URL kiso posts results to")
+    s.add_parser("migrate", help="print suggested config.toml blocks for legacy installs")
 
 
 def _add_user_parser(sub) -> None:

@@ -23,7 +23,6 @@ from .prompts import (
 from kiso.config import Config, KISO_DIR, setting_bool, setting_int
 from kiso.llm import LLMBudgetExceeded, LLMError, LLMStallError, call_llm
 from kiso.security import fence_content
-from kiso.connectors import discover_connectors
 from kiso.store import (
     _normalize_entity_name,
     delete_facts, get_all_entities, get_all_tags, get_facts, get_kv, get_pending_items,
@@ -120,7 +119,7 @@ def _format_message_history(messages: list[dict]) -> str:
 
 _INSTALL_KEYWORDS = frozenset({
     "install", "installa", "installo", "installare", "installer",
-    "needs_install", "wrapper install", "connector install",
+    "needs_install",
 })
 _APPROVAL_KEYWORDS = frozenset({
     "sì", "si", "yes", "ok", "vai", "do it", "proceed", "confirma",
@@ -444,12 +443,8 @@ def _repair_json(text: str) -> str:
 
 
 _INSTALL_CMD_RE = re.compile(
-    r"(?:kiso\s+(?:connector|mcp|skill)\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
+    r"(?:kiso\s+(?:mcp|skill)\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
     re.IGNORECASE,
-)
-# Extract plugin name from "kiso connector install <name>" for registry validation.
-_INSTALL_NAME_RE = re.compile(
-    r"kiso\s+connector\s+install\s+(\S+)", re.IGNORECASE,
 )
 # Detect external git URLs — these bypass registry name validation.
 _GIT_URL_RE = re.compile(r"https?://|git@|\.git\b", re.IGNORECASE)

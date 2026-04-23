@@ -54,7 +54,6 @@ from .common import (
     TASK_TYPES,
     _INSTALL_CMD_RE,
     _INSTALL_MODE_NONE,
-    _INSTALL_NAME_RE,
     _MIN_PROMOTED_FACT_LEN,
     _NPM_GLOBAL_RE,
     _NPX_RE,
@@ -782,12 +781,12 @@ async def build_planner_messages(
         if mcp_catalog_text:
             context_pool["mcp_methods"] = mcp_catalog_text
 
-    # Connector discovery — show installed connectors to planner
+    # Connector discovery — show configured connectors to planner
     connectors = discover_connectors()
     if connectors:
-        lines = ["Installed connectors:"]
+        lines = ["Configured connectors:"]
         for c in connectors:
-            lines.append(f"- {c['name']} — {c.get('description', '')} ({c.get('platform', '')})")
+            lines.append(f"- {c['name']} — {c.get('description', '')}")
         context_pool["connectors"] = "\n".join(lines)
 
     msg_lower = new_message.lower()

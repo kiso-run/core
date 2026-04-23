@@ -4,11 +4,10 @@
 Business requirement: when the planner proposes ``needs_install``,
 the follow-up exec that eventually runs the install must be
 gated by ``install_approved`` — whether the command is
-``kiso connector install X``, ``kiso mcp install --from-url X``,
-or ``kiso skill install --from-url X``. The same regex that catches
-``apt-get install`` and ``kiso connector install`` must catch the
-new two forms, or the worker's unapproved-install suppression is
-silently bypassed.
+``kiso mcp install --from-url X`` or
+``kiso skill install --from-url X``. The same regex that catches
+``apt-get install`` must also catch these two forms, or the worker's
+unapproved-install suppression is silently bypassed.
 
 On the flipside, once the user approves, the planner/worker both
 allow these same commands to run.
@@ -30,9 +29,6 @@ from kiso.brain.common import _INSTALL_CMD_RE
 
 
 class TestInstallCmdRegex:
-    def test_matches_kiso_connector_install(self):
-        assert _INSTALL_CMD_RE.search("kiso connector install slack")
-
     def test_matches_kiso_mcp_install(self):
         assert _INSTALL_CMD_RE.search(
             "kiso mcp install --from-url https://github.com/acme/mcp"
@@ -138,7 +134,6 @@ class TestWorkerSuppressionCoverage:
     PLANNER_EMITTABLE_INSTALL_COMMANDS = (
         "kiso mcp install --from-url https://github.com/acme/repo",
         "kiso skill install --from-url https://github.com/acme/skill",
-        "kiso connector install slack",
         "uv pip install flask",
         "npx -y @modelcontextprotocol/server-github",
         "apt-get install curl",

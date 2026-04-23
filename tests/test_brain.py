@@ -585,16 +585,6 @@ class TestValidatePlan:
         assert len(install_errors) == 1
         assert "Task 1:" in install_errors[0]
 
-    def test_connector_install_also_caught(self):
-        """kiso connector install + needs_install → blocked."""
-        plan = {"tasks": [
-            {"type": "exec", "detail": "kiso connector install telegram", "expect": "installed"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None},
-        ], "needs_install": ["telegram"]}
-        errors = validate_plan(plan)
-        assert any("first plan" in e for e in errors)
-
-
 # --- _load_system_prompt ---
 
 class TestLoadSystemPrompt:
@@ -8279,7 +8269,7 @@ class TestValidatePlanOrdering:
         """replan install + install_approved + msg last → still must replan."""
         from kiso.brain import _validate_plan_ordering
         tasks = [
-            {"type": "exec", "detail": "kiso connector install discord", "expect": "installed"},
+            {"type": "exec", "detail": "kiso mcp install --from-url https://example.com/discord", "expect": "installed"},
             {"type": "msg", "detail": "Answer in English. done"},
         ]
         errors = _validate_plan_ordering(tasks, is_replan=True, install_approved=True)

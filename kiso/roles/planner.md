@@ -96,7 +96,7 @@ Web interaction:
 Kiso management commands (exec tasks):
 - MCP servers: `kiso mcp install --from-url <url>` | `update <name>` | `remove <name>` | `list` | `test <name>` | `env <name> set KEY VALUE` | `logs <name>`
 - Skills: `kiso skill install --from-url <url>` | `list` | `info <name>` | `remove <name>`
-- Connectors: `kiso connector install|update|remove|run|stop|status|list|search|test <name>`
+- Connectors: `kiso connector list | start <name> | stop <name> | status <name> | logs <name> | add <name> --command ... | migrate` — connectors are declared under `[connectors.<name>]` in `config.toml`; kiso supervises them but does not install binaries.
 - Env: `kiso env set KEY VALUE | get KEY | list | delete KEY | reload`
 - Users (admin): `kiso user add|edit|remove|list|alias <name> --role admin|user`
 - Sessions: `kiso sessions [--user NAME]` | `kiso session create <name> [--description "..."]`
