@@ -448,6 +448,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from cli._from_url_hint import detect_missing_from_url
+
+    hint = detect_missing_from_url(sys.argv)
+    if hint is not None:
+        print(hint, file=sys.stderr)
+        sys.exit(2)
+
     parser = build_parser()
     args = parser.parse_args()
 

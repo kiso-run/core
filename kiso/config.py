@@ -358,9 +358,17 @@ def _build_config(path: Path, on_error) -> Config:
         with open(path, "rb") as f:
             raw = tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
-        on_error(f"Malformed TOML in {path}: {e}")
+        on_error(
+            f"Malformed TOML in {path}: {e}\n"
+            f"  Fix the file (look at the line marker above) or run "
+            f"`kiso doctor` for a full health-check."
+        )
     except (PermissionError, OSError) as e:
-        on_error(f"Cannot read {path}: {e}")
+        on_error(
+            f"Cannot read {path}: {e}\n"
+            f"  Check file permissions or run `kiso doctor` for a "
+            f"full health-check."
+        )
 
     # --- required sections ---
     for section in ("tokens", "providers", "users"):

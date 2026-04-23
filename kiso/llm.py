@@ -146,6 +146,40 @@ class LLMError(Exception):
     """Any LLM call failure."""
 
 
+def format_llm_timeout_error(
+    *,
+    role: str,
+    model: str,
+    timeout_s: float,
+    fallback_model: str | None,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    """Build the user-facing message for an LLM timeout.
+
+    Must name the role + model that timed out and tell the user
+    whether a fallback will be tried next. Fed into ``LLMError`` so
+    the CLI renders a self-explanatory message instead of
+    ``LLMError: LLM call timed out``.
+    """
+    head = (
+        f"LLM call timed out after {timeout_s:g}s "
+        f"[role={role}, model={model}, attempt={attempt}/{max_attempts}]"
+    )
+    if fallback_model and fallback_model != model:
+        tail = (
+            f" — the next attempt will switch to the fallback model "
+            f"`{fallback_model}`."
+        )
+    else:
+        tail = (
+            " — no fallback model is configured for this role; raise "
+            "`llm_timeout` in config.toml or set a `*_fallback_model` "
+            "to keep the call path resilient."
+        )
+    return head + tail
+
+
 class LLMBudgetExceeded(LLMError):
     """Raised when per-message LLM call budget is exhausted."""
 
@@ -503,10 +537,19 @@ async def call_llm(
             duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
             raise  # already an LLMError subclass — propagate for retry
-        except httpx.TimeoutException as e:
+        except httpx.TimeoutException:
             duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")
-            raise LLMError(f"LLM call timed out ({type(e).__name__}, {role}, {model_name})")
+            raise LLMError(
+                format_llm_timeout_error(
+                    role=role,
+                    model=model_name,
+                    timeout_s=llm_timeout,
+                    fallback_model=None,
+                    attempt=1,
+                    max_attempts=1,
+                )
+            )
         except httpx.RequestError as e:
             duration_ms = _ms_since(t0)
             audit.log_llm_call(session, role, model_name, provider_name, 0, 0, duration_ms, "error")

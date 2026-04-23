@@ -43,6 +43,25 @@ RESOURCE_READ_METHOD = "__resource_read"
 PROMPT_GET_METHOD = "__prompt_get"
 
 
+def format_mcp_transport_failure(
+    *,
+    server_name: str,
+    method_name: str,
+    underlying: str,
+) -> str:
+    """Build the user-facing message for an MCP transport failure.
+
+    The planner / reviewer sees this as the task's stdout; the CLI
+    renders it to the user. Must identify the server + method that
+    failed and point at a concrete next step.
+    """
+    return (
+        f"MCP {server_name}:{method_name} transport failure: {underlying}\n"
+        f"  Next step: run `kiso mcp test {server_name}` to diagnose the "
+        f"server. Full stderr is in `~/.kiso/mcp/{server_name}.err.log`."
+    )
+
+
 def _preflight_validate(
     manager: Any, server: str, method: str, args: dict
 ) -> list[str]:
@@ -229,9 +248,14 @@ async def _handle_mcp_task(
     except MCPTransportError as e:
         err_text = str(e)
         duration_ms = int((time.perf_counter() - t0) * 1000)
+        enriched = format_mcp_transport_failure(
+            server_name=server_name,
+            method_name=method_name,
+            underlying=err_text,
+        )
         return await _fail_task_and_audit(
             ctx, task_id, "mcp", detail,
-            err_text, i + 1,
+            enriched, i + 1,
             replan_reason=f"MCP {server_name} transport failure: {err_text}",
         )
     except MCPError as e:
