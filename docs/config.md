@@ -54,24 +54,22 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-wrappers = "*"
 
 [users.luca]
 role = "user"
-wrappers = ["search", "aider"]
 
 [models]
-briefer     = "google/gemini-2.5-flash-lite"
-classifier  = "google/gemini-2.5-flash-lite"
-planner     = "deepseek/deepseek-v3.2"
-reviewer    = "google/gemini-2.5-flash-lite"
-curator     = "google/gemini-2.5-flash-lite"
-worker      = "google/gemini-2.5-flash-lite"
-summarizer  = "google/gemini-2.5-flash-lite"
-paraphraser = "google/gemini-2.5-flash-lite"
-messenger   = "deepseek/deepseek-v3.2"
-searcher    = "perplexity/sonar"
+briefer      = "google/gemini-2.5-flash"
+classifier   = "google/gemini-2.5-flash"
+planner      = "deepseek/deepseek-v3.2"
+reviewer     = "google/gemini-2.5-flash-lite"
+curator      = "google/gemini-2.5-flash"
+worker       = "deepseek/deepseek-v3.2"
+summarizer   = "google/gemini-2.5-flash-lite"
+paraphraser  = "google/gemini-2.5-flash-lite"
+messenger    = "deepseek/deepseek-v3.2"
 consolidator = "google/gemini-2.5-flash-lite"
+mcp_sampling = "google/gemini-2.5-flash"
 
 [settings]
 # --- conversation ---
@@ -126,7 +124,16 @@ worker_idle_timeout       = 300
 fast_path_enabled         = true     # skip planner for conversational messages
 
 # --- briefer (context intelligence layer) ---
-briefer_enabled           = true     # LLM-based context selection for each pipeline stage
+briefer_enabled                    = true
+briefer_mcp_method_filter_threshold = 10   # when the catalog of eligible MCP methods exceeds this count, delegate final selection to the briefer
+briefer_skill_filter_threshold      = 10   # same threshold, for skills; below, pass all eligible skills through unfiltered
+
+# --- MCP runtime ---
+mcp_session_idle_timeout           = 1800  # seconds; shut down a per-session MCP client idle this long (60-7200)
+mcp_max_session_clients_per_server = 32    # LRU bound on per-session clients for a single MCP server (1-256)
+mcp_warmup_concurrency             = 3     # parallelism for daemon-boot MCP catalog warm-up (1-16)
+mcp_warmup_deadline_s              = 10    # total wall-clock deadline for warm-up to complete (1-120)
+mcp_sampling_enabled               = true  # allow MCP servers to call back into kiso via sampling/createMessage
 
 # --- webhooks (only needed when using connector integrations) ---
 webhook_allow_list        = []       # IPs exempt from SSRF check
@@ -144,8 +151,9 @@ webhook_max_payload       = 1048576
 | `providers.*.base_url` | Required. No implicit default. |
 | `[users]` | At least one user. Each user has a `role` (`admin` or `user`). |
 | `users.*.role` | Required. `"admin"` or `"user"`. |
-| `users.*.wrappers` | Required for `user` role. `"*"` for all wrappers, or a list of wrapper names. Ignored for admins (always all). |
-| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `searcher`, `consolidator`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. |
+| `[users.<name>.mcp]` | Optional per-user MCP method filter (role-scoped visibility). See [mcp.md](mcp.md#per-user-role-filters). |
+| `[users.<name>.skills]` | Optional per-user skill filter (role-scoped visibility). See [skills.md](skills.md). |
+| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `consolidator`, `mcp_sampling`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. The `mcp_sampling` role fulfils `sampling/createMessage` requests coming back from MCP servers (see [mcp.md](mcp.md#sampling)). |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
@@ -175,8 +183,8 @@ webhook_max_payload       = 1048576
 | `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
 | `llm_timeout` | `600` | Seconds before any LLM call is cancelled. Also used for graceful shutdown per worker. |
 | `stall_timeout` | `60` | Seconds without SSE data before declaring a stall. Triggers model switch to fallback. |
-| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec or wrapper task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
-| `max_worker_retries` | `2` | Max worker-level retries per exec/search task before escalating to a full replan. |
+| `max_output_size` | `1048576` | Max characters of stdout/stderr per exec task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
+| `max_worker_retries` | `2` | Max worker-level retries per exec/mcp task before escalating to a full replan. |
 | `external_url` | `""` | Public URL for published file download links. Set by installer when public network is chosen. |
 | `max_memory_gb` | `4` | Container RAM limit (applied via docker run/update). |
 | `max_cpus` | `2` | Container CPU limit (applied via docker run/update). |
@@ -190,6 +198,13 @@ webhook_max_payload       = 1048576
 | `worker_idle_timeout` | `300` | Seconds before idle worker shuts down. |
 | `fast_path_enabled` | `true` | Skip planner for conversational messages (classifier decides). |
 | `briefer_enabled` | `true` | LLM-based context selection for each pipeline stage. When disabled, all context is passed to every LLM call. |
+| `briefer_mcp_method_filter_threshold` | `10` | When the catalog of eligible MCP methods exceeds this count, the briefer selects the final subset for the planner. Below it, the planner sees them all. |
+| `briefer_skill_filter_threshold` | `10` | Same threshold, applied to skills. Keeps the planner prompt bounded without shutting off small-catalog scenarios. |
+| `mcp_session_idle_timeout` | `1800` | Seconds before a per-session MCP client is shut down for inactivity. Range 60-7200. |
+| `mcp_max_session_clients_per_server` | `32` | LRU cap on the number of per-session clients kept open for a single MCP server. Range 1-256. |
+| `mcp_warmup_concurrency` | `3` | Parallelism for the daemon-boot MCP catalog warm-up. Range 1-16. |
+| `mcp_warmup_deadline_s` | `10` | Wall-clock deadline for warm-up. Range 1-120. Servers that do not respond in time are retried on first demand. |
+| `mcp_sampling_enabled` | `true` | When true, MCP servers may call back into kiso via `sampling/createMessage` using the `mcp_sampling` model role. |
 | `webhook_allow_list` | `[]` | IPs exempt from webhook SSRF validation (e.g. `["127.0.0.1"]` for local connectors). See [security.md — Webhook Validation](security.md#7-webhook-validation). |
 | `webhook_require_https` | `true` | Reject plain `http://` webhook URLs. Set to `false` for local development. |
 | `webhook_secret` | `""` | HMAC-SHA256 secret for webhook signatures. Empty = no signature. |
@@ -240,17 +255,22 @@ aliases.email = "marco@example.com"
 
 [users.anna]
 role = "user"
-wrappers = "*"
 aliases.discord = "anna_dev"
 
 [users.luca]
 role = "user"
-wrappers = ["search", "aider"]
+
+# Optional per-user capability filters (role-scoped visibility):
+[users.luca.mcp]
+# allow = ["filesystem.*", "playwright.*"]
+[users.luca.skills]
+# allow = ["code-review", "browser-recipes"]
 ```
 
-- **`role`**: `"admin"` (unrestricted exec, package management, all wrappers) or `"user"` (sandboxed exec, allowed wrappers only).
-- **`wrappers`**: which wrappers the planner can use for this user. `"*"` = all, or a list. Admins always have all wrappers regardless of this field.
+- **`role`**: `"admin"` (unrestricted exec, package management, full capability catalog) or `"user"` (sandboxed exec, capability visibility optionally narrowed via `[users.<name>.mcp]` / `[users.<name>.skills]`).
 - **`aliases.*`**: maps platform identities to this Linux user. Key = connector/token name, value = platform user.
+- **`[users.<name>.mcp]`**: optional MCP method filter. See [mcp.md](mcp.md#per-user-role-filters).
+- **`[users.<name>.skills]`**: optional skill filter. See [skills.md](skills.md).
 
 User identifiers are Linux users. CLI uses `$(whoami)` directly; connectors pass platform identity, resolved via aliases. See [security.md — User Identity](security.md#3-user-identity) for the full resolution flow.
 

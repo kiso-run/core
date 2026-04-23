@@ -121,7 +121,7 @@ The exec task runs and gets `returncode != 0` → status set to `"failed"`. The 
 **Worst case per message:**
 - `max_replan_depth` = 3 attempts
 - Each attempt: 1 planner call + up to `max_plan_tasks` (20) tasks
-- Each exec/wrapper task: 1 execution + 1 reviewer call
+- Each exec/mcp task: 1 execution + 1 reviewer call
 - Each msg task: 1 worker call
 - Total: 3 × (1 planner + 20 task calls + 20 reviewer calls) = **~123 LLM calls**
 

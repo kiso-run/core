@@ -185,7 +185,12 @@ This is the **transparent fallback** designed in M1291. The classifier itself ca
 | `independent` | Unrelated request that can wait until the current job finishes | Queued normally (drained after the current plan completes). |
 | `conflict` | Contradicts or replaces the current job entirely (e.g. *"no, do X instead"*) | Cancels the running job and starts fresh on the new message. |
 
-**Why it is a separate role from the initial classifier**: see the M1294 review in [devplan/v0.9-wip.md](../devplan/v0.9-wip.md). Short version: the two prompts share less than 5% of their text, the categories are completely disjoint, and merging them would force a single LLM call to choose between 8 categories — strictly worse for accuracy. They share only the model assignment via the `classifier` model key in `_MODEL_METADATA`.
+**Why it is a separate role from the initial classifier**: the two
+prompts share less than 5% of their text, the categories are
+completely disjoint, and merging them would force a single LLM call
+to choose between 8 categories — strictly worse for accuracy. They
+share only the model assignment via the `classifier` model key in
+`_MODEL_METADATA`.
 
 **Stop pattern fast-path**: pure stop words (*"stop"*, *"ferma"*, *"basta"*, *"cancel"*, ALL-CAPS urgent messages ≥4 chars) are matched by `is_stop_message()` in `kiso/brain/common.py` BEFORE the LLM is called — the inflight classifier is skipped entirely for these. This keeps the urgent path latency-free.
 
@@ -341,7 +346,7 @@ All fields are always present in the JSON output (strict mode requires it). The 
 |---|---|---|
 | `type` | always | `exec`, `msg`, `wrapper`, `search`, `replan` |
 | `detail` | always | What to do (natural language). For `msg` tasks, must include all context the worker needs. For `exec` tasks, describes the operation — the exec translator will convert it to a shell command. For `search` tasks, the search query. |
-| `expect` | `type` is `exec`, `wrapper`, or `search` | Success criteria for THIS task's output only — not the overall plan goal. Must be verifiable from the task's direct output. For maintenance commands, "0 changes" is a valid success state and should be stated explicitly. Required — all exec/wrapper/search tasks are reviewed. |
+| `expect` | `type` is `exec` or `mcp` | Success criteria for THIS task's output only — not the overall plan goal. Must be verifiable from the task's direct output. For maintenance commands, "0 changes" is a valid success state and should be stated explicitly. Required — all exec/mcp tasks are reviewed. |
 | `wrapper` | `type` is `wrapper` | Wrapper name. Must be `null` for search tasks. |
 | `args` | `type` is `wrapper` (required); `type` is `search` (optional) | For wrappers: arguments as a JSON string validated against `kiso.toml` schema. For search: nullable — `null` or JSON `{"max_results": N, "lang": "xx", "country": "XX"}`. |
 
@@ -480,38 +485,11 @@ If `detail` lacks context, the reviewer catches it and triggers a replan.
 
 ---
 
-## Searcher
-
-**When**: executing `search` type tasks (web search queries).
-
-**Model**: a search-capable model (see [config.md](config.md) for the default). Users can override in `config.toml [models]`.
-
-**Input**: see [Context per Role](#context-per-role) table. Receives the task `detail` (search query) and preceding plan outputs (fenced). Optional search parameters from `args`: `max_results`, `lang`, `country`.
-
-**Output**: free-form text. NOT structured output — no `response_format`. The system prompt suggests a JSON structure (`results`, `summary`, `sources`) for consistency, but the output is treated as opaque text: it flows as-is into `plan_outputs` and is reviewed by the reviewer. No JSON parsing is performed — the messenger and reviewer work with the raw text regardless of format.
-
-### How It Works
-
-The planner creates a `search` task with `detail` containing the search query. The searcher LLM (with online/grounded search capability via OpenRouter's `:online` suffix) executes the query and returns results. Optional `args` can specify `{"max_results": N, "lang": "xx", "country": "XX"}` to constrain the search. The `expect` field provides semantic success criteria for the reviewer.
-
-Search tasks are always reviewed (same as exec/wrapper). Results flow into `plan_outputs` for subsequent tasks.
-
-### Coexistence with Search Wrapper
-
-The built-in searcher and the `search` wrapper (if installed) coexist:
-
-| | Built-in searcher | Search wrapper |
-|---|---|---|
-| **Best for** | Simple lookups (1-10 results) | Bulk queries (>10 results), pagination, advanced filtering |
-| **Cost** | ~$0.014/query (LLM + Exa) | ~$0.001-0.003/query (Brave/Serper API) |
-| **Task type** | `search` | `wrapper` |
-| **Requires install** | No (built-in) | Yes |
-
-The planner prompt instructs it to prefer the search wrapper for bulk queries when installed, and use the built-in `search` task type for simple lookups.
-
-### System Prompt
-
-Custom prompt: `~/.kiso/instances/{name}/roles/searcher.md` (user override) or `kiso/roles/searcher.md` (package default). Same override mechanism as all other roles.
+> Historical note: a built-in `searcher` role and `search` task type
+> existed before v0.10. Both were retired when web search moved to
+> the standard MCP path (`kiso-run/search-mcp` or equivalent). Web
+> search is now just an MCP call; the planner emits an `mcp` task,
+> not a `search` task, and no dedicated LLM role is involved.
 
 ---
 

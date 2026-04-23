@@ -101,7 +101,7 @@ Uses structured output (`response_format` with strict JSON schema — see [llm-r
 Returns JSON with:
 - `goal`: high-level objective for the entire process. Stored for the reviewer and potential replan cycles.
 - `secrets`: `{key, value}` pairs or `null`. If present, stored in **worker memory** (ephemeral, never in DB). See [security.md — Ephemeral Secrets](security.md#ephemeral-secrets).
-- `tasks`: `exec`, `wrapper`, and `search` tasks must include an `expect` field with semantic success criteria (they are always reviewed). Wrapper/search `args` are now structured objects in the planner contract, not JSON-in-string payloads.
+- `tasks`: `exec` and `mcp` tasks must include an `expect` field with semantic success criteria (they are always reviewed). `mcp` `args` are structured objects in the planner contract, not JSON-in-string payloads.
 
 Before execution, Kiso normalizes each raw planner task into an internal
 `TaskContract`. The contract carries:
@@ -186,7 +186,7 @@ When the reviewer determines that the task failed and the plan needs revision, o
 
 Before execution, `validate_plan` runs deterministic structural checks that reject invalid plans with specific error feedback (the planner retries with the error message). Key guardrails:
 
-- **No msg-first**: plans must start with action tasks (exec/wrapper/search), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
+- **No msg-first**: plans must start with action tasks (exec/mcp), not announcement msgs. The user already sees the plan in the UI. Exception: install proposals with `needs_install` set.
 - **Codegen-only shape**: when the first task is a wrapper and the second is exec, the plan is rejected unless the goal contains run/test keywords. This prevents the planner from adding unnecessary verification execs after codegen wrappers — the reviewer already inspects wrapper output.
 - **Browser URL validation**: browser wrapper args with `file://` URLs are rejected. Browser is for web content (http/https); local files should be read with exec.
 - **Install routing**: plans that mix install proposals (`needs_install` set) with install exec tasks are rejected. The install flow is: propose (msg-only) → user approves → install (exec + replan). This covers all install command shapes: `kiso mcp install --from-url`, `kiso skill install --from-url`, `kiso connector install`, system package managers (`apt-get install`, `brew install`, …), and Python / Node ephemeral runners (`uv pip install`, `npx -y`). Once the user approves, the same commands are allowed through the worker.
@@ -224,7 +224,7 @@ The worker accumulates outputs from completed tasks in the current plan and pass
 ]
 ```
 
-Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec/wrapper, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
+Fields: `index` (1-based position in the plan), `type`, `detail` (what was requested), `output` (stdout for exec, structured tool result for mcp, generated text for msg), `status` (`done` or `failed` — so the consumer knows if the output is a result or an error).
 
 Internally, Kiso reconstructs a canonical `TaskResult` from this transport plus
 the task row. That runtime result is what replans, dependency inference, and
@@ -410,7 +410,7 @@ WORKER (per session)
   │         │                 │
   │  sanitize + accumulate    │
   │         │                 │
-  │  exec/wrapper/search ──▶ review  │
+  │  exec/mcp ──────────────▶ review │
   │                 │    │    │
   │              ok │  replan ──▶ new plan (parent_id)
   │                 │         │
@@ -443,5 +443,5 @@ When displaying a plan execution, the CLI shows:
    - Task header with index, type, and detail
    - For `exec` tasks: the translated shell command (e.g. `$ ls -la`)
    - Task output (truncated on TTY)
-   - Review verdict (for exec/wrapper/search tasks)
+   - Review verdict (for exec/mcp tasks)
 4. **Token usage summary** at the end (input/output tokens and model used)

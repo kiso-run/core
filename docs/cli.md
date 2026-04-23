@@ -323,7 +323,7 @@ Kiso: Deployed successfully.
 ────────────────────────────────────────────────────────────
 ```
 
-The per-step count includes all LLM calls for that task (exec translator + reviewer for exec/wrapper tasks, searcher + reviewer for search tasks, messenger for msg tasks).
+The per-step count includes all LLM calls for that task (exec translator + reviewer for exec tasks, reviewer for mcp tasks, messenger for msg tasks).
 
 **Grand total**: after plan completion, the CLI shows the full summary:
 
@@ -341,7 +341,7 @@ While a task is running, the CLI shows a spinner animation on the task header li
 ▶ [1/3] exec: check file exists  translating ⠋
 ▶ [1/3] exec: check file exists  running ⠋
 ▶ [1/3] exec: check file exists  reviewing ⠋
-🔍 [2/3] search: best SEO agencies  searching ⠋
+🔧 [2/3] mcp: search.web(query="best SEO agencies")  running ⠋
 💬 [3/3] msg: present results  composing ⠋
 ```
 
@@ -350,9 +350,8 @@ The phase label shows what the worker is currently doing:
 | Phase | Shown for | Meaning |
 |-------|-----------|---------|
 | `translating` | exec | Exec translator LLM converting task detail to shell command |
-| `running` | exec, wrapper | Shell command or wrapper subprocess executing |
-| `reviewing` | exec, wrapper, search | Reviewer LLM checking task output |
-| `searching` | search | Searcher LLM performing web search |
+| `running` | exec, mcp | Shell command running, or MCP tool call in flight |
+| `reviewing` | exec, mcp | Reviewer LLM checking task output |
 | `composing` | msg | Messenger LLM generating user-facing message |
 
 The spinner replaces itself with the final status icon (`✓` or `✗`) when the task completes. Uses a standard braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`), cycling every 80ms.

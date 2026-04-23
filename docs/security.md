@@ -54,7 +54,6 @@ aliases.telegram = "marco_tg"
 
 [users.anna]
 role = "user"
-wrappers = "*"
 aliases.discord = "anna_dev"
 ```
 
@@ -92,29 +91,42 @@ Each user needs an actual Linux user for the exec sandbox (see below). The user 
 
 ## 4. Role-Based Permissions
 
-| Role | Allowed task types | Wrappers | Package management | Who |
+| Role | Allowed task types | Capability visibility | Package management | Who |
 |---|---|---|---|---|
-| `admin` | `exec` (unrestricted), `msg`, `wrapper`, `search` | all | yes (install/update/remove) | `role = "admin"` in `[users]` |
-| `user` | `exec` (sandboxed), `msg`, `wrapper`, `search` | per-user (`wrappers` field) | no | `role = "user"` in `[users]` |
+| `admin` | `exec` (unrestricted), `mcp`, `msg`, `replan` | full MCP + skill catalog | yes (install/update/remove) | `role = "admin"` in `[users]` |
+| `user` | `exec` (sandboxed), `mcp`, `msg`, `replan` | narrowed by `[users.<name>.mcp]` / `[users.<name>.skills]` when set | no | `role = "user"` in `[users]` |
 
-Both roles can use all task types. The differences are the **sandbox**, **wrapper access**, and optionally **exec confirmation**.
+Both roles can emit the full v0.10 task taxonomy. The differences are the **sandbox**, **capability visibility**, and optionally **exec confirmation**.
 
-### Wrapper Access Control
+### Capability Visibility (per-user)
 
-Users have a `wrappers` field in config that controls which wrappers the planner can use:
+By default, every user sees every installed MCP method and skill that is
+compatible with their role. To narrow visibility per user, add role-scoped
+filters in `config.toml`:
 
-- `wrappers = "*"` — all installed wrappers
-- `wrappers = ["search", "aider"]` — only these specific wrappers
-- Admins always have access to all wrappers regardless of this field
+```toml
+[users.anna.mcp]
+allow = ["filesystem.*", "playwright.*"]
 
-The planner receives the user's allowed wrapper list and only sees those wrappers in its context. It cannot plan tasks for wrappers the user doesn't have access to.
+[users.anna.skills]
+allow = ["code-review"]
+```
+
+The filters are consulted by the briefer before the planner sees the catalog,
+so the planner cannot choose a method or skill the user cannot see. Admins are
+exempt: they always see the full catalog regardless of these keys.
+
+See [mcp.md](mcp.md#per-user-role-filters) and [skills.md](skills.md) for the
+full filter syntax.
 
 ### Exec Sandbox
 
 - **admin exec**: runs with `cwd=KISO_DIR/sessions/{session}`. Can access any path in the container. Full permissions.
 - **user exec**: runs with `cwd=KISO_DIR/sessions/{session}`. **Restricted to the session workspace** — cannot read or write outside `KISO_DIR/sessions/{session}/`. Enforced at OS level: kiso creates a dedicated Linux user per session with permissions scoped to the session workspace directory (ownership + `chmod 700`). Exec tasks for `user` role run as this restricted user via `subprocess` with `user=` parameter.
 
-Wrappers run as subprocesses with `cwd=session workspace` for both roles. The sandbox applies equally.
+MCP stdio subprocesses inherit the same `sandbox_uid` as exec for their
+session, so a user-role MCP server cannot access anything the user's exec
+sandbox cannot reach.
 
 ### Knowledge Isolation
 
@@ -170,7 +182,7 @@ echo `rm -rf /`             # backtick substitution
 
 The full command is also checked as-is to catch patterns that span metacharacters (e.g. fork bombs `:(){ :|:& };:`).
 
-Additionally, the user's **role is re-verified** from `config.toml` before each exec/wrapper/search task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
+Additionally, the user's **role is re-verified** from `config.toml` before each exec/mcp task execution (not cached from ingestion time). If the role changed between planning and execution, the task is rejected.
 
 ### Runtime Permission Re-validation
 
@@ -266,7 +278,7 @@ Kiso passes **only the declared session secrets** to the wrapper. A wrapper decl
 
 ## 6. Prompt Injection Defense
 
-Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/wrapper tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
+Any content originating from outside kiso's trust boundary is treated as potentially hostile. This includes messages from non-whitelisted users **and** output from exec/mcp tasks (which may contain attacker-crafted content from the internet, external repos, APIs, etc.).
 
 ### Layer 1: Paraphrasing
 
@@ -294,7 +306,7 @@ Before fencing, any occurrence of the pattern `<<<.*>>>` in the content is escap
 <<<END_UNTRUSTED_CTX_9f2a7c1e>>>
 ```
 
-**Task output** (exec/wrapper results, in reviewer and replan context):
+**Task output** (exec/mcp results, in reviewer and replan context):
 
 ```
 <<<TASK_OUTPUT_3b8d4f2a>>>
@@ -317,7 +329,7 @@ The planner can only produce valid JSON matching the plan schema (`{goal, tasks}
 | Content | Fenced | Where |
 |---|---|---|
 | Untrusted messages (paraphrased) | yes | Planner context |
-| Exec/wrapper task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
+| Exec/mcp task output | yes | Reviewer context, replan planner context, worker context (plan outputs) |
 | Facts, summary, pending items | no | Generated internally by kiso LLM calls |
 | Trusted user messages | no | From whitelisted users |
 | Task detail, expect | no | Written by the planner |

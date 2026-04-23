@@ -84,16 +84,16 @@ CREATE TABLE tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     plan_id         INTEGER NOT NULL,   -- which plan this task belongs to
     session         TEXT NOT NULL,
-    type            TEXT NOT NULL,      -- exec | msg | wrapper | search | replan
-    detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg)
-    wrapper            TEXT,               -- wrapper name (if type=wrapper)
+    type            TEXT NOT NULL,      -- exec | mcp | msg | replan
+    detail          TEXT NOT NULL,      -- what to do (natural-language for exec, message for msg, method name for mcp)
+    mcp_server      TEXT,               -- MCP server id (if type=mcp)
     args            TEXT,               -- serialized structured args (planner emits objects; DB stores JSON)
-    expect          TEXT,               -- success criteria (required for exec and wrapper tasks)
+    expect          TEXT,               -- success criteria (required for exec and mcp tasks)
     command         TEXT,               -- translated shell command (exec only, set after LLM translation)
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | cancelled
     substatus       TEXT,               -- free-text detail on current status (e.g. "reviewing")
     output          TEXT,               -- stdout / generated text
-    stderr          TEXT,               -- stderr (exec/wrapper only)
+    stderr          TEXT,               -- stderr (exec only)
     retry_count     INTEGER NOT NULL DEFAULT 0,
     review_verdict  TEXT,               -- "pass" | "fail" | "replan" (set after reviewer runs)
     review_reason   TEXT,               -- reviewer rationale

@@ -60,7 +60,7 @@ user / connector / CLI
         |
         v
       worker
-  - exec / wrapper / search / msg
+  - exec / mcp / msg / replan
   - file refs / artifact refs
   - dependency-aware handoff
         |
