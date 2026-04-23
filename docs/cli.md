@@ -535,6 +535,29 @@ $ kiso sessions --all
 
 Non-admins see only sessions they have participated in. Admins with `--all` see every session including connector-managed ones. See [api.md — GET /sessions](api.md#get-sessions).
 
+### Export / Import
+
+A session's state lives in SQLite (messages, plans, tasks, facts,
+learnings, the session row itself) and in
+`~/.kiso/sessions/<id>/` (workspace, `pub/`, `uploads/`). Export
+packages both into a single `.tar.gz`; import round-trips them:
+
+```bash
+kiso session export dev                         # writes dev-YYYYMMDD.kiso.tar.gz
+kiso session export dev --output /tmp/dev.tgz   # custom output path
+kiso session import /tmp/dev.tgz                # restore under the original id
+kiso session import /tmp/dev.tgz --as dev-copy  # restore under a new id
+```
+
+The archive is self-describing via `manifest.json` (kiso version,
+schema version, session id, per-table row counts). Import refuses an
+archive whose `schema_version` is newer than the running kiso build
+understands.
+
+Exports are deterministic (reproducible byte output given identical
+DB + workspace) and scoped strictly to the named session — rows from
+other sessions are never included.
+
 ## Reset / Cleanup
 
 Only admins can run reset commands. All commands require `--yes` (or `-y`) to skip interactive confirmation.

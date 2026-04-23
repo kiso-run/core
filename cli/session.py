@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import getpass
+import sqlite3
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from cli._http import cli_get, cli_post
 
@@ -39,6 +42,79 @@ def run_sessions_command(args) -> None:
             parts.append(f"connector: {s['connector']}")
         parts.append(f"last activity: {_relative_time(s.get('updated_at'))}")
         print(f"  {name}  — {', '.join(parts)}")
+
+
+def _kiso_paths() -> tuple[Path, Path]:
+    """Resolve (store.db path, sessions parent dir) from the active instance."""
+    from kiso.config import KISO_DIR
+
+    return KISO_DIR / "store.db", KISO_DIR / "sessions"
+
+
+def session_export(args) -> int:
+    """``kiso session export <id> [--output <file>]``."""
+    from kiso.session_export import pack_session, SessionExportError
+
+    db_path, ws_parent = _kiso_paths()
+    if not db_path.is_file():
+        print(f"error: store database not found: {db_path}", file=sys.stderr)
+        return 2
+
+    output = args.output
+    if not output:
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        output = f"{args.session_id}-{today}.kiso.tar.gz"
+
+    conn = sqlite3.connect(db_path)
+    try:
+        pack_session(
+            conn=conn,
+            session_id=args.session_id,
+            workspace_parent=ws_parent,
+            output_path=Path(output),
+        )
+    except SessionExportError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+
+    print(f"Exported session '{args.session_id}' → {output}")
+    return 0
+
+
+def session_import(args) -> int:
+    """``kiso session import <file> [--as <new_id>]``."""
+    from kiso.session_export import unpack_session, SessionExportError
+
+    archive = Path(args.archive)
+    if not archive.is_file():
+        print(f"error: archive not found: {archive}", file=sys.stderr)
+        return 2
+
+    db_path, ws_parent = _kiso_paths()
+    ws_parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        manifest = unpack_session(
+            archive_path=archive,
+            conn=conn,
+            workspace_parent=ws_parent,
+            as_session_id=args.as_session_id,
+        )
+    except SessionExportError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+
+    print(
+        f"Imported session '{manifest['session_id']}' "
+        f"(schema v{manifest['schema_version']}, "
+        f"kiso {manifest['kiso_version']})"
+    )
+    return 0
 
 
 def _relative_time(dt_str: str | None) -> str:

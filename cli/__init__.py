@@ -321,6 +321,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("name", help="session name")
     p.add_argument("--description", "-d", help="session description")
 
+    p = ss.add_parser("export", help="export a session to a .kiso.tar.gz archive")
+    p.add_argument("session_id", help="session to export")
+    p.add_argument("--output", "-o", help="output archive path (default: <id>-<yyyymmdd>.kiso.tar.gz)")
+
+    p = ss.add_parser("import", help="import a session from a .kiso.tar.gz archive")
+    p.add_argument("archive", help="path to the .kiso.tar.gz archive")
+    p.add_argument("--as", dest="as_session_id", help="import under a different session id")
+
     # Env
     es = sub.add_parser("env", help="manage deploy secrets").add_subparsers(dest="env_command")
     p = es.add_parser("set", help="set a deploy secret")
@@ -495,10 +503,14 @@ def main() -> None:
 
         run_sessions_command(args)
     elif args.command == "session":
-        from cli.session import session_create
+        from cli.session import session_create, session_export, session_import
 
         if args.session_cmd == "create":
             session_create(args)
+        elif args.session_cmd == "export":
+            sys.exit(session_export(args))
+        elif args.session_cmd == "import":
+            sys.exit(session_import(args))
     elif args.command == "env":
         from cli.env import run_env_command
 
