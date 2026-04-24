@@ -1163,59 +1163,36 @@ _INST_HASH=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
 register_instance "$INST_NAME" "$SERVER_PORT" "$CONN_BASE" "$_INST_VERSION" "$_INST_HASH"
 green "  registered in $INSTANCES_JSON"
 
-# ── 6d. Preset selection (M759, M789) ──────────────────────────────────────
-# Show on new install OR on update with data reset (fresh start).
+# ── 6d. Persona-preset selection ─────────────────────────────────────────
+# Shown on new install OR on update with data reset. The remote preset
+# registry was retired in v0.10; presets install via local path or git URL.
 
 if [[ ("$MODE" == "new" && "$NEED_BUILD" == true) || "$DO_RESET" == true ]]; then
-    # Non-interactive: install preset if --preset flag was given
     if [[ -n "$ARG_PRESET" ]]; then
-        bold "Installing preset '$ARG_PRESET'..."
+        # Must be a path or git URL post-v0.10
+        bold "Installing persona preset from '$ARG_PRESET'..."
         docker exec "$CONTAINER" uv run kiso preset install "$ARG_PRESET" \
             && green "  preset installed" \
             || yellow "  warning: preset install failed"
     elif [[ -t 0 ]]; then
-    echo
-    # Fetch presets from registry
-    _PRESETS=$(docker exec "$CONTAINER" python3 -c "
-import json, urllib.request
-try:
-    r = urllib.request.urlopen('https://raw.githubusercontent.com/kiso-run/core/main/registry.json', timeout=5)
-    d = json.loads(r.read())
-    for i, p in enumerate(d.get('presets', []), 1):
-        print(f\"{i}) {p['name']} — {p['description']}\")
-except Exception:
-    pass
-" 2>/dev/null || true)
-
-    if [[ -z "$_PRESETS" ]]; then
-        yellow "  (could not fetch presets from registry — skipping)"
-    fi
-    if [[ -n "$_PRESETS" ]]; then
-        bold "Presets — install a starter configuration?"
-        echo "    0) Skip — I'll set things up myself"
-        echo "$_PRESETS" | while IFS= read -r line; do echo "    $line"; done
-        echo "    Or paste a git URL for a custom preset."
         echo
-        safe_read -rp "  Choice [1]: " _preset_choice
-        _preset_choice="${_preset_choice:-1}"
+        bold "Persona preset (optional):"
+        echo "    0) Skip — use the default MCP preset only"
+        echo "    Or paste a git URL / local path to install a persona preset."
+        echo
+        safe_read -rp "  Choice or URL [0]: " _preset_choice
+        _preset_choice="${_preset_choice:-0}"
         if [[ "$_preset_choice" == "0" ]]; then
             green "  skipped"
-        elif [[ "$_preset_choice" == https://* || "$_preset_choice" == git@* ]]; then
-            bold "Installing custom preset from $_preset_choice..."
+        elif [[ "$_preset_choice" == https://* || "$_preset_choice" == git@* || -e "$_preset_choice" ]]; then
+            bold "Installing persona preset from $_preset_choice..."
             docker exec "$CONTAINER" uv run kiso preset install "$_preset_choice" \
                 && green "  preset installed" \
-                || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_choice"
+                || yellow "  warning: preset install failed — retry later with: kiso preset install $_preset_choice"
         else
-            _preset_name=$(echo "$_PRESETS" | sed -n "${_preset_choice}p" | sed 's/^[0-9]*) //' | cut -d' ' -f1)
-            if [[ -n "$_preset_name" ]]; then
-                bold "Installing preset '$_preset_name'..."
-                docker exec "$CONTAINER" uv run kiso preset install "$_preset_name" \
-                    && green "  preset installed" \
-                    || yellow "  warning: preset install failed — you can do it later with: kiso preset install $_preset_name"
-            fi
+            yellow "  '$_preset_choice' is not a path or URL — skipping (registry-name lookup retired in v0.10)."
         fi
     fi
-    fi  # end elif [[ -t 0 ]]
 fi
 
 # ── 7. Install wrapper ─────────────────────────────────────────────────────

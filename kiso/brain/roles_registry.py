@@ -160,6 +160,16 @@ _ROLES: tuple[RoleMeta, ...] = (
         prompt_filename="mcp_sampling.md",
         python_entry="kiso.mcp.sampling.handle_sampling_request",
     ),
+    RoleMeta(
+        name="mcp_repair",
+        description=(
+            "One-shot repair of invalid MCP call args against the "
+            "method's input schema, before escalating to a replan."
+        ),
+        model_key="worker",
+        prompt_filename="mcp_repair.md",
+        python_entry="kiso.brain.mcp_repair.repair_mcp_args",
+    ),
 )
 
 

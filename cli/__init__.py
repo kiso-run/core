@@ -402,14 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Preset
     ps = sub.add_parser("preset", help="manage persona presets").add_subparsers(dest="preset_cmd")
-    ps.add_parser("list", help="list available presets from registry")
-    p = ps.add_parser("search", help="search presets")
-    p.add_argument("query", help="search query")
-    p = ps.add_parser("install", help="install a preset")
-    p.add_argument("target", help="preset name or local path")
+    p = ps.add_parser("install", help="install a persona preset from a local path or git URL")
+    p.add_argument("target", help="local path or https/git URL (registry-name lookup retired in v0.10)")
     p.add_argument("--dry-run", action="store_true", help="show what would be installed")
     p = ps.add_parser("show", help="show preset details")
-    p.add_argument("name", help="preset name or local path")
+    p.add_argument("name", help="preset local path or already-installed preset name")
     ps.add_parser("installed", help="list installed presets")
     p = ps.add_parser("remove", help="remove an installed preset")
     p.add_argument("name", help="preset name")
@@ -607,19 +604,14 @@ def main() -> None:
             behavior_remove(args)
     elif args.command == "preset":
         from cli.preset import (
-            preset_install, preset_installed, preset_list, preset_remove,
-            preset_search, preset_show,
+            preset_install, preset_installed, preset_remove, preset_show,
         )
 
-        if args.preset_cmd == "list" or args.preset_cmd is None:
-            preset_list(args)
-        elif args.preset_cmd == "search":
-            preset_search(args)
-        elif args.preset_cmd == "install":
+        if args.preset_cmd == "install":
             preset_install(args)
         elif args.preset_cmd == "show":
             preset_show(args)
-        elif args.preset_cmd == "installed":
+        elif args.preset_cmd == "installed" or args.preset_cmd is None:
             preset_installed(args)
         elif args.preset_cmd == "remove":
             preset_remove(args)

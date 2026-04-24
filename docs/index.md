@@ -54,6 +54,8 @@ below.
     store.
 17. [safety.md](safety.md) — the user-facing view of what Kiso
     will and will not do.
+18. [behaviors.md](behaviors.md) — persistent style / voice
+    guidelines that shape every messenger reply.
 18. [security-risks.md](security-risks.md) — residual risks the
     runtime does not eliminate, documented honestly.
 19. [audit.md](audit.md) — what the audit log records and where.

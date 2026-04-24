@@ -535,12 +535,12 @@ class TestPresetStep:
         assert "ARG_PRESET=" in result.stdout
 
     def test_preset_block_present(self):
-        """install.sh has the preset selection block."""
+        """install.sh has the persona preset selection block."""
         script_path = os.path.join(os.path.dirname(__file__), "..", "install.sh")
         with open(script_path) as f:
             content = f.read()
         assert "kiso preset install" in content
-        assert "Presets" in content
+        assert "Persona preset" in content
 
     def test_preset_skip_in_update_mode(self):
         """Preset step only runs for new installs, not updates."""

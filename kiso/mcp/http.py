@@ -328,13 +328,21 @@ class MCPStreamableHTTPClient(MCPClient):
         return "sampling" in self._build_client_capabilities()
 
     def _build_client_capabilities(self) -> dict:
-        # http transport does not yet implement bidirectional dispatch
-        # of server-initiated `sampling/createMessage` requests. Until
-        # the SSE event pump gains inline-request handling, the client
-        # does not advertise sampling over http even when the config
-        # allows it — servers can use the stdio transport to get the
-        # capability.
-        return {}
+        """Negotiate ``sampling`` when the bound config allows it.
+
+        The SSE event pump dispatches server-initiated
+        ``sampling/createMessage`` requests through
+        :func:`kiso.mcp.sampling.handle_sampling_request` and POSTs
+        the response back as a notification — same handler used by
+        the stdio transport.
+        """
+        if self._config is None:
+            return {}
+        try:
+            enabled = bool(self._config.settings.get("mcp_sampling_enabled", True))
+        except Exception:  # noqa: BLE001 — permissive on odd configs
+            return {}
+        return {"sampling": {}} if enabled else {}
 
     # ------------------------------------------------------------------
     # Internal
@@ -430,16 +438,21 @@ class MCPStreamableHTTPClient(MCPClient):
         body_bytes = response.content
 
         if "text/event-stream" in content_type:
-            data = _parse_sse_final_message(body_bytes)
-        else:
-            data = body_bytes
+            # An SSE response may interleave server-to-client
+            # JSON-RPC requests (e.g. ``sampling/createMessage``)
+            # before the final response-to-our-POST. Dispatch each
+            # server request and identify our response by matching
+            # JSON-RPC ``id``.
+            events = _parse_sse_events(body_bytes)
+            parsed = await self._consume_sse_events(events, req_id, method)
+            return parsed, dict(response.headers)
 
-        if not data:
+        if not body_bytes:
             raise MCPProtocolError(
                 f"mcp[{self._server.name}] {method}: empty response body"
             )
         try:
-            parsed = json.loads(data)
+            parsed = json.loads(body_bytes)
         except json.JSONDecodeError as e:
             raise MCPProtocolError(
                 f"mcp[{self._server.name}] {method}: malformed JSON response: {e}"
@@ -447,9 +460,86 @@ class MCPStreamableHTTPClient(MCPClient):
 
         return parsed, dict(response.headers)
 
+    async def _consume_sse_events(
+        self,
+        events: list[bytes],
+        req_id: int,
+        method: str,
+    ) -> dict:
+        """Walk every SSE event; dispatch server requests; return our response."""
+        from kiso.mcp.sampling import SAMPLING_METHOD, handle_sampling_request
+
+        our_response: dict | None = None
+        for raw in events:
+            try:
+                frame = json.loads(raw)
+            except json.JSONDecodeError:
+                log.debug(
+                    "mcp[%s] discarded malformed SSE event: %r",
+                    self._server.name, raw[:200],
+                )
+                continue
+            if _is_server_request(frame):
+                srv_method = frame.get("method")
+                srv_id = frame.get("id")
+                if srv_method == SAMPLING_METHOD and self._config is not None:
+                    try:
+                        response = await handle_sampling_request(
+                            self._config, frame,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log.exception(
+                            "mcp[%s] sampling handler crashed",
+                            self._server.name,
+                        )
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": srv_id,
+                            "error": {
+                                "code": -32603,
+                                "message": f"handler crashed: {exc}",
+                            },
+                        }
+                else:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": srv_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"method not found: {srv_method!r}",
+                        },
+                    }
+                await self._post_raw_payload(
+                    response,
+                    descriptor=f"sampling-response id={srv_id}",
+                )
+                continue
+            if frame.get("id") == req_id:
+                our_response = frame
+        if our_response is None:
+            raise MCPProtocolError(
+                f"mcp[{self._server.name}] {method}: SSE stream ended "
+                f"without a response to id={req_id}"
+            )
+        return our_response
+
     async def _post_notification(self, method: str, params: dict) -> None:
         assert self._http is not None
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
+        await self._post_raw_payload(payload, descriptor=method)
+
+    async def _post_raw_payload(
+        self, payload: dict, *, descriptor: str = "raw",
+    ) -> None:
+        """POST an already-assembled JSON-RPC payload (response / notification).
+
+        Unlike ``_post_notification`` this does not wrap the payload;
+        used to send responses to server-initiated requests like
+        ``sampling/createMessage``. Failures are logged at debug and
+        never raised — the ongoing response-to-our-POST stream takes
+        priority.
+        """
+        assert self._http is not None
         try:
             await self._http.post(
                 self._server.url,
@@ -459,33 +549,54 @@ class MCPStreamableHTTPClient(MCPClient):
             )
         except Exception as e:  # noqa: BLE001
             log.debug(
-                "mcp[%s] notification %s failed: %s",
-                self._server.name, method, e,
+                "mcp[%s] %s post failed: %s",
+                self._server.name, descriptor, e,
             )
 
 
-def _parse_sse_final_message(body: bytes) -> bytes:
-    """Extract the last ``data:`` payload from an SSE body.
+def _parse_sse_events(body: bytes) -> list[bytes]:
+    """Return every ``data:`` payload in *body*, one per SSE event.
 
-    The spec says: in response to a POST, the server may open an SSE
-    stream; the final event in that stream carries the JSON-RPC
-    response. We collect all ``data:`` lines and return the content of
-    the last SSE event.
-
-    Simple parser: split on blank-line separators (``\\n\\n``), take the
-    last non-empty block, extract all ``data:`` lines from it,
-    concatenate, return the resulting bytes. If nothing matches,
-    returns empty bytes and the caller raises a protocol error.
+    The server may interleave server-to-client JSON-RPC requests
+    (e.g. ``sampling/createMessage``) before the final response.
+    Every event's data lines are concatenated into one bytes blob;
+    events without any ``data:`` line are skipped.
     """
     text = body.decode("utf-8", errors="replace")
-    # Normalise CRLF → LF
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    blocks = [b for b in text.split("\n\n") if b.strip()]
-    if not blocks:
-        return b""
-    last_block = blocks[-1]
-    data_lines = []
-    for line in last_block.split("\n"):
-        if line.startswith("data:"):
-            data_lines.append(line[5:].lstrip())
-    return "".join(data_lines).encode("utf-8") if data_lines else b""
+    out: list[bytes] = []
+    for block in text.split("\n\n"):
+        if not block.strip():
+            continue
+        data_lines: list[str] = []
+        for line in block.split("\n"):
+            if line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if data_lines:
+            out.append("".join(data_lines).encode("utf-8"))
+    return out
+
+
+def _parse_sse_final_message(body: bytes) -> bytes:
+    """Return the last SSE event's data payload (back-compat shim)."""
+    events = _parse_sse_events(body)
+    return events[-1] if events else b""
+
+
+def _is_server_request(frame: dict) -> bool:
+    """Classify a JSON-RPC frame as a server-to-client *request*.
+
+    A frame is a server request when it has a ``method`` AND an
+    ``id`` AND neither ``result`` nor ``error``. Notifications
+    (no ``id``) and responses-to-our-POST (``result``/``error``
+    present) are not server requests for dispatch purposes.
+    """
+    if not isinstance(frame, dict):
+        return False
+    if "method" not in frame:
+        return False
+    if "id" not in frame:
+        return False
+    if "result" in frame or "error" in frame:
+        return False
+    return True

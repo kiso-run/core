@@ -151,28 +151,23 @@ class TestLoadPreset:
 # — Registry "presets" section
 # ---------------------------------------------------------------------------
 
-class TestRegistryPresets:
-    def test_registry_contains_presets(self):
-        reg_path = Path(__file__).resolve().parent.parent / "registry.json"
-        reg = json.loads(reg_path.read_text(encoding="utf-8"))
-        assert "presets" in reg
-        presets = reg["presets"]
-        assert len(presets) >= 1
-        names = {p["name"] for p in presets}
-        assert "default" in names
-        for p in presets:
-            assert "description" in p and p["description"]
+class TestRegistryRetired:
+    """registry.json and cli/_registry.py are retired in v0.10.
 
-    def test_search_entries_on_presets(self):
-        from cli._registry import search_entries
-        presets = [
-            {"name": "performance-marketer", "description": "marketing"},
-            {"name": "seo-specialist", "description": "SEO optimization"},
-        ]
-        assert len(search_entries(presets, "seo")) == 1
-        assert search_entries(presets, "seo")[0]["name"] == "seo-specialist"
-        assert len(search_entries(presets, None)) == 2
-        assert len(search_entries(presets, "marketing")) == 1
+    Persona presets now install only by local path or git URL.
+    """
+
+    def test_registry_json_absent(self):
+        reg_path = Path(__file__).resolve().parent.parent / "registry.json"
+        assert not reg_path.exists(), (
+            "registry.json must not exist — v0.10 retired the remote "
+            "preset registry"
+        )
+
+    def test_registry_module_absent(self):
+        import importlib
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("cli._registry")
 
 
 # ---------------------------------------------------------------------------
@@ -311,51 +306,6 @@ class TestListInstalledPresets:
 # — CLI: kiso preset list/search/install/show
 # ---------------------------------------------------------------------------
 
-class TestPresetListCLI:
-    def test_list_shows_presets(self, capsys):
-        from cli.preset import preset_list
-        reg = {"presets": [
-            {"name": "performance-marketer", "description": "Marketing"},
-            {"name": "seo-specialist", "description": "SEO"},
-        ]}
-        args = make_cli_args()
-        with patch("cli.preset.fetch_registry", return_value=reg):
-            preset_list(args)
-        out = capsys.readouterr().out
-        assert "performance-marketer" in out
-        assert "seo-specialist" in out
-
-    def test_list_empty_registry(self, capsys):
-        from cli.preset import preset_list
-        args = make_cli_args()
-        with patch("cli.preset.fetch_registry", return_value={"presets": []}):
-            preset_list(args)
-        assert "No presets" in capsys.readouterr().out
-
-
-class TestPresetSearchCLI:
-    def test_search_by_name(self, capsys):
-        from cli.preset import preset_search
-        reg = {"presets": [
-            {"name": "performance-marketer", "description": "Marketing"},
-            {"name": "seo-specialist", "description": "SEO"},
-        ]}
-        args = make_cli_args(query="seo")
-        with patch("cli.preset.fetch_registry", return_value=reg):
-            preset_search(args)
-        out = capsys.readouterr().out
-        assert "seo-specialist" in out
-        assert "performance-marketer" not in out
-
-    def test_search_no_results(self, capsys):
-        from cli.preset import preset_search
-        reg = {"presets": [{"name": "a", "description": "b"}]}
-        args = make_cli_args(query="nonexistent")
-        with patch("cli.preset.fetch_registry", return_value=reg):
-            preset_search(args)
-        assert "No presets matching" in capsys.readouterr().out
-
-
 class TestPresetInstallCLI:
     def test_install_from_local_path(self, tmp_path, capsys):
         from cli.preset import preset_install
@@ -379,26 +329,6 @@ class TestPresetInstallCLI:
             preset_install(args)
         out = capsys.readouterr().out
         assert "Dry run" in out
-
-    def test_install_registry_name_clones_repo(self, tmp_path, capsys):
-        """Registry name triggers git clone of preset repo."""
-        from cli.preset import preset_install
-        reg = {"presets": [{"name": "test-preset", "description": "Test"}]}
-        args = make_cli_args(target="test-preset", dry_run=False)
-
-        # Mock _clone_and_load_preset to return a valid manifest
-        from kiso.presets import PresetManifest
-        mock_manifest = PresetManifest(
-            name="test-preset", version="1.0.0", description="Test",
-            wrappers=[], behaviors=["Always be helpful."],
-        )
-        with patch("cli.preset.require_admin"), \
-             patch("cli.preset.fetch_registry", return_value=reg), \
-             patch("cli.preset._clone_and_load_preset", return_value=mock_manifest), \
-             patch("cli.preset_ops.install_preset") as mock_install:
-            preset_install(args)
-        mock_install.assert_called_once()
-        assert mock_install.call_args[0][1].name == "test-preset"
 
     def test_install_git_url_clones(self, capsys):
         """Git URL triggers clone."""
@@ -424,15 +354,17 @@ class TestPresetInstallCLI:
         err = capsys.readouterr().err
         assert "git clone failed" in err
 
-    def test_install_unknown_name_errors(self, capsys):
+    def test_install_bare_name_errors_with_guidance(self, capsys):
+        """A bare name (no path, no URL) now fails with a hint about
+        the retired registry-name lookup."""
         from cli.preset import preset_install
-        reg = {"presets": []}
         args = make_cli_args(target="nonexistent", dry_run=False)
-        with patch("cli.preset.require_admin"), \
-             patch("cli.preset.fetch_registry", return_value=reg), \
-             pytest.raises(SystemExit):
+        with patch("cli.preset.require_admin"), pytest.raises(SystemExit):
             preset_install(args)
-        assert "not found" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "nonexistent" in err
+        assert "not found" in err.lower()
+        assert "retired" in err.lower() or "kiso init --preset" in err
 
 
 class TestPresetShowCLI:
@@ -460,26 +392,14 @@ class TestPresetShowCLI:
         assert "browser" in out
         assert "2 seeded" in out
 
-    def test_show_registry(self, capsys):
-        from cli.preset import preset_show
-        reg = {"presets": [{"name": "seo-specialist", "description": "SEO stuff"}]}
-        args = make_cli_args(name="seo-specialist")
-        with patch("cli.preset_ops._load_installed", return_value=None), \
-             patch("cli.preset.fetch_registry", return_value=reg):
-            preset_show(args)
-        out = capsys.readouterr().out
-        assert "seo-specialist" in out
-        assert "Not installed" in out
-
     def test_show_not_found(self, capsys):
         from cli.preset import preset_show
-        reg = {"presets": []}
         args = make_cli_args(name="nope")
         with patch("cli.preset_ops._load_installed", return_value=None), \
-             patch("cli.preset.fetch_registry", return_value=reg), \
              pytest.raises(SystemExit):
             preset_show(args)
-        assert "not found" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "not found" in err.lower()
 
 
 class TestPresetInstalledCLI:
@@ -522,10 +442,8 @@ class TestPresetRemoveCLI:
 
 class TestPresetSubcommandRegistration:
     @pytest.mark.parametrize("args_list,expected", [
-        (["preset", "list"], {"command": "preset", "preset_cmd": "list"}),
-        (["preset", "install", "my-preset", "--dry-run"],
-         {"target": "my-preset", "dry_run": True}),
-        (["preset", "search", "marketing"], {"query": "marketing"}),
+        (["preset", "install", "my-path", "--dry-run"],
+         {"target": "my-path", "dry_run": True}),
         (["preset", "show", "seo-specialist"], {"name": "seo-specialist"}),
         (["preset", "remove", "old-preset"], {"name": "old-preset"}),
         (["preset", "installed"], {"preset_cmd": "installed"}),
@@ -537,19 +455,20 @@ class TestPresetSubcommandRegistration:
         for attr, value in expected.items():
             assert getattr(args, attr) == value
 
+    def test_parser_rejects_retired_list_subcommand(self):
+        """``kiso preset list`` was retired — should no longer parse."""
+        import sys
+        from cli import build_parser
+        parser = build_parser()
+        # argparse exits on unknown subcommand with SystemExit(2)
+        with pytest.raises(SystemExit):
+            parser.parse_args(["preset", "list"])
 
-# --- basic preset validation ---
-
-
-class TestDefaultPresetInRegistry:
-    """Verify default preset is listed in registry.json."""
-
-    def test_default_in_registry(self):
-        registry = json.loads(
-            (Path(__file__).parent.parent / "registry.json").read_text()
-        )
-        names = [p["name"] for p in registry["presets"]]
-        assert "default" in names
+    def test_parser_rejects_retired_search_subcommand(self):
+        from cli import build_parser
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["preset", "search", "x"])
 
 
 # --- preset install auto-installs wrappers ---

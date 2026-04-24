@@ -88,10 +88,12 @@ class TestPromptBudgetSmoke:
         # when the relevant flag is set or the briefer opts in. The
         # actual loaded prompt for default plan/chat/chat_kb paths is
         # smaller because the modular loader excludes non-selected
-        # sections. The MCP Prompts routing paragraph in `skills_and_mcp`
-        # and the chat-mediated install trust-surface note push the
+        # sections. The MCP Prompts routing paragraph in
+        # `skills_and_mcp`, the chat-mediated install trust-surface
+        # note, and the new `mcp_recovery` module (opt-in, only
+        # loaded when servers are flagged unhealthy) push the
         # worst-case size up accordingly.
-        ("planner.md", 17100),
+        ("planner.md", 18000),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

@@ -119,3 +119,56 @@ preset inclusion required. For inclusion in
 `docs/recommended-mcps.md`, submit a PR with an
 `upstream`/`license`/`key-requirements` block following the
 conventions in that file.
+
+## CI template for sibling `kiso-run/*-mcp` repos
+
+Every repo under the `kiso-run` GitHub org hosting an MCP server
+vendors a copy of
+[`.github/workflows/mcp-ci-template.yml`](../.github/workflows/mcp-ci-template.yml)
+(renamed to `ci.yml` in the sibling repo). The template runs
+`ruff`, `pytest`, and `uv lock --check` on every push and PR,
+and on tag pushes adds a release-verification job that enforces
+the `v<major>.<minor>.<patch>` tag format and checks the tag
+matches the version in `pyproject.toml`.
+
+**Distribution model**: the git tag IS the release. No PyPI
+upload. Consumers install via `uvx --from
+git+https://github.com/kiso-run/<name>-mcp@<tag>`. The CI is
+consistent across the five sibling repos so a fresh contributor
+sees the same shape in every repo.
+
+When a sibling repo diverges from the template (e.g. adds an
+extra job for a native dependency), update the template here first
+and the sibling second — never the other way round.
+
+## `x-kiso-consumes` tool extension
+
+Kiso's briefer + planner reason about which MCP method consumes
+which artefact type (image, audio, document, code, text). The
+signal is an inline extension in the tool's description body:
+
+```text
+Extract text from an image file.
+
+<x-kiso: {"consumes": ["image"]}>
+```
+
+The JSON payload sits inside an `<x-kiso: ...>` tag at the end of
+the description. The core parser
+(`kiso.mcp.catalog::parse_x_kiso_extension`) is already in place
+and covered by `tests/test_mcp_x_kiso_consumes.py`.
+
+**Every sibling `kiso-run/*-mcp` repo carries the declared value
+in its `tools/list` description**:
+
+| Server | `consumes` |
+|---|---|
+| `aider-mcp` | `["code"]` |
+| `search-mcp` | `["text"]` |
+| `transcriber-mcp` | `["audio"]` |
+| `ocr-mcp` | `["image"]` |
+| `docreader-mcp` | `["document"]` |
+
+Third-party MCP servers are welcome to use the same convention.
+The briefer/planner don't require it; they degrade gracefully to
+a plain keyword match when the extension is absent.

@@ -939,6 +939,7 @@ BRIEFER_MODULES: frozenset[str] = frozenset({
     "planning_rules", "skills_and_mcp",
     "web", "replan", "data_flow",
     "kiso_commands", "user_mgmt", "plugin_install",
+    "mcp_recovery",
 })
 _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "planning_rules": "task ordering, expect rules, multi-step plans",
@@ -949,6 +950,7 @@ _BRIEFER_MODULE_DESCRIPTIONS: dict[str, str] = {
     "kiso_commands": "kiso CLI (mcp/skill/connector/env/user mgmt)",
     "user_mgmt": "user/alias management, role permissions",
     "plugin_install": "capability discovery and installation",
+    "mcp_recovery": "route around MCP servers flagged unhealthy",
 }
 _BRIEFER_MODULES_STR = "\n".join(
     f"- {name}: {_BRIEFER_MODULE_DESCRIPTIONS[name]}"

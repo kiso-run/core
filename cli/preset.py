@@ -1,4 +1,14 @@
-""": CLI commands for preset management."""
+""": CLI commands for persona-preset management.
+
+A "preset" here is a ``preset.toml`` manifest with knowledge facts,
+behaviors, and env-var hints — a bundled persona a user can drop
+into their instance. Not to be confused with ``kiso init
+--preset``, which seeds ``mcp.json`` from a bundled MCP server
+preset under ``kiso/presets/``.
+
+v0.10 retired the github-hosted ``registry.json`` index; installs
+are now path- or URL-based. No more name lookup.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +21,6 @@ import tempfile
 
 from cli._admin import require_admin
 from cli._http import cli_get
-from cli._registry import fetch_registry, render_aligned_list, search_entries
 from cli.render import die
 
 
@@ -54,30 +63,13 @@ def _show_preset_summary(manifest) -> None:
     print()
 
 
-def preset_list(args: argparse.Namespace) -> None:
-    """List presets from the official registry."""
-    registry = fetch_registry()
-    presets = registry.get("presets", [])
-    if not presets:
-        print("No presets available in registry.")
-        return
-    render_aligned_list(presets, "name", "description")
-
-
-def preset_search(args: argparse.Namespace) -> None:
-    """Search presets by name or description."""
-
-    registry = fetch_registry()
-    presets = registry.get("presets", [])
-    results = search_entries(presets, args.query)
-    if not results:
-        print(f"No presets matching '{args.query}'.")
-        return
-    render_aligned_list(results, "name", "description")
-
-
 def preset_install(args: argparse.Namespace) -> None:
-    """Install a preset from a local path or registry name."""
+    """Install a persona preset from a local path or git URL.
+
+    Registry-name lookup is retired in v0.10 — pass a concrete
+    path or URL. For the bundled MCP default preset, use
+    ``kiso init --preset default`` instead.
+    """
     require_admin()
 
     target = args.target
@@ -91,19 +83,18 @@ def preset_install(args: argparse.Namespace) -> None:
             die(f"preset file not found: {path}")
         from kiso.presets import load_preset
         manifest = load_preset(path)
-    elif target.startswith("https://") or target.startswith("git@"):
+    elif target.startswith(("https://", "git@", "git+")):
         # Git URL: clone to temp, load preset.toml
-        git_url = target
-        manifest = _clone_and_load_preset(git_url)
+        manifest = _clone_and_load_preset(target)
     else:
-        # Registry name: clone the official repo
-        registry = fetch_registry()
-        presets = registry.get("presets", [])
-        match = next((p for p in presets if p["name"] == target), None)
-        if not match:
-            die(f"preset '{target}' not found in registry or as local path")
-        git_url = f"https://github.com/kiso-run/preset-{target}.git"
-        manifest = _clone_and_load_preset(git_url)
+        die(
+            f"preset '{target}' not found as a local path and is not a "
+            f"git URL.\n"
+            f"  v0.10 retired the registry name lookup — pass a path "
+            f"or a `https://` / `git@` URL.\n"
+            f"  For the bundled MCP default preset, run: "
+            f"`kiso init --preset default`"
+        )
 
     # Show preset contents before installing
     _show_preset_summary(manifest)
@@ -145,17 +136,10 @@ def preset_show(args: argparse.Namespace) -> None:
             print(f"  Behaviors: {len(tracking['behavior_ids'])} seeded")
         return
 
-    # Try registry
-    registry = fetch_registry()
-    presets = registry.get("presets", [])
-    match = next((p for p in presets if p["name"] == target), None)
-    if match:
-        print(f"Preset: {match['name']}")
-        print(f"  Description: {match['description']}")
-        print(f"  (Not installed — use 'kiso preset install' to install)")
-        return
-
-    die(f"preset '{target}' not found")
+    die(
+        f"preset '{target}' not found as a local path, git URL, or "
+        f"already-installed preset. Registry-name lookup is retired."
+    )
 
 
 def preset_installed(args: argparse.Namespace) -> None:

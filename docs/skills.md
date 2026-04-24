@@ -77,6 +77,32 @@ Output includes a diff or a passing test log.
 Summarise the root cause in one sentence, then the fix.
 ```
 
+### Messenger-only skill example
+
+A skill can carry *only* a messenger section when its purpose is
+to shape reply style without changing planning or execution. The
+bundled `terse-output` fixture skill under
+[`tests/functional/fixtures/skills/terse-output/`](../tests/functional/fixtures/skills/terse-output/SKILL.md)
+is the canonical minimal example:
+
+```markdown
+---
+name: terse-output
+description: Reply in one or two sentences. Never pad the answer.
+---
+
+## Messenger
+
+Reply in exactly one or two sentences. No greeting, no
+acknowledgement, no hedging, no bullet points. Deliver the
+answer and stop.
+```
+
+The skill projects into the messenger prompt only; worker,
+reviewer, and planner calls are unaffected. Installing a
+messenger-only skill is the cleanest way to enforce output style
+without touching the rest of the pipeline.
+
 ### Frontmatter — standard fields
 
 - **`name`** (required) — the skill's canonical name.

@@ -661,6 +661,31 @@ async def lifespan(app: FastAPI):
             len(webhook_secret),
         )
 
+    # Validate per-user MCP / skill allowlists against installed catalogs
+    # so typos in config.toml surface on boot rather than silently stripping
+    # methods from the planner's visibility.
+    try:
+        from kiso.config_checks import (
+            emit_allowlist_warnings,
+            validate_user_allowlists,
+        )
+        from kiso.skill_loader import discover_skills
+
+        mcp_methods = [
+            f"{server_name}:{method_name}"
+            for server_name in (config.mcp_servers or {}).keys()
+            for method_name in ()  # method catalog is warmed lazily per session
+        ]
+        skill_names = [s.name for s in discover_skills()]
+        issues = validate_user_allowlists(
+            config,
+            mcp_methods=mcp_methods,
+            skill_names=skill_names,
+        )
+        emit_allowlist_warnings(issues)
+    except Exception as exc:  # pragma: no cover — best-effort
+        log.debug("allowlist validation skipped: %s", exc)
+
     # Start cron scheduler background task
     cron_task = asyncio.create_task(_cron_scheduler(db, config, app))
 

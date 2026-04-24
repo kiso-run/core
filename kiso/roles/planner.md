@@ -132,6 +132,13 @@ Capability installation is covered end-to-end by the `skills_and_mcp` module. Su
 
 Never curl the MCP catalog or skill registry — Kiso does not maintain one (see `skills_and_mcp` hard rule). Only act on a concrete URL supplied by the user.
 
+<!-- MODULE: mcp_recovery -->
+When the briefing lists one or more MCP servers as **unhealthy** (flagged by the circuit breaker or by a recent transport failure):
+1. Do NOT route through the unhealthy server — its next call is very likely to fail again.
+2. Pick an alternative: a different MCP method that covers the same intent, a skill, or exec.
+3. If no alternative exists, end the plan with a `msg` task telling the user which server is down and suggesting `kiso mcp test <server>` to diagnose.
+4. A healthy peer of the same protocol (e.g. a second search MCP) is always preferred over exec. Exec is the final fallback.
+
 <!-- MODULE: session_files -->
 Session file rules:
 - Files in Session Workspace are local — use the exact path shown in the Session Workspace listing for mcp args (e.g. `pub/screenshot.png`). Never re-download or curl a file that already exists locally.
