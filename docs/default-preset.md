@@ -137,33 +137,39 @@ npx -y @modelcontextprotocol/server-filesystem@2026.1.14 ~/
 Both should start, print a one-line stdio banner, and wait for
 MCP client traffic on stdin. Send `Ctrl-D` to exit.
 
-## Bundled skill: `voice-message-receiver`
+## Bundled skill: `message-attachment-receiver`
 
 Alongside the seven MCP servers, the default Kiso experience
 ships one Tier 1 skill, distributed as its own repo at
-[`kiso-run/voice-message-receiver-skill`](https://github.com/kiso-run/voice-message-receiver-skill):
+[`kiso-run/message-attachment-receiver-skill`](https://github.com/kiso-run/message-attachment-receiver-skill):
 
 ```sh
 kiso skill install --from-url \
-    git+https://github.com/kiso-run/voice-message-receiver-skill@v0.1.0
+    git+https://github.com/kiso-run/message-attachment-receiver-skill@v0.2.0
 ```
 
 The trust prefix is hardcoded in
 [`kiso/skill_trust.py`](../kiso/skill_trust.py), so the install
 runs silently — no per-install confirmation prompt.
 
-**What it adds.** A two-stage planner rule for uploaded audio:
-the first plan transcribes the audio via
-`kiso-transcriber:transcribe_audio`; a `replan` then re-enters
-the planner with the transcript so the user's voice note is
-treated as if they had typed it. Pairs with the Discord (and
-analogous) connectors that drop voice notes into the session
-`uploads/` directory.
+**What it adds.** A deterministic two-stage planner rule for
+any uploaded attachment. Stage 1 reads each file via the right
+MCP — audio through `kiso-transcriber:transcribe_audio`, images
+through `kiso-ocr:ocr_image` (or `describe_image` when the user
+asks about visual content), documents through
+`kiso-docreader:read_document`. Stage 2 is a `replan` so the
+next planner pass sees the extracted content and treats it as
+the user's actual message.
+
+Multi-file uploads fan out as parallel tasks under a single
+`group`, so reading three files takes the time of one. Pairs
+with the Discord (and analogous) connectors that drop
+attachments into the session `uploads/` directory.
 
 This is a skill — not an MCP server — because there's no new
 capability to expose, only planner guidance about how to use
-existing capabilities (the `transcriber` MCP) when the input
-shape is audio.
+existing capabilities (`transcriber`, `ocr`, `docreader`) when
+the input shape is one or more uploaded files.
 
 ## Why not more servers
 

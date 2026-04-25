@@ -26,7 +26,7 @@ SKILL_TIER1_PREFIXES: tuple[str, ...] = (
     # release-tagged GitHub repo; we list them explicitly rather
     # than wildcard the owner so a stray `kiso-run/<random>-skill`
     # repo can't silently mark itself trusted.
-    "github.com/kiso-run/voice-message-receiver-skill",
+    "github.com/kiso-run/message-attachment-receiver-skill",
 )
 
 

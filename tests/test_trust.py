@@ -214,13 +214,19 @@ class TestSkillTrust:
             == "tier1"
         )
 
-    def test_tier1_voice_message_receiver_skill_repo(self, trust_path):
-        """M1564: the bundled voice-message-receiver skill lives in
-        its own repo, not under `kiso-run/skills/*`. Pin its trust
-        prefix so the silent install path keeps working."""
+    def test_tier1_message_attachment_receiver_skill_repo(self, trust_path):
+        """M1565: the bundled message-attachment-receiver skill lives
+        in its own repo, not under `kiso-run/skills/*`. Pin its trust
+        prefix so the silent install path keeps working.
+
+        (M1564 originally added `voice-message-receiver-skill`; M1565
+        renamed and generalised it to all attachment types. The repo
+        was renamed in place; old URLs continue to redirect via
+        GitHub's rename-redirect mechanism.)
+        """
         assert (
             skill_trust.is_trusted(
-                "github.com/kiso-run/voice-message-receiver-skill"
+                "github.com/kiso-run/message-attachment-receiver-skill"
             )
             == "tier1"
         )

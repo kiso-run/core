@@ -86,6 +86,17 @@ def _die_violations(rule: str, preset_name: str, violations: list[str]) -> None:
     raise SystemExit(1)
 
 
+_BUNDLED_SKILLS_FOR_DEFAULT = (
+    # (skill name, URL with pinned tag). Each is Tier 1 trusted in
+    # SKILL_TIER1_PREFIXES, so the install runs silently (no per-
+    # install consent prompt).
+    (
+        "message-attachment-receiver",
+        "git+https://github.com/kiso-run/message-attachment-receiver-skill@v0.2.0",
+    ),
+)
+
+
 def _print_post_init(config_path, preset_name: str) -> None:
     print(f"Config created at {config_path}")
     print()
@@ -95,10 +106,10 @@ def _print_post_init(config_path, preset_name: str) -> None:
     print("  OPENROUTER_API_KEY   — mandatory for LLM calls and")
     print("                         any preset entry that uses it")
     print()
-    print("Optional environment:")
-    print("  GITHUB_TOKEN         — unlocks the `github` MCP server")
-    print()
     print("Next steps:")
     print("  1. export OPENROUTER_API_KEY=sk-...")
-    print("  2. (optionally) export GITHUB_TOKEN=ghp_...")
-    print("  3. kiso mcp test   # verify each preset server starts")
+    print("  2. kiso mcp test   # verify each preset server starts")
+    if preset_name == "default" and _BUNDLED_SKILLS_FOR_DEFAULT:
+        print("  3. install the bundled skills:")
+        for _name, url in _BUNDLED_SKILLS_FOR_DEFAULT:
+            print(f"       kiso skill install --from-url {url}")

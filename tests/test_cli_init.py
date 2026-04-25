@@ -40,7 +40,9 @@ class TestInitCommand:
         out = capsys.readouterr().out
         assert "Config created" in out
         assert "OPENROUTER_API_KEY" in out
-        assert "GITHUB_TOKEN" in out
+        # M1563 dropped GITHUB_TOKEN from the default preset; M1565
+        # added the bundled-skill install line for --preset default.
+        assert "message-attachment-receiver-skill" in out
 
     def test_none_preset_writes_template_only(self, isolated_kiso_dir):
         rc = run_init_command(_make_args(preset="none"))
