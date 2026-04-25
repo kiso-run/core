@@ -538,7 +538,7 @@ def render_banner(
         kiso_label = f"{kiso_label}  v{version}"
     name_line = _style(kiso_label, _BOLD, _MAGENTA, caps=caps)
     dot = _sym(" · ", " | ", caps)
-    caps_text = f"  run commands{dot}search the web{dot}write code{dot}use wrappers"
+    caps_text = f"  run commands{dot}search the web{dot}write code{dot}call MCP servers"
     caps_line = _style(caps_text, _DIM, caps=caps)
     hint = _style(f"  /help for commands{dot}Ctrl+C to cancel a task", _DIM, caps=caps)
     instance_session = _style(f"  instance: {bot_name}  |  session: {session}", _DIM, caps=caps)

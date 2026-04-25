@@ -4,7 +4,7 @@ M1370 wired `mcp_methods` into the briefer's context_pool so the
 briefer can SELECT MCP methods. M1371 closes the second half:
 the planner LLM must also SEE the MCP method catalog when making
 routing decisions, otherwise the briefer's selections vanish into
-the void and the planner falls back to wrappers/exec.
+the void and the planner falls back to plain exec.
 
 These tests assert that:
 

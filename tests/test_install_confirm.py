@@ -31,7 +31,10 @@ class TestPlannerPromptInstallRules:
         assert "NEVER exec or mcp the install before approval" in self.full \
             or "Install → approve → replan" in self.full
 
-    def test_tools_rules_msg_before_install(self):
+    def test_planner_prompt_keeps_single_msg_rule(self):
+        """The planner must still know about the "single msg" task pattern
+        — used for clarification and KB-only answers — after the wrapper-
+        era `tools_rules` module was retired."""
         assert "single msg asking user to install" in self.full.lower() or \
                "single msg" in self.full.lower()
 

@@ -39,7 +39,6 @@ class TestExecAndReviewOkE2E:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -138,7 +137,6 @@ class TestReplanFlowE2E:
         # Verify a new plan from the replan context is valid
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             new_plan = await asyncio.wait_for(
                 run_planner(

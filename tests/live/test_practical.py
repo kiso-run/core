@@ -56,7 +56,6 @@ class TestExecChaining:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -276,7 +275,6 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -312,7 +310,6 @@ class TestFullPipeline:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -364,7 +361,6 @@ class TestReplanRecovery:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -398,108 +394,6 @@ class TestReplanRecovery:
 # ---------------------------------------------------------------------------
 # L4.5 — Knowledge pipeline end-to-end
 # ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# L4.6 — Wrapper task execution
-# ---------------------------------------------------------------------------
-
-
-class TestWrapperExecution:
-    async def test_plan_and_execute_wrapper_task(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
-    ):
-        """What: Creates a minimal echo-test wrapper, asks the planner to use it, then executes and reviews.
-
-        Why: Validates end-to-end wrapper/wrapper task execution — planner selection, subprocess run, reviewer approval.
-        Expects: Plan contains a wrapper task, execution succeeds, output contains 'hello from wrapper test'.
-        """
-        # Create a minimal echo wrapper
-        skill_dir = tmp_path / "wrappers" / "echo-test"
-        skill_dir.mkdir(parents=True)
-
-        (skill_dir / "kiso.toml").write_text(
-            '[kiso]\n'
-            'name = "echo-test"\n'
-            'version = "0.1.0"\n'
-            '[kiso.wrapper]\n'
-            'type = "wrapper"\n'
-            'summary = "Echoes the text argument back to stdout"\n'
-            '[kiso.wrapper.args.text]\n'
-            'type = "string"\n'
-            'required = true\n'
-        )
-        (skill_dir / "run.py").write_text(
-            "import json, sys\n"
-            "data = json.load(sys.stdin)\n"
-            'print(data["args"]["text"])\n'
-        )
-        (skill_dir / "pyproject.toml").write_text(
-            '[project]\nname = "echo-test"\nversion = "0.1.0"\n'
-            'requires-python = ">=3.11"\n'
-        )
-
-        tool_info = {
-            "name": "echo-test",
-            "summary": "Echoes the text argument back to stdout",
-            "args_schema": {"text": {"type": "string", "required": True}},
-            "env": {},
-            "session_secrets": [],
-            "path": str(skill_dir),
-            "version": "0.1.0",
-            "description": "",
-        }
-
-        content = (
-            "Use the echo-test wrapper to echo the text 'hello from wrapper test'"
-        )
-        msg_id = await save_message(
-            seeded_db, live_session, "testadmin", "user", content,
-        )
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[tool_info]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin", content,
-                ),
-                timeout=TIMEOUT,
-            )
-        assert validate_plan(plan, installed_skills=["echo-test"]) == []
-
-        # Verify the planner actually used the wrapper
-        wrapper_tasks = [t for t in plan["tasks"] if t["type"] == "wrapper"]
-        assert wrapper_tasks, "Planner should have produced a wrapper task"
-
-        plan_id = await create_plan(
-            seeded_db, live_session, msg_id, plan["goal"],
-        )
-        for t in plan["tasks"]:
-            await create_task(
-                seeded_db, plan_id, live_session,
-                type=t["type"], detail=t["detail"],
-                wrapper=t.get("wrapper"), args=t.get("args"),
-                expect=t.get("expect"),
-            )
-
-        with (
-            mock_noop_infra,
-            patch("kiso.worker.loop.discover_wrappers", return_value=[tool_info]),
-        ):
-            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
-                _execute_plan(
-                    seeded_db, live_config, live_session, plan_id,
-                    plan["goal"], content,
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert success is True
-        wrapper_completed = [t for t in completed if t["type"] == "wrapper"]
-        assert wrapper_completed
-        assert "hello from wrapper test" in wrapper_completed[0]["output"]
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +496,6 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -659,7 +552,6 @@ class TestPerStepTokenTracking:
         with (
             mock_noop_infra,
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(

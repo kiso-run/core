@@ -106,15 +106,25 @@ class TestPlannerModules:
     """All planner modules must be individually loadable."""
 
     _ALL_MODULES = [
-        "core", "kiso_native", "planning_rules", "tools_rules",
-        "tool_recovery", "data_flow", "web", "replan",
+        "core", "planning_rules", "skills_and_mcp",
+        "data_flow", "web", "replan",
         "kiso_commands", "user_mgmt", "plugin_install",
+        "mcp_recovery", "session_files", "investigate",
     ]
 
     @pytest.mark.parametrize("module", [m for m in _ALL_MODULES if m != "core"])
     def test_module_loads(self, module):
         result = _load_modular_prompt("planner", [module])
-        assert len(result) > 100, f"Module {module} too short"
+        # Each named module must contribute its own content beyond `core`.
+        # Compare against a core-only baseline so a renamed/removed module
+        # cannot silently pass with just the core text.
+        core_only = _load_modular_prompt("planner", [])
+        assert len(result) > len(core_only), (
+            f"Module {module!r} did not contribute any content beyond core "
+            f"({len(result)} == {len(core_only)} chars). "
+            f"Either the module was renamed/removed or planner.md no longer "
+            f"defines it."
+        )
 
 
 class TestCLICommandAudit:

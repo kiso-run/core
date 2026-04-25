@@ -49,14 +49,14 @@ def _config(briefer_enabled=True) -> Config:
 
 
 def _briefing(
-    modules=None, wrappers=None, mcp_methods=None, mcp_resources=None,
+    modules=None, skills=None, mcp_methods=None, mcp_resources=None,
     mcp_prompts=None,
     context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
 ) -> dict:
     return {
         "modules": modules or [],
-        "skills": wrappers or [],
+        "skills": skills or [],
         "mcp_methods": mcp_methods or [],
         "mcp_resources": mcp_resources or [],
         "mcp_prompts": mcp_prompts or [],
@@ -84,7 +84,7 @@ class TestBrieferScenarios:
     """Integration tests simulating different request types through the briefer."""
 
     async def test_simple_request_minimal_briefing(self, db):
-        """Simple question → briefer selects no modules, no wrappers, minimal context."""
+        """Simple question → briefer selects no modules, no skills, minimal context."""
         briefing = _briefing(context="User wants to know the time.")
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -107,10 +107,10 @@ class TestBrieferScenarios:
         assert "User wants to know the time." in user_content
 
     async def test_web_request_selects_web_module(self, db):
-        """Web request → briefer selects web module + browser wrapper."""
+        """Web request → briefer selects web module + browser skill."""
         briefing = _briefing(
             modules=["web"],
-            wrappers=["browser"],
+            skills=["browser"],
             context="User wants to visit gazzetta.it for sports news.",
         )
 
@@ -119,21 +119,15 @@ class TestBrieferScenarios:
                 return json.dumps(briefing)
             return "{}"
 
-        # provide browser wrapper so briefer selection isn't cleared
-        fake_skills = [
-            {"name": "browser", "summary": "Navigate, click, fill, screenshot",
-             "args_schema": {}, "env": {}, "session_secrets": [],
-             "path": "/fake", "version": "0.1.0", "description": ""},
-        ]
         with patch("kiso.brain.call_llm", side_effect=_fake_llm):
             msgs = await build_planner_messages(
                 db, _config(), "sess1", "admin", "vai su gazzetta.it",
             )
 
         system = msgs[0]["content"]
-        # Web module injected — M1502 dropped the `## Wrappers` section
-        # from the planner prompt, so we no longer assert wrapper text;
-        # the web module selection is the behavior under test here.
+        # Web module injected — M1502 collapsed the `## Wrappers` section
+        # in favour of `## MCP Methods` + `## Skills`; we assert the web
+        # module selection is the behaviour under test here.
         assert "Web interaction:" in system
         # Other modules absent
         assert "extend_replan" not in system
@@ -143,7 +137,7 @@ class TestBrieferScenarios:
         """Replan context → briefer selects replan module + failure context."""
         briefing = _briefing(
             modules=["replan"],
-            context="Previous plan failed: browser wrapper not installed.",
+            context="Previous plan failed: browser MCP server not installed.",
         )
 
         async def _fake_llm(cfg, role, messages, **kw):
@@ -196,7 +190,7 @@ class TestBrieferScenarios:
         """Complex request → briefer selects multiple modules."""
         briefing = _briefing(
             modules=["web", "data_flow"],
-            wrappers=["browser: navigate", "python: run scripts"],
+            skills=["browser: navigate", "python: run scripts"],
             context="User wants to scrape a site and process data with Python.",
         )
 
@@ -214,9 +208,9 @@ class TestBrieferScenarios:
         assert "Web interaction:" in system
         assert "Download/fetch content" in system or "save to file" in system
         assert "One-liner execution" in system or "One-liners" in system
-        # Replan and tool_recovery NOT included
+        # Replan and mcp_recovery NOT included
         assert "extend_replan" not in system
-        assert "Broken wrapper deps" not in system
+        assert "unhealthy" not in system
 
 
 # ---------------------------------------------------------------------------
