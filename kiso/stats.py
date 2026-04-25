@@ -10,6 +10,12 @@ from pathlib import Path
 # More specific keys must appear before less specific ones (first match wins).
 # Prices are approximate and based on OpenRouter/provider pricing (early 2026).
 MODEL_PRICES: dict[str, tuple[float, float]] = {
+    # DeepSeek V4 (released 2026-04-24). Distinct prices per tier;
+    # the more specific keys must precede the generic "deepseek"
+    # fallback so substring-first-match wins resolves correctly.
+    "deepseek-v4-pro": (1.74, 3.48),
+    "deepseek-v4-flash": (0.14, 0.28),
+    "deepseek-v4": (0.14, 0.28),
     "deepseek-v3": (0.30, 0.88),
     "deepseek-r1": (0.55, 2.19),
     "deepseek-chat": (0.14, 0.28),

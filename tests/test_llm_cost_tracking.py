@@ -34,6 +34,31 @@ class TestPricingCoversDefaults:
         )
 
 
+class TestDeepseekV4Pricing:
+    """V4 Flash and Pro have distinct prices and must NOT collapse to
+    the generic `deepseek` fallback (which would mis-bill V4-Pro by ~6x).
+    """
+
+    def test_v4_flash_resolves_to_v4_flash_price(self) -> None:
+        from kiso.stats import _find_price
+        # V4-Flash: $0.14 / $0.28 per Mtok (OpenRouter list).
+        assert _find_price("deepseek/deepseek-v4-flash") == (0.14, 0.28)
+
+    def test_v4_pro_resolves_to_v4_pro_price(self) -> None:
+        from kiso.stats import _find_price
+        # V4-Pro: $1.74 / $3.48 per Mtok (OpenRouter list).
+        assert _find_price("deepseek/deepseek-v4-pro") == (1.74, 3.48)
+
+    def test_v4_pro_not_collapsed_to_generic_deepseek(self) -> None:
+        from kiso.stats import _find_price
+        # If first-match wins falls through to "deepseek" (0.14, 0.28),
+        # V4-Pro billing under-counts by ~6x. Guard against it.
+        price = _find_price("deepseek/deepseek-v4-pro")
+        assert price != (0.14, 0.28), (
+            "V4-Pro price must not fall back to the generic deepseek entry"
+        )
+
+
 class TestSinceDurationParser:
     @pytest.mark.parametrize(
         "spec,expected_days",

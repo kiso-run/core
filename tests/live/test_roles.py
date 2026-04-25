@@ -775,3 +775,46 @@ class TestClassifierConversationLive:
         assert category == "chat", (
             f"Expected 'chat' for 'good morning' without context, got '{category}'"
         )
+
+
+# ---------------------------------------------------------------------------
+# M1553 — Classifier on DeepSeek V4-Flash (post-migration acceptance)
+# ---------------------------------------------------------------------------
+
+
+class TestClassifierV4FlashLive:
+    """Replicates the classifier benchmark cases against V4-Flash to
+    catch regressions after the migration.
+
+    Each case exercises a different category × language pair. The
+    classifier produces non-empty content (reasoning is disabled by
+    M1551 so the max_tokens=10 budget reaches the actual response).
+    """
+
+    @pytest.mark.parametrize(
+        "msg,expected_category,expected_language",
+        [
+            ("installami ripgrep",                    "plan",        "Italian"),
+            ("perché il comando di prima è fallito?", "investigate", "Italian"),
+            ("ciao come va oggi?",                    "chat",        "Italian"),
+            ("what do you know about flask?",         "chat_kb",     "English"),
+            ("write a python script that calls the github api",
+                                                       "plan",        "English"),
+        ],
+    )
+    async def test_classifier_v4_flash_categories(
+        self, live_config, msg, expected_category, expected_language,
+    ):
+        """V4-Flash classifier produces correct category:Language for
+        each of the five benchmark cases."""
+        from kiso.brain import run_classifier
+        category, lang = await asyncio.wait_for(
+            run_classifier(live_config, msg, recent_context=""),
+            timeout=TIMEOUT,
+        )
+        assert category == expected_category, (
+            f"V4-Flash classifier: {msg!r} expected category="
+            f"{expected_category!r}, got {category!r}"
+        )
+        # Language detection is best-effort; require non-empty result.
+        assert lang, f"V4-Flash classifier returned empty language for {msg!r}"

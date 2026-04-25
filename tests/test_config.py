@@ -457,6 +457,23 @@ def test_settings_defaults():
     assert SETTINGS_DEFAULTS["fact_archive_threshold"] == 0.3
 
 
+def test_classifier_default_is_v4_flash():
+    """M1553: classifier runs on deepseek-v4-flash (5/5 accuracy at 58%
+    lower cost vs gemini-2.5-flash on the classifier benchmark)."""
+    assert MODEL_DEFAULTS["classifier"] == "deepseek/deepseek-v4-flash"
+
+
+def test_classifier_template_matches_default():
+    """CONFIG_TEMPLATE classifier line agrees with MODEL_DEFAULTS."""
+    line = next(
+        (ln for ln in CONFIG_TEMPLATE.splitlines()
+         if ln.startswith("classifier")),
+        None,
+    )
+    assert line is not None
+    assert MODEL_DEFAULTS["classifier"] in line
+
+
 # --- robustness fixes ---
 
 
