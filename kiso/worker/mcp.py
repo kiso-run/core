@@ -185,6 +185,26 @@ async def _handle_mcp_task(
             replan_reason=f"MCP task setup failed: {setup_error}",
         )
 
+    # M1560 — kiso-aider:aider_codegen Kiso-defaults injection.
+    # The aider MCP server exposes two model knobs (architect_model,
+    # editor_model) but the planner LLM doesn't know its own model
+    # name. Pre-fill both from `config.models` here so the planner +
+    # worker pair runs aider's two-model architect mode by default.
+    # `setdefault` semantics: caller-supplied values always win; the
+    # rule is namespaced to kiso-aider:aider_codegen so other MCP
+    # servers stay untouched.
+    if (
+        server_name == "kiso-aider"
+        and method_name == "aider_codegen"
+        and isinstance(args, dict)
+    ):
+        planner_model = ctx.config.models.get("planner")
+        worker_model = ctx.config.models.get("worker")
+        if planner_model and "architect_model" not in args:
+            args["architect_model"] = planner_model
+        if worker_model and "editor_model" not in args:
+            args["editor_model"] = worker_model
+
     is_resource_read = method_name == RESOURCE_READ_METHOD
     is_prompt_get = method_name == PROMPT_GET_METHOD
     prompt_name: str | None = None
