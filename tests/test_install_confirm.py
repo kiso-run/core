@@ -99,18 +99,6 @@ class TestValidatePlanInstallConfirmation:
 # --- 6. Auto-correct function removed ---
 
 
-class TestAutoCorrectRemoved:
-    """_auto_correct_uninstalled_skills must no longer exist in brain.py."""
-
-    def test_function_not_in_module(self):
-        import kiso.brain as brain_mod
-        assert not hasattr(brain_mod, "_auto_correct_uninstalled_skills")
-
-    def test_regex_not_in_module(self):
-        import kiso.brain as brain_mod
-        assert not hasattr(brain_mod, "_SKILL_NOT_INSTALLED_RE")
-
-
 # --- session-aware install approval ---
 
 

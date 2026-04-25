@@ -27,23 +27,6 @@ def _doc_files() -> list[Path]:
     return out
 
 
-class TestRetiredFilesDeleted:
-
-    @pytest.mark.parametrize(
-        "relpath",
-        [
-            "docs/wrappers.md",
-            "docs/wrapper-development.md",
-            "docs/recipes.md",
-            "kiso/reference/wrappers.md",
-        ],
-    )
-    def test_retired_doc_deleted(self, relpath: str):
-        assert not (ROOT / relpath).exists(), (
-            f"{relpath} documents a retired subsystem and must be deleted"
-        )
-
-
 class TestNoRetiredUsageStrings:
     """No doc file advertises the retired CLI verbs or directory
     conventions as current usage."""

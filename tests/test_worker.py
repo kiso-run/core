@@ -3742,13 +3742,6 @@ class TestPermissionRevalidation:
         tasks = await get_tasks_for_plan(db, plan_id)
         assert "no longer exists" in tasks[0]["output"]
 
-    @pytest.mark.skip(
-        reason="wrapper task type retired in v0.10; per-method access "
-               "control now lives at catalog-build time via filter_mcp_catalog_by_user"
-    )
-    async def test_permission_revalidation_blocks_removed_skill(self, db, tmp_path):
-        pass
-
     async def test_config_reload_failure_uses_cached(self, db, tmp_path):
         """ConfigError → falls back to cached config, execution continues."""
         config = make_config(users={"alice": User(role="admin")})
@@ -7228,28 +7221,6 @@ class TestTaskHandlers:
         assert result.stop is True
         assert result.stop_success is False
         assert "approval required" in (result.stop_replan or "")
-
-    @pytest.mark.skip(
-        reason="M1504 retired `kiso wrapper` CLI; install-approval flow "
-               "is being rewritten against `kiso mcp install` + "
-               "`kiso skill install` in M1516."
-    )
-    async def test_handle_exec_install_allowed_user_initiated(self, db, plan_id, tmp_path):
-        pass
-
-    @pytest.mark.skip(
-        reason="M1504 retired `kiso wrapper` CLI; install-approval flow "
-               "is being rewritten against MCP/skill CLIs in M1516."
-    )
-    async def test_handle_exec_install_allowed_with_approval(self, db, plan_id, tmp_path):
-        pass
-
-    @pytest.mark.skip(
-        reason="M1504 retired `kiso wrapper` CLI; `kiso wrapper list` is no "
-               "longer a valid shell command."
-    )
-    async def test_handle_exec_wrapper_list_not_blocked(self, db, plan_id, tmp_path):
-        pass
 
 # --- M91a: _handle_plan_error ---
 

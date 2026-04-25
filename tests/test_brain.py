@@ -1413,22 +1413,6 @@ class TestBuildPlannerMessages:
             "planning_rules module missing from planner prompt"
         )
 
-    @pytest.mark.skip(
-        reason="M1502 removed the ## Wrappers section from the planner prompt; "
-               "per-user MCP allowlist replaces this in M1539 + M1517."
-    )
-    async def test_user_wrappers_filtered(self, db, config):
-        pass
-
-    @pytest.mark.skip(
-        reason="The 'discover_wrappers() returned empty' warning was "
-               "removed when the wrapper subsystem was retired; the "
-               "equivalent skills-empty notice, if added, will need a "
-               "fresh test that pins the new message text."
-    )
-    async def test_logs_warning_when_no_skills(self, db, config, caplog):
-        pass
-
     async def test_upload_hint_when_docreader_missing(self, db, config):
         """Upload hint injected when message has [Uploaded files:] and docreader not installed."""
         await create_session(db, "sess1")
@@ -4423,10 +4407,6 @@ class TestPlannerContextualRules:
     def _config(self):
         return _make_brain_config()
 
-    @pytest.mark.skip(reason="Plugin-install appendix gating changed with wrapper retirement; kiso_native is always injected in briefer path.")
-    async def test_generic_message_has_no_appendix(self, db):
-        pass
-
     async def test_skill_keyword_injects_kiso_commands(self, db):
         """Message mentioning 'skill' should inject kiso-commands appendix."""
         msgs = await build_planner_messages(
@@ -4471,10 +4451,6 @@ class TestPlannerContextualRules:
         )
         system = msgs[0]["content"]
         assert "Capability installation" in system
-
-    @pytest.mark.skip(reason="Auto-inject plugin_install when no wrappers retired with the wrapper subsystem.")
-    async def test_no_skills_injects_plugin_install(self, db):
-        pass
 
     async def test_no_skills_no_duplicate_appendix(self, db):
         """if keyword already triggered plugin-install, no duplicate on empty skills."""
@@ -6720,14 +6696,6 @@ class TestBrowserAvailability:
             raw={},
         )
 
-    @pytest.mark.skip(reason="Browser wrapper availability warning retired with the wrapper subsystem.")
-    async def test_web_module_no_browser_shows_warning(self, db):
-        pass
-
-    @pytest.mark.skip(reason="Browser wrapper availability warning retired.")
-    async def test_web_module_with_browser_installed_no_warning(self, db):
-        pass
-
     async def test_no_web_module_no_warning(self, db):
         """Briefer does NOT select web module → no warning regardless."""
         briefing = {
@@ -6754,11 +6722,6 @@ class TestBrowserAvailability:
 
         user_content = msgs[1]["content"]
         assert "## Browser Availability" not in user_content
-
-    @pytest.mark.skip(reason="Browser wrapper availability warning retired.")
-    async def test_fallback_path_web_module_no_browser(self, db):
-        pass
-
 
 # ---------------------------------------------------------------------------
 # — Built-in search note when websearch not installed
@@ -8865,15 +8828,6 @@ class TestPipToUvValidation:
         """'install flask' without mentioning pip → not rejected."""
         errors = validate_plan(self._plan("install flask"))
         assert not any("uv pip install" in e for e in errors)
-
-
-@pytest.mark.skip(
-    reason="registry_hint_names validation retired in v0.10: "
-           "there is no kiso-maintained plugin registry anymore "
-           "(MCP servers and skills install from concrete URLs)"
-)
-class TestRegistryInstallValidation:
-    pass
 
 
 class TestSystemPackageInstallSemantics:

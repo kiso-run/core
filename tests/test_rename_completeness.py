@@ -37,13 +37,6 @@ class TestWrapperRenameRuntimeInvariants:
         for path in legacy_paths:
             assert not path.exists(), f"legacy file still present: {path.relative_to(ROOT)}"
 
-    def test_registry_json_retired(self):
-        """registry.json was retired in v0.10."""
-        assert not (ROOT / "registry.json").exists(), (
-            "registry.json must not exist — v0.10 retired the remote "
-            "preset-registry concept"
-        )
-
     def test_fact_categories_use_wrapper(self):
         from kiso.brain.common import _VALID_FACT_CATEGORIES
         assert "wrapper" in _VALID_FACT_CATEGORIES

@@ -151,25 +151,6 @@ class TestLoadPreset:
 # — Registry "presets" section
 # ---------------------------------------------------------------------------
 
-class TestRegistryRetired:
-    """registry.json and cli/_registry.py are retired in v0.10.
-
-    Persona presets now install only by local path or git URL.
-    """
-
-    def test_registry_json_absent(self):
-        reg_path = Path(__file__).resolve().parent.parent / "registry.json"
-        assert not reg_path.exists(), (
-            "registry.json must not exist — v0.10 retired the remote "
-            "preset registry"
-        )
-
-    def test_registry_module_absent(self):
-        import importlib
-        with pytest.raises(ModuleNotFoundError):
-            importlib.import_module("cli._registry")
-
-
 # ---------------------------------------------------------------------------
 # — Install orchestration
 # ---------------------------------------------------------------------------
