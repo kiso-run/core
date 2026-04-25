@@ -30,6 +30,24 @@ _FMT_JSON_OBJECT = "json_object"
 # Cached per model string to avoid retrying the json_schema format on every call.
 _json_object_only_models: set[str] = set()
 
+# Model-ID substrings that proactively use json_object (M1552).
+# These models accept `response_format=json_schema` syntactically but
+# produce output that violates structural rules from the prompt — most
+# visibly nesting MCP `server`/`method` inside `args` instead of as
+# top-level task fields. Verified by the planner MCP-routing benchmark.
+# Listed as substrings so future variants (e.g. dated suffixes) match
+# without explicit registration.
+_JSON_OBJECT_ONLY_SUBSTRINGS: tuple[str, ...] = (
+    "deepseek/deepseek-v4",
+)
+
+
+def _uses_json_object_only(model_name: str) -> bool:
+    """Return True when this model needs json_object instead of json_schema."""
+    if model_name in _json_object_only_models:
+        return True
+    return any(s in model_name for s in _JSON_OBJECT_ONLY_SUBSTRINGS)
+
 # transport retry settings. Backoff set to 0 in tests.
 _TRANSPORT_RETRY_BACKOFF: float = 1.0
 _MAX_TRANSPORT_RETRIES = 2
@@ -398,12 +416,14 @@ async def call_llm(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Downgrade json_schema → json_object for models known to not support it.
+    # Downgrade json_schema → json_object for models known to not support it,
+    # either because they were observed rejecting it (cached) or because their
+    # family is known to mishandle strict schemas (substring rule, M1552).
     effective_format = response_format
     if (
         response_format
         and response_format.get("type") == _FMT_JSON_SCHEMA
-        and model_name in _json_object_only_models
+        and _uses_json_object_only(model_name)
     ):
         effective_format = {"type": _FMT_JSON_OBJECT}
 

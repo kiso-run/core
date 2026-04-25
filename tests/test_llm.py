@@ -1330,6 +1330,126 @@ class TestJsonSchemaFallback:
         assert result == '{"result": true}'
 
 
+# --- Proactive json_object for DeepSeek V4 (M1552) ---
+
+
+class TestProactiveJsonObjectForV4:
+    """V4 models silently mis-handle json_schema strict on the planner.
+
+    M1552 forces `response_format=json_object` proactively for any
+    `deepseek/deepseek-v4-*` model so we don't rely on the reactive
+    400-then-downgrade path (DeepSeek sometimes accepts the schema and
+    produces lower-quality output, never returning 400). Other models
+    keep `json_schema` as before.
+    """
+
+    _SCHEMA = {
+        "type": "json_schema",
+        "json_schema": {"name": "plan", "strict": True,
+                        "schema": {"type": "object"}},
+    }
+
+    @pytest.mark.asyncio
+    async def test_v4_flash_uses_json_object_directly(self):
+        """V4-Flash + json_schema input → outgoing payload is json_object."""
+        from tests.conftest import full_models
+        config = make_config(models=full_models(
+            planner="deepseek/deepseek-v4-flash"))
+        captured: list[dict] = []
+
+        def _capture(*args, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return _ok_stream('{"goal":"x","secrets":null,"tasks":[]}')
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert len(captured) == 1
+        assert captured[0]["response_format"] == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_v4_pro_uses_json_object_directly(self):
+        """V4-Pro behaves the same: proactive json_object."""
+        from tests.conftest import full_models
+        config = make_config(models=full_models(
+            planner="deepseek/deepseek-v4-pro"))
+        captured: list[dict] = []
+
+        def _capture(*args, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return _ok_stream('{"goal":"x","secrets":null,"tasks":[]}')
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert len(captured) == 1
+        assert captured[0]["response_format"] == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_v3_keeps_json_schema(self):
+        """V3.2 honors json_schema correctly — must NOT be downgraded."""
+        from tests.conftest import full_models
+        config = make_config(models=full_models(
+            planner="deepseek/deepseek-v3.2"))
+        captured: list[dict] = []
+
+        def _capture(*args, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return _ok_stream('{"goal":"x","secrets":null,"tasks":[]}')
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert len(captured) == 1
+        assert captured[0]["response_format"]["type"] == "json_schema"
+
+    @pytest.mark.asyncio
+    async def test_gemini_keeps_json_schema(self):
+        """Gemini honors json_schema natively — must NOT be downgraded."""
+        from tests.conftest import full_models
+        config = make_config(models=full_models(
+            planner="google/gemini-2.5-flash"))
+        captured: list[dict] = []
+
+        def _capture(*args, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return _ok_stream('{"goal":"x","secrets":null,"tasks":[]}')
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
+                await call_llm(
+                    config, "planner",
+                    [{"role": "user", "content": "hi"}],
+                    response_format=self._SCHEMA,
+                )
+
+        assert len(captured) == 1
+        assert captured[0]["response_format"]["type"] == "json_schema"
+
+
 # --- Reasoning budget control per role ---
 
 
