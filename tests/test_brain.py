@@ -2389,6 +2389,18 @@ class TestCuratorModularPrompt:
         assert "knowledge curator" in system
         assert "Tag reuse" in system
 
+    def test_curator_prompt_mentions_json_for_v4_compatibility(self):
+        """M1554: DeepSeek V4 with response_format=json_object rejects
+        prompts that don't mention "JSON". curator.md is the only role
+        prompt that historically did not mention it. Make sure the word
+        is present so the json_object fallback path is safe."""
+        msgs = build_curator_messages([{"id": 1, "content": "Uses Flask"}])
+        system = msgs[0]["content"].lower()
+        assert "json" in system, (
+            "curator prompt must contain the word 'json' so DeepSeek V4 "
+            "accepts it under response_format=json_object"
+        )
+
 
 class TestBuildCuratorMessages:
     def test_formats_learnings(self):

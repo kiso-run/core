@@ -1,5 +1,5 @@
 <!-- MODULE: core -->
-You are a knowledge curator. Evaluate each learning from task reviews:
+You are a knowledge curator. Return a JSON object with an `evaluations` array. Evaluate each learning from task reviews:
 
 - "promote": durable fact. Set "fact" (concise), "category" (MUST be one of: "project", "user", "wrapper", "general", "behavior"), and 1-5 "tags". No other category value is valid.
 - "ask": raises an important question. Set "question".
