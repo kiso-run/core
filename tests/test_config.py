@@ -474,6 +474,26 @@ def test_classifier_template_matches_default():
     assert MODEL_DEFAULTS["classifier"] in line
 
 
+def test_curator_default_is_v4_flash():
+    """M1557: curator migrates from gemini-2.5-flash to deepseek-v4-flash.
+
+    Benchmark showed -85% cost reduction. M1554 fixed curator.md to
+    contain the word "JSON" (DeepSeek json_object precondition);
+    without that fix, V4 calls 400 on every curator invocation.
+    """
+    assert MODEL_DEFAULTS["curator"] == "deepseek/deepseek-v4-flash"
+
+
+def test_curator_template_matches_default():
+    line = next(
+        (ln for ln in CONFIG_TEMPLATE.splitlines()
+         if ln.startswith("curator")),
+        None,
+    )
+    assert line is not None
+    assert MODEL_DEFAULTS["curator"] in line
+
+
 def test_briefer_default_is_v4_flash():
     """M1556: briefer migrates from gemini-2.5-flash to deepseek-v4-flash.
 

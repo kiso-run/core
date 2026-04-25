@@ -123,7 +123,7 @@ _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("classifier",   "deepseek/deepseek-v4-flash",   "classifies messages as plan or chat"),
     ("planner",      "deepseek/deepseek-v4-flash",   "interprets requests, creates task plans"),
     ("reviewer",     "google/gemini-2.5-flash-lite", "checks task output, decides replan"),
-    ("curator",      "google/gemini-2.5-flash",      "manages learned knowledge"),
+    ("curator",      "deepseek/deepseek-v4-flash",   "manages learned knowledge"),
     ("worker",       "deepseek/deepseek-v4-flash",   "translates tasks to shell commands"),
     ("summarizer",   "google/gemini-2.5-flash-lite", "compresses conversation history"),
     ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
@@ -189,7 +189,7 @@ briefer     = "deepseek/deepseek-v4-flash"    # context selection (V4-Flash, jso
 classifier  = "deepseek/deepseek-v4-flash"    # message classification (V4-Flash, reasoning-disabled by REASONING_DEFAULTS)
 planner     = "deepseek/deepseek-v4-flash"    # plan generation (V4-Flash, json_object via M1552)
 reviewer    = "google/gemini-2.5-flash-lite"  # output review (json_schema native, high frequency)
-curator     = "google/gemini-2.5-flash"       # knowledge curation (needs reliable json_schema)
+curator     = "deepseek/deepseek-v4-flash"    # knowledge curation (V4-Flash, json_object via M1552)
 worker      = "deepseek/deepseek-v4-flash"    # command translation (V4-Flash)
 summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)

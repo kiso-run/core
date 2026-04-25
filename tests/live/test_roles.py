@@ -338,6 +338,32 @@ class TestCuratorLive:
         assert ev["verdict"] in ("promote", "ask", "discard")
         assert ev["learning_id"] == 1
 
+    async def test_curator_v4_flash_verdict_mix(self, live_config):
+        """M1557: V4-Flash curator handles a mix of promote-worthy and
+        discard-worthy learnings. Verifies the JSON-mode pipeline
+        (M1552 + M1554 prereqs) produces a valid evaluations array
+        with one entry per input learning.
+        """
+        learnings = [
+            {"id": 1, "content": "User prefers tabs over spaces for indentation"},
+            {"id": 2, "content": "Command 'kiso update' succeeded"},
+            {"id": 3, "content": "ApiX runs on port 8080 in production"},
+        ]
+        result = await asyncio.wait_for(
+            run_curator(live_config, learnings),
+            timeout=TIMEOUT,
+        )
+        assert validate_curator(result, expected_count=len(learnings)) == []
+        # learning_ids returned must be a subset of inputs (curator may
+        # consolidate / drop duplicates but not invent ids).
+        seen_ids = {e["learning_id"] for e in result["evaluations"]}
+        assert seen_ids.issubset({1, 2, 3}), (
+            f"curator emitted unknown learning_ids: {seen_ids}"
+        )
+        # Every evaluation has a verdict.
+        for ev in result["evaluations"]:
+            assert ev["verdict"] in ("promote", "ask", "discard")
+
 
 # ---------------------------------------------------------------------------
 # Summarizer
