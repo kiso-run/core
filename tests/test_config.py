@@ -474,6 +474,27 @@ def test_classifier_template_matches_default():
     assert MODEL_DEFAULTS["classifier"] in line
 
 
+def test_briefer_default_is_v4_flash():
+    """M1556: briefer migrates from gemini-2.5-flash to deepseek-v4-flash.
+
+    Benchmark showed -70% cost reduction. M1551 + M1552 prerequisites
+    (reasoning rules + proactive json_object) ensure V4-Flash produces
+    valid briefing JSON; the over-selection guardrail in the live tests
+    catches behavioural regression.
+    """
+    assert MODEL_DEFAULTS["briefer"] == "deepseek/deepseek-v4-flash"
+
+
+def test_briefer_template_matches_default():
+    line = next(
+        (ln for ln in CONFIG_TEMPLATE.splitlines()
+         if ln.startswith("briefer")),
+        None,
+    )
+    assert line is not None
+    assert MODEL_DEFAULTS["briefer"] in line
+
+
 def test_planner_worker_messenger_default_is_v4_flash():
     """M1555: planner/worker/messenger migrated from V3.2 to V4-Flash.
 

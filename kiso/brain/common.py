@@ -1561,6 +1561,12 @@ def build_briefer_messages(
     return _build_messages_from_sections(system_prompt, parts)
 
 
+_BRIEFING_ARRAY_FIELDS: tuple[str, ...] = (
+    "modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts",
+    "output_indices", "relevant_tags", "relevant_entities",
+)
+
+
 def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str]:
     """Validate briefing semantics. Returns list of error strings.
 
@@ -1568,7 +1574,16 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
     ``BRIEFER_MODULES``.  Used for simple consumers (messenger, worker)
     that never use modules — avoids wasted retries when the model
     hallucinates module names it was never shown.
+
+    Side effect: array-typed fields explicitly set to ``None`` are
+    coerced to empty lists in place. Some reasoning-native models
+    (notably DeepSeek V4-Flash) emit ``null`` for "unused" array
+    fields instead of an empty list; semantically equivalent, so we
+    accept and normalize rather than burn retries.
     """
+    for field in _BRIEFING_ARRAY_FIELDS:
+        if briefing.get(field) is None:
+            briefing[field] = []
     errors: list[str] = []
     if not isinstance(briefing.get("modules"), list):
         errors.append("modules must be an array")

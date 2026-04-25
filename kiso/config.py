@@ -119,7 +119,7 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
 # MODEL_DEFAULTS / MODEL_DESCRIPTIONS. Description is shown during
 # interactive install.
 _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
-    ("briefer",      "google/gemini-2.5-flash",      "selects relevant context for each LLM role"),
+    ("briefer",      "deepseek/deepseek-v4-flash",   "selects relevant context for each LLM role"),
     ("classifier",   "deepseek/deepseek-v4-flash",   "classifies messages as plan or chat"),
     ("planner",      "deepseek/deepseek-v4-flash",   "interprets requests, creates task plans"),
     ("reviewer",     "google/gemini-2.5-flash-lite", "checks task output, decides replan"),
@@ -185,7 +185,7 @@ role = "admin"
 # Reasoning: the classifier hard-disables reasoning (its 10-token cap would
 # otherwise be eaten by reasoning-native models like DeepSeek V4); other roles
 # inherit the provider default. To override, edit REASONING_DEFAULTS in config.py.
-briefer     = "google/gemini-2.5-flash"       # context selection (json_schema native)
+briefer     = "deepseek/deepseek-v4-flash"    # context selection (V4-Flash, json_object via M1552)
 classifier  = "deepseek/deepseek-v4-flash"    # message classification (V4-Flash, reasoning-disabled by REASONING_DEFAULTS)
 planner     = "deepseek/deepseek-v4-flash"    # plan generation (V4-Flash, json_object via M1552)
 reviewer    = "google/gemini-2.5-flash-lite"  # output review (json_schema native, high frequency)

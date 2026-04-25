@@ -48,48 +48,6 @@ TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
 
 class TestPlannerLive:
-    async def test_investigation_produces_replan_task(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Asks the planner to investigate the plugin registry before acting.
-
-        Why: Validates the planner creates a discovery plan (exec + replan) when investigation is needed.
-        Expects: Valid plan, last task is 'replan', at least one 'exec' task precedes it.
-        """
-        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "Check the plugin registry to find what wrappers are available, "
-                    "then install one that can do web search. "
-                    "You must investigate the registry first before deciding.",
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert validate_plan(plan) == []
-        types = [t["type"] for t in plan["tasks"]]
-        # accept replan or msg as final task — the planner may choose to
-        # investigate and report directly (exec + msg) instead of replanning.
-        # Both are valid strategies for a discovery query.
-        last_type = plan["tasks"][-1]["type"]
-        assert last_type in ("replan", "msg"), (
-            f"Expected last task to be 'replan' or 'msg', got types: {types}"
-        )
-        # Should have at least one exec task (the investigation)
-        assert "exec" in types, (
-            f"Expected at least one exec task for investigation, "
-            f"got types: {types}"
-        )
-        # Last task should have a detail
-        last_task = plan["tasks"][-1]
-        assert last_task["detail"], "Last task should have a detail"
-
     async def test_exec_request_produces_exec_and_msg(
         self, live_config, seeded_db, live_session, tmp_path,
     ):
@@ -102,7 +60,6 @@ class TestPlannerLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
         ):
             plan = await asyncio.wait_for(
                 run_planner(
@@ -494,7 +451,6 @@ class TestPlannerSystemPackageLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.get_system_env", return_value={
                 "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
                        "distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
@@ -563,7 +519,6 @@ class TestPlannerSystemPackageLive:
 
         with (
             patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
             patch("kiso.brain.get_system_env", return_value={
                 "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
                        "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
@@ -612,68 +567,6 @@ class TestPlannerSystemPackageLive:
             f"Python lib should use uv, not apt — got: {haystack}"
         )
 
-    async def test_kiso_tool_uses_needs_install(
-        self, live_config, seeded_db, live_session, tmp_path,
-    ):
-        """What: Asks 'installa browser' — a known kiso wrapper (in registry hints).
-
-        Why: Validates the planner proposes kiso wrapper install, not apt-get.
-        Expects: needs_install or msg asking to install, no apt-get exec.
-        """
-        await save_message(seeded_db, live_session, "testadmin", "user", "hi")
-
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.discover_wrappers", return_value=[]),
-            patch("kiso.brain.get_registry_wrappers", return_value=(
-                "Available wrappers (not installed):\n"
-                "- websearch — Web search\n"
-                "- aider — Code editing\n"
-                "- browser — Browser automation"
-            )),
-            patch("kiso.brain.get_system_env", return_value={
-                "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
-                       "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
-                "user_info": {"user": "root", "is_root": True, "has_sudo": False},
-                "shell": "/bin/sh",
-                "exec_cwd": str(tmp_path / "sessions"),
-                "exec_env": "PATH",
-                "max_output_size": 1_048_576,
-                "available_binaries": ["git", "python3", "curl", "apt-get"],
-                "missing_binaries": [],
-                "connectors": [],
-                "max_plan_tasks": 20,
-                "max_replan_depth": 3,
-                "sys_bin_path": str(tmp_path / "sys" / "bin"),
-                "reference_docs_path": str(tmp_path / "reference"),
-                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
-                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
-            }),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "installa browser",
-                ),
-                timeout=self._TIMEOUT,
-            )
-
-        assert validate_plan(plan) == []
-        details = " ".join(t.get("detail", "") for t in plan["tasks"]).lower()
-        # Should NOT use apt-get for a kiso wrapper
-        assert "apt-get" not in details and "apt install" not in details, (
-            f"Should not apt-get a kiso wrapper, got details: {details}"
-        )
-        # Should either set needs_install or have a msg asking about installation
-        has_needs_install = plan.get("needs_install") is not None
-        has_install_msg = any(
-            t["type"] == "msg" and ("install" in (t.get("detail") or "").lower())
-            for t in plan["tasks"]
-        )
-        assert has_needs_install or has_install_msg, (
-            f"Expected needs_install or install msg for kiso wrapper, "
-            f"got needs_install={plan.get('needs_install')}, types={[t['type'] for t in plan['tasks']]}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -829,9 +722,6 @@ class TestPlannerV4FlashLive:
     """V4-Flash planner produces validated plans on representative cases.
 
     Exercises the M1551 + M1552 + planner.md addendum stack end-to-end.
-    Does NOT rely on the legacy `kiso.brain.discover_wrappers` mock that
-    the older `TestPlannerLive` class still references (Phase 4 M1504
-    retired wrappers; that test class is stale tech debt).
     """
 
     async def test_simple_exec_request(
@@ -882,3 +772,103 @@ class TestPlannerV4FlashLive:
         )
         # The final task is always msg.
         assert plan["tasks"][-1]["type"] == "msg"
+
+
+# ---------------------------------------------------------------------------
+# M1556 — Briefer on DeepSeek V4-Flash (selection discipline)
+# ---------------------------------------------------------------------------
+
+
+class TestBrieferV4FlashLive:
+    """V4-Flash briefer keeps the briefer prompt's "AGGRESSIVE filtering,
+    default to EXCLUDING" rule. Capability-fit risk: a more capable model
+    can over-select skills/modules that aren't needed. We guardrail
+    against that.
+    """
+
+    async def test_chat_request_aggressive_filtering(self, live_config):
+        """A pure chat request should trigger no skills, no modules,
+        empty mcp_methods. Briefer prompt: "Fast-path (all empty):
+        greetings, small talk, simple knowledge."
+        """
+        from kiso.brain import run_briefer
+        context_pool = {
+            "available_modules": [
+                "plugin_install", "mcp_recovery", "web", "investigate"
+            ],
+            "available_skills": [
+                {"name": "python-debug",
+                 "description": "Debug Python tracebacks",
+                 "when_to_use": "user pastes a Python traceback"},
+                {"name": "git-triage",
+                 "description": "Diagnose git errors",
+                 "when_to_use": "git command fails"},
+            ],
+            "available_mcp_methods": [
+                {"name": "kiso-search:web_search",
+                 "description": "Web search via Sonar"},
+            ],
+            "available_entities": [],
+            "available_tags": [],
+            "facts": [],
+            "previous_outputs": [],
+        }
+        result = await asyncio.wait_for(
+            run_briefer(live_config, "planner", "ciao come stai?",
+                        context_pool),
+            timeout=TIMEOUT,
+        )
+        # Schema fields must all be present.
+        for field in (
+            "modules", "skills", "mcp_methods", "context",
+            "relevant_tags", "relevant_entities",
+        ):
+            assert field in result, f"missing briefer field {field!r}"
+        # Aggressive filtering for a chat: every selection list should
+        # be empty or near-empty. Allow at most 1 skill / module out of
+        # noise tolerance — V4-Flash should not pull in python-debug or
+        # git-triage for "ciao".
+        assert len(result["skills"]) == 0, (
+            f"chat request pulled in skills: {result['skills']}"
+        )
+        assert len(result["modules"]) <= 1, (
+            f"chat request pulled in modules: {result['modules']}"
+        )
+        assert len(result["mcp_methods"]) == 0, (
+            f"chat request pulled in MCP methods: {result['mcp_methods']}"
+        )
+
+    async def test_excludes_irrelevant_skills(self, live_config):
+        """Negative-selection guardrail: a request that doesn't match
+        ANY skill's `when_to_use` must produce an empty `skills` list.
+        Briefer prompt rule: "Never include a skill just in case."
+        """
+        from kiso.brain import run_briefer
+        context_pool = {
+            "available_modules": [
+                "plugin_install", "mcp_recovery", "web", "investigate"
+            ],
+            "available_skills": [
+                {"name": "python-debug",
+                 "description": "Debug Python tracebacks",
+                 "when_to_use": "user pastes a Python traceback"},
+                {"name": "git-triage",
+                 "description": "Diagnose git errors",
+                 "when_to_use": "git command fails"},
+            ],
+            "available_mcp_methods": [],
+            "available_entities": [],
+            "available_tags": [],
+            "facts": [],
+            "previous_outputs": [],
+        }
+        # A weather question matches no skill's hint.
+        result = await asyncio.wait_for(
+            run_briefer(live_config, "planner",
+                        "che tempo fa oggi a roma?", context_pool),
+            timeout=TIMEOUT,
+        )
+        assert result["skills"] == [], (
+            f"V4-Flash briefer over-selected skills for an unrelated "
+            f"weather question: {result['skills']}"
+        )

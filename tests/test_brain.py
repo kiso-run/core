@@ -5572,6 +5572,36 @@ class TestValidateBriefing:
         }
         assert validate_briefing(briefing) == []
 
+    def test_null_array_fields_coerced_to_empty(self):
+        """M1556: V4-Flash sometimes emits `null` for unused array
+        fields. Treat that as semantically equivalent to `[]` instead
+        of raising "must be an array" and forcing a retry."""
+        briefing = {
+            "modules": None,
+            "skills": None,
+            "mcp_methods": None,
+            "mcp_resources": None,
+            "mcp_prompts": None,
+            "context": "",
+            "output_indices": None,
+            "relevant_tags": None,
+            "relevant_entities": None,
+        }
+        assert validate_briefing(briefing) == [], (
+            f"null arrays must be coerced to empty list — "
+            f"got errors: {validate_briefing(briefing)}"
+        )
+        # After validation, the briefing should have actual lists in place,
+        # so downstream consumers can iterate without checking for None.
+        assert briefing["modules"] == []
+        assert briefing["skills"] == []
+        assert briefing["mcp_methods"] == []
+        assert briefing["mcp_resources"] == []
+        assert briefing["mcp_prompts"] == []
+        assert briefing["output_indices"] == []
+        assert briefing["relevant_tags"] == []
+        assert briefing["relevant_entities"] == []
+
     def test_unknown_module(self):
         briefing = {
             "modules": ["web", "nonexistent_module"],
@@ -5637,17 +5667,29 @@ class TestValidateBriefing:
         errors = validate_briefing(briefing)
         assert any("relevant_tags" in e for e in errors)
 
-    def test_missing_relevant_tags(self):
-        """missing relevant_tags is an error."""
+    def test_missing_relevant_tags_coerced_to_empty(self):
+        """M1556: missing array fields coerced to empty list, no error.
+
+        Previous strict behaviour: missing field = error. Updated to
+        permissive: missing/null array field is semantically equivalent
+        to "no selection" and shouldn't burn validation retries on
+        reasoning-native models that occasionally omit fields they
+        consider unused.
+        """
         briefing = {
             "modules": [],
             "skills": [],
             "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
             "output_indices": [],
+            # relevant_tags + relevant_entities intentionally absent
         }
         errors = validate_briefing(briefing)
-        assert any("relevant_tags" in e for e in errors)
+        assert errors == [], (
+            f"missing array fields must be coerced silently — got: {errors}"
+        )
+        assert briefing["relevant_tags"] == []
+        assert briefing["relevant_entities"] == []
 
 
 class TestRunBriefer:
