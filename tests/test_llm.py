@@ -1356,6 +1356,35 @@ class TestReasoningDefaults:
         assert "reasoning" not in captured_payload[0]
 
     @pytest.mark.asyncio
+    async def test_classifier_reasoning_disabled(self):
+        """Classifier sends reasoning={enabled: False}.
+
+        M1551: with `max_tokens=10` for the classifier, reasoning-native
+        models like DeepSeek V4 would otherwise spend the full budget on
+        thinking tokens and return empty content. Disabling reasoning is
+        a budget-protection rule, applied universally regardless of the
+        configured model — non-reasoning models silently ignore it.
+        """
+        config = make_config()
+        captured_payload: list[dict] = []
+
+        def _capture(*args, **kwargs):
+            captured_payload.append(kwargs.get("json", {}))
+            return _ok_stream("plan:English")
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}):
+            with patch("kiso.llm.httpx.AsyncClient") as mock_cls:
+                mock_client = _setup_mock(mock_cls, _ok_stream())
+                mock_client.stream.side_effect = _capture
+                await call_llm(
+                    config, "classifier",
+                    [{"role": "user", "content": "ciao"}],
+                )
+
+        assert len(captured_payload) == 1
+        assert captured_payload[0].get("reasoning") == {"enabled": False}
+
+    @pytest.mark.asyncio
     async def test_planner_no_reasoning(self):
         """Planner role does NOT send reasoning config (not in REASONING_DEFAULTS)."""
         config = make_config()
@@ -1386,6 +1415,9 @@ def test_reasoning_defaults_import():
     assert isinstance(REASONING_DEFAULTS, dict)
     # messenger removed from REASONING_DEFAULTS (deepseek doesn't need it)
     assert "messenger" not in REASONING_DEFAULTS
+    # M1551: classifier disables reasoning so its max_tokens=10 budget reaches
+    # content tokens on reasoning-native models like DeepSeek V4.
+    assert REASONING_DEFAULTS.get("classifier") == {"enabled": False}
 
 
 # --- SSE stream parsing ---

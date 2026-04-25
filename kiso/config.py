@@ -146,7 +146,14 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
 # Per-role reasoning config sent to OpenRouter.  Roles not listed here
 # (or mapped to None) get no reasoning parameter — the provider's default applies.
 # Valid effort levels: "minimal", "low", "medium", "high".
-REASONING_DEFAULTS: dict[str, dict | None] = {}
+REASONING_DEFAULTS: dict[str, dict | None] = {
+    # The classifier runs with max_tokens=10. Reasoning-native models
+    # (DeepSeek V4, etc.) would otherwise spend the entire budget on
+    # thinking tokens and return empty content. Disable explicitly so
+    # the cap reaches the actual category:Language token. Non-reasoning
+    # models silently ignore this flag.
+    "classifier": {"enabled": False},
+}
 
 # Only the classifier needs a max_tokens cap (single-word response).
 # All other roles rely on the model's native limit — removing artificial
@@ -175,6 +182,9 @@ role = "admin"
 [models]
 # Format: "provider/model-name" — all route through your gateway (e.g., OpenRouter)
 # See docs/model-selection.md for rationale and alternatives
+# Reasoning: the classifier hard-disables reasoning (its 10-token cap would
+# otherwise be eaten by reasoning-native models like DeepSeek V4); other roles
+# inherit the provider default. To override, edit REASONING_DEFAULTS in config.py.
 briefer     = "google/gemini-2.5-flash"       # context selection (json_schema native)
 classifier  = "google/gemini-2.5-flash"       # message classification (fast, simple)
 planner     = "deepseek/deepseek-v3.2"        # plan generation (fast, structured output)
