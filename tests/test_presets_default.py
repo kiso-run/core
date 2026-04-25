@@ -130,7 +130,7 @@ class TestTrustRule:
                 "command": "uvx",
                 "args": [
                     "--from",
-                    "git+https://github.com/kiso-run/aider-mcp@v0.1.0",
+                    "git+https://github.com/kiso-run/aider-mcp@v0.2.0",
                     "kiso-aider-mcp",
                 ],
             },
@@ -163,7 +163,7 @@ class TestSingleKeyRule:
                 "command": "uvx",
                 "args": [
                     "--from",
-                    "git+https://github.com/kiso-run/aider-mcp@v0.1.0",
+                    "git+https://github.com/kiso-run/aider-mcp@v0.2.0",
                     "kiso-aider-mcp",
                 ],
                 "env": {bad_var: f"${{env:{bad_var}}}"},

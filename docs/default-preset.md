@@ -126,7 +126,7 @@ editing `config.toml`:
 
 ```sh
 # Tier 2
-uvx --from git+https://github.com/kiso-run/aider-mcp@v0.1.0 kiso-aider-mcp
+uvx --from git+https://github.com/kiso-run/aider-mcp@v0.2.0 kiso-aider-mcp
 
 # Tier 1
 npx -y @modelcontextprotocol/server-filesystem@2026.1.14 ~/

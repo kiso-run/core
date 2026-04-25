@@ -31,7 +31,7 @@ Install an MCP server from a concrete URL:
 
 ```
 kiso mcp install --from-url \
-    uvx --from git+https://github.com/kiso-run/aider-mcp@v0.1.0 kiso-aider-mcp
+    uvx --from git+https://github.com/kiso-run/aider-mcp@v0.2.0 kiso-aider-mcp
 ```
 
 Or bring your own from the community — pulsemcp.com, mcp.so,
