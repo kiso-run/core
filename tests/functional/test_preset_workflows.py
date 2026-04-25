@@ -12,10 +12,7 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import LLM_MULTI_PLAN_TIMEOUT
-from tests.functional.conftest import (
-    FunctionalResult,
-    assert_no_failure_language,
-)
+from tests.functional.conftest import assert_no_failure_language
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
@@ -45,11 +42,13 @@ class TestF27BrowseAndDescribe:
         # Don't assert_italian — response may contain quoted English web content.
         # Language compliance is tested by F12 (messenger quality).
         assert_no_failure_language(result.last_plan_msg_output)
-        wrapper_names = [
-            FunctionalResult.task_wrapper_name(t) for t in result.tasks
-            if t.get("type") == "wrapper"
+        servers = [
+            t.get("server") for t in result.tasks
+            if t.get("type") == "mcp" and t.get("server")
         ]
-        assert "browser" in wrapper_names, f"Browser not used: {wrapper_names}"
+        assert any("browser" in (s or "").lower() for s in servers), (
+            f"No browser MCP used: servers={servers}"
+        )
 
         output = result.last_plan_msg_output.lower()
         assert any(w in output for w in (
@@ -80,12 +79,14 @@ class TestF28ScreenshotOCR:
             f"Plan failed: {[p.get('status') for p in result.plans]}"
         )
 
-        # Should have used both browser and ocr wrappers
-        wrapper_names = [
-            FunctionalResult.task_wrapper_name(t) for t in result.tasks
-            if t.get("type") == "wrapper"
+        # Should have used both a browser MCP and kiso-ocr.
+        servers = [
+            t.get("server") for t in result.tasks
+            if t.get("type") == "mcp" and t.get("server")
         ]
-        assert "browser" in wrapper_names, f"Browser not used: {wrapper_names}"
+        assert any("browser" in (s or "").lower() for s in servers), (
+            f"No browser MCP used: servers={servers}"
+        )
         assert result.has_published_file("*.png"), (
             f"Expected published screenshot artifact, got: {result.pub_files}"
         )
@@ -133,14 +134,13 @@ class TestF29AiderWriteCode:
             f"Plan failed: {[p.get('status') for p in result.plans]}"
         )
 
-        # Aider should have been used as a wrapper task
+        # Aider should have been called via MCP (kiso-aider:aider_codegen).
         aider_tasks = [
             t for t in result.tasks
-            if t.get("type") == "wrapper"
-            and FunctionalResult.task_wrapper_name(t) == "aider"
+            if t.get("type") == "mcp" and t.get("server") == "kiso-aider"
         ]
         assert aider_tasks, (
-            f"Expected aider wrapper task, got types: {result.task_types()}"
+            f"Expected kiso-aider MCP task, got types: {result.task_types()}"
         )
         task_blob = "\n".join(
             (t.get("detail") or "") + "\n" + (t.get("command") or "")
@@ -175,12 +175,16 @@ class TestF30FullPipeline:
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r1.success, f"Plan 1 failed: {r1.task_types()}"
-        r1_wrapper_names = [
-            FunctionalResult.task_wrapper_name(t) for t in r1.tasks
-            if t.get("type") == "wrapper"
+        r1_servers = [
+            t.get("server") for t in r1.tasks
+            if t.get("type") == "mcp" and t.get("server")
         ]
-        assert "browser" in r1_wrapper_names, f"Plan 1 missing browser wrapper: {r1_wrapper_names}"
-        assert "ocr" in r1_wrapper_names, f"Plan 1 missing ocr wrapper: {r1_wrapper_names}"
+        assert any("browser" in (s or "").lower() for s in r1_servers), (
+            f"Plan 1 missing browser MCP: servers={r1_servers}"
+        )
+        assert "kiso-ocr" in r1_servers, (
+            f"Plan 1 missing kiso-ocr MCP: servers={r1_servers}"
+        )
 
         # Plan 2: write script + execute
         r2 = await run_message(
@@ -190,11 +194,13 @@ class TestF30FullPipeline:
             timeout=LLM_MULTI_PLAN_TIMEOUT,
         )
         assert r2.success, f"Plan 2 failed: {r2.task_types()}"
-        r2_wrapper_names = [
-            FunctionalResult.task_wrapper_name(t) for t in r2.tasks
-            if t.get("type") == "wrapper"
+        r2_servers = [
+            t.get("server") for t in r2.tasks
+            if t.get("type") == "mcp" and t.get("server")
         ]
-        assert "aider" in r2_wrapper_names, f"Plan 2 missing aider wrapper: {r2_wrapper_names}"
+        assert "kiso-aider" in r2_servers, (
+            f"Plan 2 missing kiso-aider MCP: servers={r2_servers}"
+        )
         assert "exec" in r2.task_types(), f"Plan 2 missing exec task: {r2.task_types()}"
 
         output = r2.last_plan_msg_output.lower()

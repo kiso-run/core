@@ -38,15 +38,21 @@ pytestmark = pytest.mark.functional
 # ---------------------------------------------------------------------------
 
 
-def _assert_tool_used(result: FunctionalResult, wrapper_name: str) -> None:
-    """Assert that *wrapper_name* appears as a wrapper-type task in *result*."""
+def _assert_tool_used(result: FunctionalResult, server_name: str) -> None:
+    """Assert that *server_name* appears as the target of an MCP task.
+
+    *server_name* is matched both as the bare name (``aider``) and as
+    the canonical Kiso prefix (``kiso-aider``) so callers can pass
+    either form.
+    """
+    expected = {server_name, f"kiso-{server_name}"}
     tasks = [
         t for t in result.tasks
-        if t.get("type") == "wrapper"
-        and FunctionalResult.task_wrapper_name(t) == wrapper_name
+        if t.get("type") == "mcp" and t.get("server") in expected
     ]
     assert tasks, (
-        f"Expected {wrapper_name} wrapper task, got types: {result.task_types()}"
+        f"Expected an MCP call to {server_name!r}, got types: "
+        f"{result.task_types()}"
     )
 
 
@@ -166,13 +172,15 @@ class TestF39ToolInstallAndUse:
         )
         assert r3.success, f"Stage 3 failed: {r3.task_types()}"
 
-        # Browser wrapper must have been used
-        wrapper_names = [
-            FunctionalResult.task_wrapper_name(t) for t in r3.tasks
-            if t.get("type") == "wrapper"
+        # Browser MCP must have been used (either kiso-browser if added to
+        # the preset, or a third-party browser MCP installed by the user).
+        browser_calls = [
+            t for t in r3.tasks
+            if t.get("type") == "mcp"
+            and "browser" in (t.get("server") or "").lower()
         ]
-        assert "browser" in wrapper_names, (
-            f"Browser not used in stage 3. Wrapper names: {wrapper_names}"
+        assert browser_calls, (
+            f"No browser MCP call in stage 3. Task types: {r3.task_types()}"
         )
 
         # Keywords aligned with F1b (test_browser.py:139-141)
@@ -213,7 +221,13 @@ class TestF40SearchCodeExec:
         )
 
         types = result.task_types()
-        assert "search" in types, f"No search task in pipeline: {types}"
+        search_calls = [
+            t for t in result.tasks
+            if t.get("type") == "mcp" and t.get("server") == "kiso-search"
+        ]
+        assert search_calls, (
+            f"No kiso-search MCP call in pipeline: types={types}"
+        )
         assert "exec" in types, f"No exec task in pipeline: {types}"
 
         # Output should contain a density number (population / 2194)

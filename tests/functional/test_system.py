@@ -120,21 +120,21 @@ class TestF4GitAiderPush:
             f"Expected git workflow to target docs/testing.md, got: {task_blob[:500]}"
         )
 
-        # Check that aider wrapper was used (preferred) or exec editing was done
-        wrapper_names = [
-            t.get("wrapper") for t in result.tool_tasks()
-            if t.get("wrapper")
+        # Check that kiso-aider MCP was used (preferred) or exec editing was done.
+        mcp_servers = [
+            t.get("server") for t in result.tasks
+            if t.get("type") == "mcp" and t.get("server")
         ]
         exec_outputs = "\n".join(
             t.get("output") or "" for t in result.tasks
             if t.get("type") == "exec"
         ).lower()
-        aider_used = "aider" in wrapper_names
+        aider_used = "kiso-aider" in mcp_servers
         editing_done = any(
             kw in exec_outputs
             for kw in ("sed", "echo", "tee", "testing.md", "timestamp", "date")
         )
         assert aider_used or editing_done, (
-            f"Neither aider wrapper nor direct editing detected. "
-            f"Wrappers used: {wrapper_names}, exec output excerpt: {exec_outputs[:300]}"
+            f"Neither kiso-aider MCP nor direct editing detected. "
+            f"MCP servers used: {mcp_servers}, exec output excerpt: {exec_outputs[:300]}"
         )

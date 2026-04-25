@@ -101,12 +101,15 @@ class TestF36CrossPlanFileHandoff:
                 f"Download task created (file should be local): {detail[:200]}"
             )
 
-        # OCR wrapper task should have correct path with pub/ prefix
+        # OCR call should target kiso-ocr via MCP (Phase 4 retired wrappers).
         ocr_tasks = [
             t for t in last_plan_tasks
-            if t.get("type") == "wrapper" and t.get("wrapper") == "ocr"
+            if t.get("type") == "mcp" and t.get("server") == "kiso-ocr"
         ]
-        assert ocr_tasks, f"No OCR wrapper task found. Types: {[t.get('type') for t in last_plan_tasks]}"
+        assert ocr_tasks, (
+            f"No kiso-ocr MCP task found. Types: "
+            f"{[t.get('type') for t in last_plan_tasks]}"
+        )
 
         # OCR should produce non-empty text output
         ocr_output = ocr_tasks[0].get("output", "") or ""

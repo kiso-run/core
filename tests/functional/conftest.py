@@ -332,15 +332,6 @@ class FunctionalResult:
         """Return list of task types in execution order."""
         return [t.get("type", "?") for t in self.tasks]
 
-    def tool_tasks(self) -> list[dict]:
-        """Return only wrapper-type tasks."""
-        return [t for t in self.tasks if t.get("type") == "wrapper"]
-
-    @staticmethod
-    def task_wrapper_name(task: dict) -> str:
-        """Return the wrapper name for a task (handles DB column `wrapper`)."""
-        return task.get("wrapper") or task.get("wrapper") or ""
-
 
 # ---------------------------------------------------------------------------
 # Config fixture (session-scoped — same LLM config for all functional tests)

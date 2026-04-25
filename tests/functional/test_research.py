@@ -44,7 +44,16 @@ class TestF7ResearchAndPublish:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
         types = result.task_types()
-        assert "search" in types, f"Expected search task in pipeline: {types}"
+        # Search now flows through kiso-search MCP (Phase 4 retired the
+        # built-in `type=search` task type).
+        search_calls = [
+            t for t in result.tasks
+            if t.get("type") == "mcp" and t.get("server") == "kiso-search"
+        ]
+        assert search_calls, (
+            f"Expected an MCP call to kiso-search in the pipeline. "
+            f"Task types: {types}"
+        )
         assert "exec" in types, f"Expected exec task to create markdown artifact: {types}"
 
         # Response should not contain failure language (check last plan only —

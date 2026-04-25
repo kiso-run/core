@@ -65,17 +65,20 @@ class TestF17FullPipeline:
         )
         assert r2.success, f"Plan 2 (OCR) failed: {r2.task_types()}"
 
-        # Verify OCR found example.com content (filter to OCR wrapper tasks only,
-        # not msg tasks that might mention "example" without actual extraction)
+        # Verify OCR found example.com content. Filter to MCP calls
+        # against kiso-ocr in the last plan, not msg tasks that might
+        # mention "example" without actually OCR'ing.
         last_plan_id = r2.plans[-1]["id"]
         ocr_tool_outputs = [
             t.get("output", "") or ""
             for t in r2.tasks
-            if t.get("type") == "wrapper" and t.get("plan_id") == last_plan_id
+            if t.get("type") == "mcp"
+            and t.get("server") == "kiso-ocr"
+            and t.get("plan_id") == last_plan_id
             and t.get("status") == "done"
         ]
         assert ocr_tool_outputs, (
-            f"No OCR wrapper tasks in last plan. Types: {r2.task_types()}"
+            f"No kiso-ocr MCP tasks in last plan. Types: {r2.task_types()}"
         )
         ocr_output = " ".join(ocr_tool_outputs).lower()
         assert "python" in ocr_output, (
@@ -91,14 +94,14 @@ class TestF17FullPipeline:
         )
         assert r3.success, f"Plan 3 (aider) failed: {r3.task_types()}"
 
-        # Verify aider was used (wrapper task, not exec)
+        # Verify aider was used via MCP (kiso-aider:aider_codegen),
+        # not exec.
         aider_tasks = [
             t for t in r3.tasks
-            if t.get("type") == "wrapper"
-            and (t.get("wrapper") == "aider" or t.get("wrapper") == "aider")
+            if t.get("type") == "mcp" and t.get("server") == "kiso-aider"
         ]
         assert aider_tasks, (
-            f"Expected aider wrapper task, got types: {r3.task_types()}"
+            f"Expected kiso-aider MCP task, got types: {r3.task_types()}"
         )
         last_plan_id = r3.plans[-1]["id"]
         last_plan_task_types = [
