@@ -10,29 +10,12 @@
         "${env:HOME}"
       ]
     },
-    "memory": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-memory@2026.1.26"
-      ]
-    },
     "browser": {
       "command": "npx",
       "args": [
         "-y",
         "@playwright/mcp@0.0.70"
       ]
-    },
-    "github": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-github@2025.4.8"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}"
-      }
     },
     "aider": {
       "command": "uvx",

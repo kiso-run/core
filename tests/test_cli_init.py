@@ -90,7 +90,9 @@ class TestInitConfigParsesWithKisoRuntime:
 
         parsed = tomllib.loads(isolated_kiso_dir.read_text())
         servers = parse_mcp_section(parsed.get("mcp"))
-        assert len(servers) == 9
+        # M1563 dropped `github` (specialised, opt-in) and `memory`
+        # (redundant with Kiso's facts/learnings/entities pipeline).
+        assert len(servers) == 7
         assert servers["filesystem"].command == "npx"
         assert servers["aider"].env["OPENROUTER_API_KEY"] == "sk-test"
 

@@ -1,32 +1,49 @@
 # Default preset
 
-`kiso init --preset default` writes a `config.toml` with nine MCP
+`kiso init --preset default` writes a `config.toml` with seven MCP
 servers already wired up. A fresh install with only
 `OPENROUTER_API_KEY` in the environment is fully functional —
-every capability on the Claude Code / openclaw parity checklist
-is covered.
+every general-purpose capability on the Claude Code / openclaw
+parity checklist is covered.
 
 The preset file lives in the repo at
 [`kiso/presets/default.mcp.json`](../kiso/presets/default.mcp.json)
 and is subject to two CI-enforced rules (see
 [`docs/standards.md`](standards.md)).
 
-## The nine servers
+## The seven servers
 
 | Name          | Tier | Command | Upstream                                      | Key                       |
 |---------------|------|---------|-----------------------------------------------|---------------------------|
 | `filesystem`  | 1    | `npx`   | `@modelcontextprotocol/server-filesystem`     | (none)                    |
-| `memory`      | 1    | `npx`   | `@modelcontextprotocol/server-memory`         | (none)                    |
 | `browser`     | 1    | `npx`   | `@playwright/mcp` (Microsoft)                 | (none)                    |
-| `github`      | 1    | `npx`   | `@modelcontextprotocol/server-github`         | `GITHUB_TOKEN` (optional) |
 | `aider`       | 2    | `uvx`   | `kiso-run/aider-mcp`                          | `OPENROUTER_API_KEY`      |
 | `search`      | 2    | `uvx`   | `kiso-run/search-mcp` (Perplexity Sonar)      | `OPENROUTER_API_KEY`      |
 | `transcriber` | 2    | `uvx`   | `kiso-run/transcriber-mcp` (Gemini)           | `OPENROUTER_API_KEY`      |
 | `ocr`         | 2    | `uvx`   | `kiso-run/ocr-mcp` (Gemini)                   | `OPENROUTER_API_KEY`      |
 | `docreader`   | 2    | `uvx`   | `kiso-run/docreader-mcp` (pure Python)        | (none)                    |
 
-Tier 1 = Anthropic / Microsoft / GitHub upstream. Tier 2 =
-`kiso-run` upstream, same maintenance cadence as `kiso/core`.
+Tier 1 = Anthropic / Microsoft upstream. Tier 2 = `kiso-run`
+upstream, same maintenance cadence as `kiso/core`.
+
+## Servers explicitly NOT in the default
+
+- **`memory`** (`@modelcontextprotocol/server-memory`) — would
+  duplicate Kiso's own knowledge pipeline (`facts` table with
+  FTS5 search, `learnings` queue, curator role with
+  promote/ask/discard verdicts, decay + archival, scoping per
+  session/project/user, behaviour injection). The npm memory MCP
+  is a flat JSONL graph with no scoping, no curation, no decay,
+  no FTS — strictly less than what Kiso already does. Two stores
+  in parallel would be worse than either alone (the planner
+  would not know which one to write to). Install on demand only
+  if you really need an external knowledge graph that other MCP
+  clients can also read.
+- **`github`** — specialised, opt-in. PR/issue/commit on a
+  specific repo is not a general-purpose capability and the
+  trust gate around `GITHUB_TOKEN` is non-trivial. Install
+  on demand:
+  `kiso mcp install --from-url npm:@modelcontextprotocol/server-github`.
 
 ## Per-server details
 
@@ -40,25 +57,11 @@ For per-session workspace isolation, replace `${env:HOME}` with
 per session, each rooted in its own workspace directory. See
 `docs/mcp.md` under *Per-session client pool*.
 
-### `memory`
-
-Anthropic's knowledge-graph MCP server. Persistent memory store
-for long-running sessions; the planner can write to it and recall
-across conversations.
-
 ### `browser`
 
 `@playwright/mcp`, Microsoft-maintained. Replaces the retired
 `browser` wrapper. Handles headless Playwright-backed page
 navigation, screenshot capture, form interaction.
-
-### `github`
-
-GitHub repo / PR / issue operations via
-`@modelcontextprotocol/server-github`. The preset injects
-`GITHUB_TOKEN` into the server env; if the env var isn't set,
-authenticated operations fail at call time (the server still
-starts).
 
 ### `aider`
 
@@ -96,7 +99,6 @@ via `pypdf` / `python-docx` / `openpyxl`. No key required. Tools:
 | Variable             | Required | Unlocks                                      |
 |----------------------|----------|----------------------------------------------|
 | `OPENROUTER_API_KEY` | yes      | `aider`, `search`, `transcriber`, `ocr`      |
-| `GITHUB_TOKEN`       | no       | Authenticated ops on the `github` server     |
 
 ## Regenerating from scratch
 

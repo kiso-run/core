@@ -54,19 +54,44 @@ class TestPresetDiscovery:
 
 
 class TestDefaultPresetContents:
-    """The default preset must have exactly the 9 servers v0.10
-    specifies. Guards against accidental drop/add."""
+    """The default preset must have exactly the 7 servers v0.10
+    specifies (after M1563 trimmed github + memory). Guards against
+    accidental drop/add."""
 
-    def test_exactly_nine_servers(self):
+    def test_exactly_seven_servers(self):
+        # M1563: dropped `github` (specialised, opt-in) and `memory`
+        # (redundant with Kiso's facts/learnings/entities pipeline).
         data = load_mcp_preset("default")
-        assert len(data["mcpServers"]) == 9, (
-            f"expected 9 servers, got {list(data['mcpServers'])}"
+        assert len(data["mcpServers"]) == 7, (
+            f"expected 7 servers, got {list(data['mcpServers'])}"
         )
 
     def test_has_all_tier1_servers(self):
         servers = load_mcp_preset("default")["mcpServers"]
-        for name in ("filesystem", "memory", "browser", "github"):
+        for name in ("filesystem", "browser"):
             assert name in servers, f"Tier 1 server '{name}' missing"
+
+    def test_no_redundant_memory_server(self):
+        """M1563: the npm memory MCP duplicates Kiso's own knowledge
+        store at lower fidelity (no FTS, no scoping, no curator,
+        flat JSONL). It must not be in the default preset."""
+        servers = load_mcp_preset("default")["mcpServers"]
+        assert "memory" not in servers, (
+            "the `memory` MCP duplicates Kiso's facts/learnings/entities "
+            "pipeline at lower fidelity; install on demand via "
+            "`kiso mcp install --from-url npm:@modelcontextprotocol/server-memory` "
+            "if you really need it."
+        )
+
+    def test_github_not_in_default(self):
+        """M1563: github MCP is a specialised tool (PR/issue/commit on
+        a specific repo); not a general-purpose capability. Opt-in via
+        explicit install when needed."""
+        servers = load_mcp_preset("default")["mcpServers"]
+        assert "github" not in servers, (
+            "github MCP is opt-in: install with "
+            "`kiso mcp install --from-url npm:@modelcontextprotocol/server-github`"
+        )
 
     def test_has_all_tier2_servers(self):
         servers = load_mcp_preset("default")["mcpServers"]
@@ -215,7 +240,6 @@ class TestRenderToToml:
         old = dict(os.environ)
         os.environ.update({
             "OPENROUTER_API_KEY": "sk-test",
-            "GITHUB_TOKEN": "gh-test",
             "HOME": "/tmp/test-home",
         })
         try:
@@ -223,7 +247,7 @@ class TestRenderToToml:
         finally:
             os.environ.clear()
             os.environ.update(old)
-        assert len(servers) == 9
+        assert len(servers) == 7
         assert "filesystem" in servers
         assert servers["filesystem"].transport == "stdio"
         assert servers["filesystem"].command == "npx"
