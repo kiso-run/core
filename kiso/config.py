@@ -121,13 +121,13 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
 _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("briefer",      "google/gemini-2.5-flash",      "selects relevant context for each LLM role"),
     ("classifier",   "deepseek/deepseek-v4-flash",   "classifies messages as plan or chat"),
-    ("planner",      "deepseek/deepseek-v3.2",       "interprets requests, creates task plans"),
+    ("planner",      "deepseek/deepseek-v4-flash",   "interprets requests, creates task plans"),
     ("reviewer",     "google/gemini-2.5-flash-lite", "checks task output, decides replan"),
     ("curator",      "google/gemini-2.5-flash",      "manages learned knowledge"),
-    ("worker",       "deepseek/deepseek-v3.2",       "translates tasks to shell commands"),
+    ("worker",       "deepseek/deepseek-v4-flash",   "translates tasks to shell commands"),
     ("summarizer",   "google/gemini-2.5-flash-lite", "compresses conversation history"),
     ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
-    ("messenger",    "deepseek/deepseek-v3.2",       "writes human-readable responses"),
+    ("messenger",    "deepseek/deepseek-v4-flash",   "writes human-readable responses"),
     ("consolidator", "google/gemini-2.5-flash-lite", "periodic knowledge quality review"),
     ("mcp_sampling",  "google/gemini-2.5-flash",      "fulfils sampling/createMessage requests from MCP servers"),
 )
@@ -187,13 +187,13 @@ role = "admin"
 # inherit the provider default. To override, edit REASONING_DEFAULTS in config.py.
 briefer     = "google/gemini-2.5-flash"       # context selection (json_schema native)
 classifier  = "deepseek/deepseek-v4-flash"    # message classification (V4-Flash, reasoning-disabled by REASONING_DEFAULTS)
-planner     = "deepseek/deepseek-v3.2"        # plan generation (fast, structured output)
+planner     = "deepseek/deepseek-v4-flash"    # plan generation (V4-Flash, json_object via M1552)
 reviewer    = "google/gemini-2.5-flash-lite"  # output review (json_schema native, high frequency)
 curator     = "google/gemini-2.5-flash"       # knowledge curation (needs reliable json_schema)
-worker      = "deepseek/deepseek-v3.2"        # command translation (strict output format)
+worker      = "deepseek/deepseek-v4-flash"    # command translation (V4-Flash)
 summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, cheap)
 paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
-messenger   = "deepseek/deepseek-v3.2"        # user-facing responses (natural language)
+messenger   = "deepseek/deepseek-v4-flash"    # user-facing responses (V4-Flash)
 consolidator = "google/gemini-2.5-flash-lite" # periodic knowledge quality review (async, cheap)
 mcp_sampling = "google/gemini-2.5-flash"      # fulfils sampling/createMessage from MCP servers
 

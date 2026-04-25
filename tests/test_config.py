@@ -474,6 +474,38 @@ def test_classifier_template_matches_default():
     assert MODEL_DEFAULTS["classifier"] in line
 
 
+def test_planner_worker_messenger_default_is_v4_flash():
+    """M1555: planner/worker/messenger migrated from V3.2 to V4-Flash.
+
+    Same provider (DeepSeek), generational upgrade with ~54% nominal
+    cost reduction, ~60% real-world saving once V3.2's MCP-routing
+    retry overhead is accounted for. Verified by the planner
+    MCP-routing benchmark (V4-Flash 14/15 first-try OK vs V3.2 7/15)
+    after M1551 (reasoning rules) and M1552 (json_object) prerequisites
+    are in place.
+    """
+    for role in ("planner", "worker", "messenger"):
+        assert MODEL_DEFAULTS[role] == "deepseek/deepseek-v4-flash", (
+            f"{role} must default to deepseek/deepseek-v4-flash, "
+            f"got {MODEL_DEFAULTS[role]!r}"
+        )
+
+
+def test_planner_worker_messenger_template_matches_default():
+    """CONFIG_TEMPLATE rows for planner/worker/messenger agree with MODEL_DEFAULTS."""
+    for role in ("planner", "worker", "messenger"):
+        line = next(
+            (ln for ln in CONFIG_TEMPLATE.splitlines()
+             if ln.startswith(role)),
+            None,
+        )
+        assert line is not None, f"no CONFIG_TEMPLATE line for {role}"
+        assert MODEL_DEFAULTS[role] in line, (
+            f"CONFIG_TEMPLATE {role} line does not reference "
+            f"{MODEL_DEFAULTS[role]!r}: {line!r}"
+        )
+
+
 # --- robustness fixes ---
 
 

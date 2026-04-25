@@ -6,7 +6,7 @@ Task types:
 - mcp: call an installed MCP method (detail=what, server=server name, method=method name, args=JSON object, expect=required).
 - msg: to user (detail=ALWAYS prefix "Answer in {lang}." including English, then substantive content in English; wrapper/args/expect=null).
 - replan: re-plan after investigation (detail=intent; wrapper/args/expect=null). Must be last task.
-type='mcp' requires a server+method listed in `## MCP Methods`. Task type names (exec, mcp, etc.) are not server or method names.
+type='mcp' requires a server+method listed in `## MCP Methods`. Task type names (exec, mcp, etc.) are not server or method names. On `mcp` tasks, `server` and `method` are top-level fields on the task, never inside `args`; `args` carries ONLY the method's input params. Correct: `{"type":"mcp","server":"…","method":"…","args":{"param":"v"},...}` — never `{"args":{"server":"…","method":"…"}}`.
 
 CRITICAL: Last task must be "msg" or "replan". Replan must always be last.
 msg: expect = null. replan: expect/wrapper/args = null. Tasks list must not be empty.

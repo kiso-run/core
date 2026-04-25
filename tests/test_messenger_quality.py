@@ -85,10 +85,10 @@ class TestBootFactEntityBackfill:
 
 
 class TestMessengerModelConfig:
-    """P52/P56: messenger uses deepseek-v3.2 (not qwen)."""
+    """M1555: messenger uses deepseek-v4-flash (was v3.2 since P52/P56)."""
 
     def test_messenger_model_is_deepseek(self):
-        assert MODEL_DEFAULTS["messenger"] == "deepseek/deepseek-v3.2"
+        assert MODEL_DEFAULTS["messenger"] == "deepseek/deepseek-v4-flash"
 
     def test_messenger_not_in_reasoning_defaults(self):
         assert "messenger" not in REASONING_DEFAULTS

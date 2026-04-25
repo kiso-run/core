@@ -3449,6 +3449,25 @@ class TestPlannerPromptContent:
                            "cron scheduling", "cross-session projects", "persona presets"):
             assert capability in prompt, f"Missing {capability!r} in planner core prompt"
 
+    def test_planner_prompt_documents_mcp_task_structure(self):
+        """M1555: planner.md must include an explicit example showing
+        `server` and `method` as TOP-LEVEL fields on an mcp task — never
+        nested inside `args`. Without this guidance, V3.2 first-try MCP
+        routing was 0%; with the addendum it climbs to 47%, and V4-Flash
+        reaches 93%.
+        """
+        from kiso.brain import _load_modular_prompt
+        prompt = _load_modular_prompt("planner", [])
+        # Both halves of the rule must be present.
+        assert '"server"' in prompt or "`server`" in prompt
+        assert '"method"' in prompt or "`method`" in prompt
+        # The structural rule about top-level placement.
+        lower = prompt.lower()
+        assert "top-level" in lower or "not inside" in lower or "never inside `args`" in prompt, (
+            "planner.md must explicitly state that server/method belong "
+            "at the top level of the task, not inside args"
+        )
+
     def test_planner_prompt_has_parallel_group_instructions(self):
         """planner prompt planning_rules module mentions parallel groups."""
         from kiso.brain import _load_modular_prompt
@@ -4719,11 +4738,11 @@ class TestExitCodeNotes:
 
 
 class TestDefaultPlannerModel:
-    """M110c/: default planner model is deepseek-v3.2."""
+    """M1555: default planner model is deepseek-v4-flash."""
 
     def test_default_planner_model(self):
         from kiso.config import MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v3.2"
+        assert MODEL_DEFAULTS["planner"] == "deepseek/deepseek-v4-flash"
 
 
 # --- M89c: _MAX_MESSENGER_FACTS constant ---

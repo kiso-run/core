@@ -818,3 +818,67 @@ class TestClassifierV4FlashLive:
         )
         # Language detection is best-effort; require non-empty result.
         assert lang, f"V4-Flash classifier returned empty language for {msg!r}"
+
+
+# ---------------------------------------------------------------------------
+# M1555 — Planner / worker / messenger on DeepSeek V4-Flash (post-migration)
+# ---------------------------------------------------------------------------
+
+
+class TestPlannerV4FlashLive:
+    """V4-Flash planner produces validated plans on representative cases.
+
+    Exercises the M1551 + M1552 + planner.md addendum stack end-to-end.
+    Does NOT rely on the legacy `kiso.brain.discover_wrappers` mock that
+    the older `TestPlannerLive` class still references (Phase 4 M1504
+    retired wrappers; that test class is stale tech debt).
+    """
+
+    async def test_simple_exec_request(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """Echo command: planner emits exec + msg, both validated."""
+        await save_message(
+            seeded_db, live_session, "testadmin", "user", "hi")
+
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "Run echo hello world and report the output.",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == [], (
+            f"V4-Flash planner produced invalid plan: {plan}"
+        )
+        types = [t["type"] for t in plan["tasks"]]
+        assert "exec" in types, f"expected exec in plan, got {types}"
+        assert plan["tasks"][-1]["type"] == "msg", (
+            f"expected final msg task, got {types}"
+        )
+
+    async def test_chat_request_kb_answer_or_msg(
+        self, live_config, seeded_db, live_session, tmp_path,
+    ):
+        """Pure chat / info question: planner emits a valid plan
+        (msg-only with kb_answer, or msg + minimal action). Either
+        shape is acceptable; we just need a validated plan."""
+        await save_message(
+            seeded_db, live_session, "testadmin", "user", "hi")
+
+        with patch("kiso.brain.KISO_DIR", tmp_path):
+            plan = await asyncio.wait_for(
+                run_planner(
+                    seeded_db, live_config, live_session, "admin",
+                    "ciao come stai?",
+                ),
+                timeout=TIMEOUT,
+            )
+
+        assert validate_plan(plan) == [], (
+            f"V4-Flash planner produced invalid plan for chat: {plan}"
+        )
+        # The final task is always msg.
+        assert plan["tasks"][-1]["type"] == "msg"
