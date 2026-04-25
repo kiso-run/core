@@ -7160,6 +7160,47 @@ class TestFallbackModel:
                     PLAN_SCHEMA, lambda p: [], PlanError, "Plan",
                 )
 
+    async def test_fallback_firing_emits_warning_log(self, config, caplog):
+        """M1558: when the fallback model takes over, a WARNING log line
+        names the fallback model. Operators must be able to see in the
+        logs that traffic shifted away from the primary planner."""
+        call_count = [0]
+        valid_plan = json.dumps({
+            "goal": "ok", "secrets": None,
+            "tasks": [
+                {"type": "exec", "detail": "echo ok", "wrapper": None,
+                 "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "Answer in English. done",
+                 "wrapper": None, "args": None, "expect": None},
+            ],
+        })
+
+        async def _mock(cfg, role, messages, model_override=None, **kw):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                raise LLMError("Empty response")
+            return valid_plan
+
+        with caplog.at_level("WARNING", logger="kiso.brain"):
+            with patch("kiso.brain.call_llm", side_effect=_mock):
+                await _retry_llm_with_validation(
+                    config, "planner",
+                    [{"role": "user", "content": "test"}],
+                    PLAN_SCHEMA, lambda p: [],  # noop validator → always valid
+                    PlanError, "Plan",
+                    fallback_model="my-fallback-v9",
+                )
+
+        # Assert at least one warning record names the fallback model.
+        warnings = [
+            rec.getMessage() for rec in caplog.records
+            if rec.levelname == "WARNING"
+        ]
+        assert any("my-fallback-v9" in m for m in warnings), (
+            "Expected a WARNING log mentioning the fallback model name; "
+            f"got warnings: {warnings}"
+        )
+
     async def test_fallback_not_used_when_primary_succeeds(self, config):
         """If primary model succeeds, fallback is never used."""
         models_seen: list[str | None] = []
