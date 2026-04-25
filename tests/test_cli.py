@@ -2142,6 +2142,26 @@ class TestVersionFile:
         assert not re.search(r'^__version__\s*=\s*"[\d.]+"', src, re.MULTILINE), \
             "_version.py still has hardcoded __version__"
 
+    def test_pyproject_version_matches_active_devplan(self):
+        """M1559: pyproject.toml version tracks the active devplan.
+
+        Active devplan is `devplan/v0.10-wip.md` (per `DEVPLAN.md`),
+        so `pyproject.toml` MUST report `version = "0.10.0"`.
+        Per `core/CLAUDE.md` invariant, drift between the two is
+        always a bug.
+        """
+        from pathlib import Path
+        import re
+        pyproject = (
+            Path(__file__).resolve().parent.parent / "pyproject.toml"
+        ).read_text()
+        m = re.search(r'^version\s*=\s*"([\d.]+)"', pyproject, re.MULTILINE)
+        assert m is not None, "pyproject.toml has no top-level version field"
+        assert m.group(1) == "0.10.0", (
+            f"pyproject.toml version is {m.group(1)!r}, expected '0.10.0' "
+            f"to match active devplan v0.10-wip.md"
+        )
+
 
 class TestVersionCommand:
     def test_version_subcommand_exists(self):
