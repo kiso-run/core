@@ -137,6 +137,34 @@ npx -y @modelcontextprotocol/server-filesystem@2026.1.14 ~/
 Both should start, print a one-line stdio banner, and wait for
 MCP client traffic on stdin. Send `Ctrl-D` to exit.
 
+## Bundled skill: `voice-message-receiver`
+
+Alongside the seven MCP servers, the default Kiso experience
+ships one Tier 1 skill, distributed as its own repo at
+[`kiso-run/voice-message-receiver-skill`](https://github.com/kiso-run/voice-message-receiver-skill):
+
+```sh
+kiso skill install --from-url \
+    git+https://github.com/kiso-run/voice-message-receiver-skill@v0.1.0
+```
+
+The trust prefix is hardcoded in
+[`kiso/skill_trust.py`](../kiso/skill_trust.py), so the install
+runs silently — no per-install confirmation prompt.
+
+**What it adds.** A two-stage planner rule for uploaded audio:
+the first plan transcribes the audio via
+`kiso-transcriber:transcribe_audio`; a `replan` then re-enters
+the planner with the transcript so the user's voice note is
+treated as if they had typed it. Pairs with the Discord (and
+analogous) connectors that drop voice notes into the session
+`uploads/` directory.
+
+This is a skill — not an MCP server — because there's no new
+capability to expose, only planner guidance about how to use
+existing capabilities (the `transcriber` MCP) when the input
+shape is audio.
+
 ## Why not more servers
 
 The default stays small on purpose. Every entry has to satisfy:

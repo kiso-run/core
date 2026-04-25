@@ -214,6 +214,17 @@ class TestSkillTrust:
             == "tier1"
         )
 
+    def test_tier1_voice_message_receiver_skill_repo(self, trust_path):
+        """M1564: the bundled voice-message-receiver skill lives in
+        its own repo, not under `kiso-run/skills/*`. Pin its trust
+        prefix so the silent install path keeps working."""
+        assert (
+            skill_trust.is_trusted(
+                "github.com/kiso-run/voice-message-receiver-skill"
+            )
+            == "tier1"
+        )
+
     def test_untrusted_random_github(self, trust_path):
         assert (
             skill_trust.is_trusted("github.com/someone/random-skill")

@@ -22,6 +22,11 @@ from kiso.trust_store import load_trust_store, matches_any_prefix
 SKILL_TIER1_PREFIXES: tuple[str, ...] = (
     "github.com/anthropics/skills/",
     "github.com/kiso-run/skills/",
+    # Single-skill repos under the kiso-run org. Each is its own
+    # release-tagged GitHub repo; we list them explicitly rather
+    # than wildcard the owner so a stray `kiso-run/<random>-skill`
+    # repo can't silently mark itself trusted.
+    "github.com/kiso-run/voice-message-receiver-skill",
 )
 
 
