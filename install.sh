@@ -750,7 +750,7 @@ for k,v in d.items():
 
     echo
     yellow "  Reset data? This wipes EVERYTHING: conversations, messages, learnings,"
-    yellow "  wrappers, connectors, installed binaries, and all session files."
+    yellow "  installed MCP servers and skills, and all session files."
     yellow "  Only config.toml and .env (API key) are kept."
     yellow "  Useful if something is broken or you want a fresh start."
     if confirm "  Reset data for '$INST_NAME'?" "n"; then
