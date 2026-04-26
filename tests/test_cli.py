@@ -2145,21 +2145,28 @@ class TestVersionFile:
     def test_pyproject_version_matches_active_devplan(self):
         """M1559: pyproject.toml version tracks the active devplan.
 
-        Active devplan is `devplan/v0.10-wip.md` (per `DEVPLAN.md`),
-        so `pyproject.toml` MUST report `version = "0.10.0"`.
+        Derives the expected version from DEVPLAN.md's "Active devplan"
+        pointer so the lock self-maintains across version cycles.
         Per `core/CLAUDE.md` invariant, drift between the two is
         always a bug.
         """
         from pathlib import Path
         import re
-        pyproject = (
-            Path(__file__).resolve().parent.parent / "pyproject.toml"
-        ).read_text()
+        repo = Path(__file__).resolve().parent.parent
+        devplan_md = (repo / "DEVPLAN.md").read_text()
+        m_active = re.search(
+            r"Active devplan:.*v(\d+)\.(\d+)(?:-wip)?\.md", devplan_md
+        )
+        assert m_active is not None, (
+            "DEVPLAN.md has no 'Active devplan: devplan/vN.M[-wip].md' line"
+        )
+        expected = f"{m_active.group(1)}.{m_active.group(2)}.0"
+        pyproject = (repo / "pyproject.toml").read_text()
         m = re.search(r'^version\s*=\s*"([\d.]+)"', pyproject, re.MULTILINE)
         assert m is not None, "pyproject.toml has no top-level version field"
-        assert m.group(1) == "0.10.0", (
-            f"pyproject.toml version is {m.group(1)!r}, expected '0.10.0' "
-            f"to match active devplan v0.10-wip.md"
+        assert m.group(1) == expected, (
+            f"pyproject.toml version is {m.group(1)!r}, expected {expected!r} "
+            f"to match active devplan in DEVPLAN.md"
         )
 
 

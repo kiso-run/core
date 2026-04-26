@@ -309,7 +309,7 @@ Each LLM step in kiso is a separately-named role with its own model, its own
 prompt file in `~/.kiso/roles/`, and its own narrow output schema. The full
 catalogue (currently 11 roles: classifier, briefer, planner, reviewer,
 worker, messenger, summarizer, curator, consolidator, paraphraser,
-mcp_sampling) is defined in `kiso/brain/roles_registry.py` —
+sampler) is defined in `kiso/brain/roles_registry.py` —
 the single source of truth for role metadata. Default models are derived
 from `kiso/config.py:_MODEL_METADATA` at access time, so the registry and
 the config cannot drift. The user-facing entry point is `kiso roles`

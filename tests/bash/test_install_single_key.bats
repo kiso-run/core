@@ -56,12 +56,15 @@ setup() {
     [ "$output" = "0" ]
 }
 
-@test "install fallback heredoc: has v0.10 consolidator + mcp_sampling rows" {
+@test "install fallback heredoc: has consolidator + sampler rows" {
     run grep -c "^consolidator|" "$INSTALL_SH"
     [ "$output" = "1" ]
 
-    run grep -c "^mcp_sampling|" "$INSTALL_SH"
+    run grep -c "^sampler|" "$INSTALL_SH"
     [ "$output" = "1" ]
+
+    run grep -c "^mcp_sampling|" "$INSTALL_SH"
+    [ "$output" = "0" ]
 }
 
 # ── KISO_LLM_API_KEY gone ────────────────────────────────────────

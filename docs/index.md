@@ -64,7 +64,7 @@ below.
 
 20. [llm-roles.md](llm-roles.md) — every LLM role (briefer,
     classifier, planner, reviewer, worker, messenger, summarizer,
-    curator, consolidator, paraphraser, mcp_sampling), its
+    curator, consolidator, paraphraser, sampler), its
     prompt, and its default model.
 21. [model-selection.md](model-selection.md) — guidance for
     choosing a model for each role.

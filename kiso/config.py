@@ -129,7 +129,7 @@ _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("paraphraser",  "google/gemini-2.5-flash-lite", "prompt injection defense"),
     ("messenger",    "deepseek/deepseek-v4-flash",   "writes human-readable responses"),
     ("consolidator", "google/gemini-2.5-flash-lite", "periodic knowledge quality review"),
-    ("mcp_sampling",  "google/gemini-2.5-flash",      "fulfils sampling/createMessage requests from MCP servers"),
+    ("sampler",      "google/gemini-2.5-flash",     "fulfils sampling/createMessage requests from MCP servers"),
 )
 
 # Derived legacy exports — preserved for backward compatibility.
@@ -195,7 +195,7 @@ summarizer  = "google/gemini-2.5-flash-lite"  # conversation summary (async, che
 paraphraser = "google/gemini-2.5-flash-lite"  # prompt injection defense (critical path)
 messenger   = "deepseek/deepseek-v4-flash"    # user-facing responses (V4-Flash)
 consolidator = "google/gemini-2.5-flash-lite" # periodic knowledge quality review (async, cheap)
-mcp_sampling = "google/gemini-2.5-flash"      # fulfils sampling/createMessage from MCP servers
+sampler      = "google/gemini-2.5-flash"      # fulfils sampling/createMessage from MCP servers
 
 [settings]
 # --- conversation ---

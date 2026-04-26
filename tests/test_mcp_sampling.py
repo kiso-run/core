@@ -6,7 +6,7 @@ model routing table — to produce a completion on its behalf. Kiso's
 client advertises the ``sampling`` capability during initialize,
 dispatches incoming ``sampling/createMessage`` requests to a
 dedicated handler, builds the LLM call through the existing
-``call_llm`` infrastructure using the ``mcp_sampling`` role,
+``call_llm`` infrastructure using the ``sampler`` role,
 clamps ``maxTokens`` to a policy ceiling, counts the call against
 ``max_llm_calls_per_message``, and refuses with the standard
 JSON-RPC error ``method not supported`` when the operator has
@@ -40,9 +40,9 @@ def _config(
 ) -> Config:
     models = full_models()
     if sampling_model is not None:
-        models["mcp_sampling"] = sampling_model
+        models["sampler"] = sampling_model
     else:
-        models.setdefault("mcp_sampling", "google/gemini-2.5-flash")
+        models.setdefault("sampler", "google/gemini-2.5-flash")
     settings = full_settings(mcp_sampling_enabled=enabled)
     return Config(
         tokens={"cli": "tok"},
@@ -55,9 +55,9 @@ def _config(
 
 
 class TestDefaults:
-    def test_mcp_sampling_role_has_default_model(self):
-        assert "mcp_sampling" in MODEL_DEFAULTS
-        assert MODEL_DEFAULTS["mcp_sampling"]
+    def test_sampler_role_has_default_model(self):
+        assert "sampler" in MODEL_DEFAULTS
+        assert MODEL_DEFAULTS["sampler"]
 
     def test_mcp_sampling_enabled_default_true(self):
         assert SETTINGS_DEFAULTS["mcp_sampling_enabled"] is True
@@ -127,7 +127,7 @@ class TestHandleSamplingRequest:
 
         # Clamped maxTokens forwarded
         kwargs = mock_call.call_args.kwargs
-        assert kwargs["role"] == "mcp_sampling"
+        assert kwargs["role"] == "sampler"
         assert kwargs["max_tokens"] == 50
 
     async def test_maxtokens_clamped_to_ceiling(self):
@@ -304,3 +304,77 @@ class TestStdioIntegration:
         assert "METHOD_NOT_SUPPORTED" in result.stdout_text
         mock_call.assert_not_called()
         await client.shutdown()
+
+
+class TestM1568SamplerRoleRename:
+    """M1568 — pure rename of role mcp_sampling → sampler.
+
+    The setting `mcp_sampling_enabled` is a separate concept (feature
+    flag for the MCP sampling protocol) and is NOT renamed.
+    """
+
+    def test_sampler_role_in_model_defaults(self):
+        from kiso.config import MODEL_DEFAULTS
+        assert "sampler" in MODEL_DEFAULTS
+        assert "mcp_sampling" not in MODEL_DEFAULTS
+
+    def test_sampler_role_in_model_metadata(self):
+        from kiso.config import _MODEL_METADATA
+        roles = [r[0] for r in _MODEL_METADATA]
+        assert "sampler" in roles
+        assert "mcp_sampling" not in roles
+
+    def test_config_template_uses_sampler_binding(self):
+        """The `[models]` block in CONFIG_TEMPLATE must bind the
+        sampler role (not the legacy mcp_sampling key). The setting
+        `mcp_sampling_enabled` may still appear — that is intentional."""
+        from kiso.config import CONFIG_TEMPLATE
+        for line in CONFIG_TEMPLATE.splitlines():
+            stripped = line.strip()
+            # A model binding looks like `<role> = "<model>"`. Match
+            # only on the left-hand side to avoid catching settings.
+            head = stripped.split("=", 1)[0].strip()
+            assert head != "mcp_sampling", (
+                f"unexpected legacy role binding: {line}"
+            )
+        assert any(
+            line.strip().startswith("sampler ") or line.strip().startswith("sampler=")
+            for line in CONFIG_TEMPLATE.splitlines()
+        ), "CONFIG_TEMPLATE must define a `sampler` binding"
+
+    def test_sampler_role_md_file_exists(self):
+        roles_dir = Path(__file__).resolve().parents[1] / "kiso" / "roles"
+        assert (roles_dir / "sampler.md").exists()
+        assert not (roles_dir / "mcp_sampling.md").exists()
+
+    def test_sampling_role_constant_is_sampler(self):
+        from kiso.mcp.sampling import SAMPLING_ROLE
+        assert SAMPLING_ROLE == "sampler"
+
+    def test_install_sh_fallback_heredoc_lists_sampler(self):
+        install_sh = Path(__file__).resolve().parents[1] / "install.sh"
+        content = install_sh.read_text()
+        # The fallback heredoc rows have format: role|description|model
+        assert "\nsampler|" in content, (
+            "install.sh fallback heredoc must include a `sampler|` row"
+        )
+        assert "\nmcp_sampling|" not in content, (
+            "install.sh fallback heredoc must not include the legacy "
+            "`mcp_sampling|` row"
+        )
+
+    def test_setting_mcp_sampling_enabled_unchanged(self):
+        """Sanity: the setting (a separate concept) is NOT renamed."""
+        from kiso.config import SETTINGS_DEFAULTS
+        assert "mcp_sampling_enabled" in SETTINGS_DEFAULTS
+        assert SETTINGS_DEFAULTS["mcp_sampling_enabled"] is True
+
+    def test_roles_registry_uses_sampler(self):
+        """The roles registry entry's `name` and `prompt_filename` are
+        renamed; `model_key` matches MODEL_DEFAULTS."""
+        from kiso.brain.roles_registry import ROLES
+        assert "sampler" in ROLES
+        assert "mcp_sampling" not in ROLES
+        sampler = ROLES["sampler"]
+        assert sampler.model_key == "sampler"
+        assert sampler.prompt_filename == "sampler.md"

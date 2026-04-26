@@ -432,7 +432,7 @@ summarizer|compresses conversation history|google/gemini-2.5-flash-lite
 paraphraser|prompt injection defense|google/gemini-2.5-flash-lite
 messenger|writes human-readable responses|deepseek/deepseek-v3.2
 consolidator|periodic knowledge quality review|google/gemini-2.5-flash-lite
-mcp_sampling|fulfils sampling/createMessage requests from MCP servers|google/gemini-2.5-flash
+sampler|fulfils sampling/createMessage requests from MCP servers|google/gemini-2.5-flash
 FALLBACK
 )
 

@@ -4,7 +4,7 @@ Encodes the invariant: when the http config allows sampling and the
 server sends an SSE stream with one or more server-to-client
 `sampling/createMessage` requests interleaved before the final
 response, the kiso client dispatches each through the
-`mcp_sampling` handler and POSTs the response back.
+`sampler` handler and POSTs the response back.
 
 We test:
 

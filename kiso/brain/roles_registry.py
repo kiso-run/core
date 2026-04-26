@@ -150,14 +150,14 @@ _ROLES: tuple[RoleMeta, ...] = (
         python_entry="kiso.brain.text_roles.run_worker",
     ),
     RoleMeta(
-        name="mcp_sampling",
+        name="sampler",
         description=(
             "Fulfils sampling/createMessage requests from MCP servers "
             "(LLM delegated to the kiso client; system prompt supplied "
             "by the requesting server)."
         ),
-        model_key="mcp_sampling",
-        prompt_filename="mcp_sampling.md",
+        model_key="sampler",
+        prompt_filename="sampler.md",
         python_entry="kiso.mcp.sampling.handle_sampling_request",
     ),
     RoleMeta(

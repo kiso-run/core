@@ -1,6 +1,6 @@
-# mcp_sampling
+# sampler
 
-Documentation-only role file for `mcp_sampling`. The LLM call that
+Documentation-only role file for the `sampler` role. The LLM call that
 fulfils a `sampling/createMessage` request from an MCP server does
 NOT load this file as its system prompt — the requesting server
 supplies its own `systemPrompt` in the sampling request params and
@@ -17,7 +17,7 @@ Configuration knobs live in `kiso/config.py`:
 - `mcp_sampling_enabled` (default `true`) — when `false`, the
   client responds to every sampling request with the JSON-RPC
   `method not supported` error.
-- `models.mcp_sampling` — model used to serve sampling requests.
+- `models.sampler` — model used to serve sampling requests.
   Defaults to `google/gemini-2.5-flash`.
 
 Policy clamps live in `kiso/mcp/sampling.py`:

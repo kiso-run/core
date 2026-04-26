@@ -16,7 +16,7 @@ This module owns the policy and rendering:
 - ``SAMPLING_MAX_TOKENS_CEILING`` — hard upper bound applied to
   whatever ``maxTokens`` the server asks for. Sampling requests
   flow the same per-message LLM budget as any other call.
-- The ``mcp_sampling`` role in :mod:`kiso.config` picks the model.
+- The ``sampler`` role in :mod:`kiso.config` picks the model.
 
 The transport layer (stdio / http) handles the actual JSON-RPC
 framing. This module is transport-agnostic: it takes the parsed
@@ -33,7 +33,7 @@ from kiso.llm import LLMBudgetExceeded, LLMError, call_llm
 
 log = logging.getLogger(__name__)
 
-SAMPLING_ROLE = "mcp_sampling"
+SAMPLING_ROLE = "sampler"
 SAMPLING_METHOD = "sampling/createMessage"
 SAMPLING_MAX_TOKENS_CEILING = 4096
 

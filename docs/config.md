@@ -69,7 +69,7 @@ summarizer   = "google/gemini-2.5-flash-lite"
 paraphraser  = "google/gemini-2.5-flash-lite"
 messenger    = "deepseek/deepseek-v3.2"
 consolidator = "google/gemini-2.5-flash-lite"
-mcp_sampling = "google/gemini-2.5-flash"
+sampler      = "google/gemini-2.5-flash"
 
 [settings]
 # --- conversation ---
@@ -153,7 +153,7 @@ webhook_max_payload       = 1048576
 | `users.*.role` | Required. `"admin"` or `"user"`. |
 | `[users.<name>.mcp]` | Optional per-user MCP method filter (role-scoped visibility). See [mcp.md](mcp.md#per-user-role-filters). |
 | `[users.<name>.skills]` | Optional per-user skill filter (role-scoped visibility). See [skills.md](skills.md). |
-| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `consolidator`, `mcp_sampling`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. The `mcp_sampling` role fulfils `sampling/createMessage` requests coming back from MCP servers (see [mcp.md](mcp.md#sampling)). |
+| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `consolidator`, `sampler`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. The `sampler` role fulfils `sampling/createMessage` requests coming back from MCP servers (see [mcp.md](mcp.md#sampling)). |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
@@ -204,7 +204,7 @@ webhook_max_payload       = 1048576
 | `mcp_max_session_clients_per_server` | `32` | LRU cap on the number of per-session clients kept open for a single MCP server. Range 1-256. |
 | `mcp_warmup_concurrency` | `3` | Parallelism for the daemon-boot MCP catalog warm-up. Range 1-16. |
 | `mcp_warmup_deadline_s` | `10` | Wall-clock deadline for warm-up. Range 1-120. Servers that do not respond in time are retried on first demand. |
-| `mcp_sampling_enabled` | `true` | When true, MCP servers may call back into kiso via `sampling/createMessage` using the `mcp_sampling` model role. |
+| `mcp_sampling_enabled` | `true` | When true, MCP servers may call back into kiso via `sampling/createMessage` using the `sampler` model role. |
 | `webhook_allow_list` | `[]` | IPs exempt from webhook SSRF validation (e.g. `["127.0.0.1"]` for local connectors). See [security.md — Webhook Validation](security.md#7-webhook-validation). |
 | `webhook_require_https` | `true` | Reject plain `http://` webhook URLs. Set to `false` for local development. |
 | `webhook_secret` | `""` | HMAC-SHA256 secret for webhook signatures. Empty = no signature. |
