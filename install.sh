@@ -471,7 +471,8 @@ FALLBACK
     fi
 
     echo >&2
-    bold "Models — press Enter to keep default:" >&2
+    bold "## Models" >&2
+    echo "  Press Enter to keep the default. See docs/llm-roles.md for context." >&2
     echo >&2
     local result=""
     for entry in "${roles[@]}"; do
@@ -497,7 +498,8 @@ ask_resource_limits() {
     fi
 
     echo >&2
-    bold "Resource limits — press Enter for defaults:" >&2
+    bold "## Resources" >&2
+    echo "  Container limits." >&2
     echo >&2
 
     local val
@@ -538,17 +540,23 @@ ask_network_and_external_url() {
     fi
 
     echo >&2
-    bold "Network access:" >&2
-    echo "    1) Local only — API accessible only from this machine" >&2
-    echo "    2) Public — API exposed to the network (token-protected)" >&2
-    safe_read -rp "  Choice [2]: " _net_choice
-    _net_choice="${_net_choice:-2}"
-    if [[ "$_net_choice" == "1" ]]; then
-        NETWORK_MODE="local"
+    bold "## Network" >&2
+    echo "  How the API is exposed." >&2
+    echo >&2
+    local _net_mode
+    while true; do
+        safe_read -rp "  mode [public]:                        # local | public  " _net_mode
+        _net_mode="${_net_mode:-public}"
+        case "$_net_mode" in
+            local|public) break ;;
+            *) red "  Unknown mode '$_net_mode'. Choose 'local' or 'public'." >&2 ;;
+        esac
+    done
+    NETWORK_MODE="$_net_mode"
+    if [[ "$NETWORK_MODE" == "local" ]]; then
         yellow "  ℹ  For file download links, use http://localhost:${SERVER_PORT:-8333}" >&2
         yellow "  For external access, set up a reverse proxy. See: docs/https.md" >&2
     else
-        NETWORK_MODE="public"
         yellow "  ⚠  API exposed over HTTP (no encryption)." >&2
         yellow "  Make sure port ${SERVER_PORT:-8333} is reachable from outside (check firewall/router port forwarding)." >&2
         yellow "  For production use, set up HTTPS with a reverse proxy." >&2
@@ -908,17 +916,27 @@ if [[ "$NEED_CONFIG" == true ]]; then
     : "${bot_persona:=a friendly and knowledgeable assistant}"
 
     while true; do
+        echo
+        bold "## Bot identity"
+        echo "  How Kiso presents itself in conversation."
+        echo
         echo "  bot name: $bot_name"
-
         safe_read -rp "  Bot persona [$bot_persona]: " _persona_input
         bot_persona="${_persona_input:-$bot_persona}"
         echo "  persona: $bot_persona"
         echo "  (To change later: edit bot_persona in $CONFIG and 'kiso restart'.)"
-        echo
 
+        echo
+        bold "## Instance"
+        echo "  Container name and data directory on this host."
+        echo
         ask_username
         echo "  user: $KISO_USER"
 
+        echo
+        bold "## Provider"
+        echo "  Where Kiso routes LLM calls."
+        echo
         ask_provider_name
         echo "  provider: $PROVIDER_NAME"
 

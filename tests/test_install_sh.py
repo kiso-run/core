@@ -919,3 +919,103 @@ class TestM1569InstallShPolish:
         """)
         assert result.returncode == 0, result.stderr
         assert "BASE_URL=https://my.custom.example/v1" in result.stdout
+
+
+class TestM1570UnifiedSectionTemplate:
+    """M1570 — install.sh unified section template (six `## Header`
+    blocks, prompts always indented two spaces, Network mode picked
+    by word instead of numbered choice)."""
+
+    SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+
+    @classmethod
+    def _read(cls) -> str:
+        with open(cls.SCRIPT_PATH) as f:
+            return f.read()
+
+    def test_section_header_bot_identity(self):
+        content = self._read()
+        # The literal `## Bot identity` must be emitted to the user
+        # (search source for the printf/echo statement).
+        assert "## Bot identity" in content, (
+            "missing `## Bot identity` section header"
+        )
+
+    def test_section_header_instance(self):
+        content = self._read()
+        assert "## Instance" in content
+
+    def test_section_header_provider(self):
+        content = self._read()
+        assert "## Provider" in content
+
+    def test_section_header_models(self):
+        content = self._read()
+        assert "## Models" in content
+
+    def test_section_header_resources(self):
+        content = self._read()
+        assert "## Resources" in content
+
+    def test_section_header_network(self):
+        content = self._read()
+        assert "## Network" in content
+
+    def test_network_mode_word_prompt_replaces_numbered_choice(self):
+        """The Network block must emit a single `mode [public]:` word
+        prompt instead of the previous numbered `1) ... 2) ...` UI."""
+        content = self._read()
+        # The new mode prompt replaces the old numbered list. We pin
+        # both invariants: numbered options are GONE, mode prompt
+        # is PRESENT.
+        # The numbered options cue is the `1) Local only` literal.
+        assert "1) Local only" not in content, (
+            "the numbered Network options must be replaced with a "
+            "word prompt"
+        )
+        assert "mode [public]" in content.lower() or \
+               "mode [local|public]" in content.lower(), (
+            "the Network block must offer a `mode` word prompt"
+        )
+
+    def test_network_mode_prompt_validates_input(self):
+        """The Network mode prompt rejects unknown words and re-asks.
+        Static-source check: there is a case statement that accepts
+        `local` and `public` and emits a `Unknown mode` red message
+        for anything else."""
+        content = self._read()
+        # Find the Network section's case statement.
+        # It is preceded by `local _net_mode` declaration.
+        idx = content.find("local _net_mode")
+        assert idx > 0, "expected `local _net_mode` declaration in Network block"
+        block = content[idx:idx + 600]
+        assert "local|public)" in block, (
+            "Network mode case statement must accept `local|public`"
+        )
+        assert "Unknown mode" in block or "unknown mode" in block.lower(), (
+            "Network mode case statement must reject unknown words"
+        )
+
+    def test_section_blank_line_above_section_header(self):
+        """Every `## Section` header is preceded by a blank line in
+        the install.sh source so sections are visually separated."""
+        content = self._read()
+        lines = content.splitlines()
+        offenders = []
+        for i, line in enumerate(lines):
+            # Match the user-facing emit lines that produce `## Header`,
+            # not ordinary code containing `##`. A typical emit:
+            #   echo
+            #   bold "## Bot identity"
+            stripped = line.strip()
+            if stripped.startswith('bold "##') or stripped.startswith("echo \"##"):
+                # The line BEFORE this should either be blank, end with
+                # `>&2`, or be `echo` / `echo >&2` (whitespace only or
+                # echo emitting a blank).
+                prev = lines[i - 1].strip() if i > 0 else ""
+                if prev not in ("", "echo", "echo >&2"):
+                    offenders.append(f"line {i+1}: prev={prev!r}, header={stripped!r}")
+        assert not offenders, (
+            f"section headers must be preceded by a blank-emit line: "
+            f"{offenders}"
+        )
