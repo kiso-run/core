@@ -22,7 +22,15 @@
 #   ./run_tests.sh --auto --extended      # only extended (nightly)
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+
+# Lib mode: when sourced from a unit test (KISO_RUN_TESTS_LIB=1),
+# skip the runtime cd and the main-execution block at the bottom of
+# this file. This lets tests source the script, invoke individual
+# helpers (`_extract_pytest_counts`, `run_suite`, ...), and assert on
+# their behavior without driving an entire suite.
+if [[ "${KISO_RUN_TESTS_LIB:-}" != "1" ]]; then
+    cd "$(dirname "$0")/.."
+fi
 
 # ---------------------------------------------------------------------------
 # Colors
@@ -312,6 +320,9 @@ _record_skip() {
 
 # Extract test counts from captured output.  Sets _PYTEST_SUMMARY.
 # Handles pytest ("3 passed, 1 failed in 2.50s") and bats ("ok 1 ..").
+# Fallback: when neither matches, surface the first recognizable
+# error line (ModuleNotFoundError, ImportError, "Error: ...") so the
+# recap row is informative instead of an opaque "done".
 _extract_pytest_counts() {
     local logfile="$1"
     _PYTEST_SUMMARY=""
@@ -336,6 +347,24 @@ _extract_pytest_counts() {
         if [[ $not_ok -gt 0 ]]; then
             _PYTEST_SUMMARY+=", ${not_ok} failed"
         fi
+        return
+    fi
+
+    # Fallback: surface the first recognizable error line so the
+    # recap shows what actually went wrong (e.g. compose build error,
+    # missing-module ImportError) instead of a bare "done". Patterns
+    # are ordered by specificity — the most descriptive error wins.
+    local err
+    err="$(echo "$clean" | grep -oP '(ModuleNotFoundError|ImportError|FileNotFoundError|KeyError|TypeError|AttributeError|OSError|RuntimeError|AssertionError|SyntaxError):.*' | head -1)" || true
+    if [[ -z "$err" ]]; then
+        err="$(echo "$clean" | grep -ioP '^(error|fatal|failed):.*' | head -1)" || true
+    fi
+    if [[ -n "$err" ]]; then
+        # Truncate to 120 chars to keep the recap row aligned.
+        if [[ ${#err} -gt 120 ]]; then
+            err="${err:0:117}..."
+        fi
+        _PYTEST_SUMMARY="$err"
     fi
 }
 
@@ -761,6 +790,9 @@ _process_choices() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+# When KISO_RUN_TESTS_LIB=1: functions are defined, main execution is skipped.
+[[ "${KISO_RUN_TESTS_LIB:-}" == "1" ]] && return 0 || true
+
 if [[ "${1:-}" == "--auto" ]]; then
     run_auto "$@"
 elif [[ -n "${1:-}" ]]; then

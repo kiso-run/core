@@ -144,3 +144,145 @@ class TestRunnerMenuRenumbered:
             "_process_choices must not have a `9)` case after the "
             "Plugin tier removal — choices end at 8"
         )
+
+
+class TestM1574NonPytestErrorRecap:
+    """M1574 — when a suite fails before pytest produces output (e.g.
+    `ModuleNotFoundError`, missing-module on import, compose-build
+    error), `_extract_pytest_counts` must surface the error in the
+    recap detail instead of leaving an uninformative `done` placeholder.
+    """
+
+    def _run_lib_mode(self, body: str) -> "subprocess.CompletedProcess":
+        import subprocess
+        return subprocess.run(
+            ["bash", "-c", f"""
+                export KISO_RUN_TESTS_LIB=1
+                source ./utils/run_tests.sh
+                {body}
+            """],
+            capture_output=True, text=True, timeout=10,
+        )
+
+    def test_run_tests_sh_lib_mode_guard_exists(self):
+        """utils/run_tests.sh honors KISO_RUN_TESTS_LIB=1 and returns
+        after defining functions, so unit tests can source and invoke
+        helpers in isolation."""
+        result = self._run_lib_mode('echo "OK"')
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout, (
+            f"sourcing utils/run_tests.sh in lib mode should be a no-op; "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+
+    def test_pytest_summary_wins_when_present(self):
+        """When the log contains a pytest summary line, that is what
+        _PYTEST_SUMMARY reports — the new fallback never overrides
+        a real summary."""
+        result = self._run_lib_mode("""
+            tmp=$(mktemp)
+            cat > "$tmp" <<'LOG'
+ModuleNotFoundError: cli.something_old
+3 passed in 1.20s
+LOG
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "SUMMARY=3 passed in 1.20s" in result.stdout, (
+            f"pytest summary must win when present; "
+            f"stdout={result.stdout!r}"
+        )
+
+    def test_module_not_found_surfaces_when_no_pytest_summary(self):
+        """When no pytest summary is present, ModuleNotFoundError
+        surfaces in _PYTEST_SUMMARY so the recap is informative."""
+        result = self._run_lib_mode("""
+            tmp=$(mktemp)
+            cat > "$tmp" <<'LOG'
+ImportError while loading conftest 'tests/conftest.py'.
+ModuleNotFoundError: No module named 'cli.plugin_test_runner'
+LOG
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "ModuleNotFoundError" in result.stdout, (
+            f"ModuleNotFoundError must surface in fallback summary; "
+            f"stdout={result.stdout!r}"
+        )
+
+    def test_import_error_surfaces_when_no_pytest_summary(self):
+        result = self._run_lib_mode("""
+            tmp=$(mktemp)
+            cat > "$tmp" <<'LOG'
+some build noise...
+ImportError: cannot import name 'foo' from 'bar' (/path/to/bar.py)
+more noise
+LOG
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "ImportError" in result.stdout
+
+    def test_summary_truncated_to_reasonable_length(self):
+        """Fallback summary lines longer than ~120 chars are truncated
+        so they do not blow up the recap row."""
+        long_line = "Error: " + "x" * 200
+        result = self._run_lib_mode(f"""
+            tmp=$(mktemp)
+            cat > "$tmp" <<'LOG'
+{long_line}
+LOG
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            echo "LEN=${{#_PYTEST_SUMMARY}}"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        # Find the LEN line and assert <= 130 (allow some slack for trailing ellipsis or similar).
+        import re
+        m = re.search(r"LEN=(\d+)", result.stdout)
+        assert m, f"LEN line missing in stdout: {result.stdout!r}"
+        length = int(m.group(1))
+        assert length <= 130, (
+            f"fallback summary should be truncated to ~120 chars, "
+            f"got {length}"
+        )
+
+    def test_empty_log_yields_empty_summary(self):
+        """An empty log produces an empty summary (consistent with
+        the existing behavior — caller falls back to literal 'done')."""
+        result = self._run_lib_mode("""
+            tmp=$(mktemp)
+            : > "$tmp"
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            echo "LEN=${#_PYTEST_SUMMARY}"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "LEN=0" in result.stdout
+
+    def test_no_match_yields_empty_summary(self):
+        """A log with neither pytest output nor recognizable error
+        patterns yields an empty summary — the caller's `done` default
+        kicks in."""
+        result = self._run_lib_mode("""
+            tmp=$(mktemp)
+            cat > "$tmp" <<'LOG'
+Some random noise.
+Building image...
+Layer cached.
+LOG
+            _extract_pytest_counts "$tmp"
+            echo "SUMMARY=$_PYTEST_SUMMARY"
+            echo "LEN=${#_PYTEST_SUMMARY}"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "LEN=0" in result.stdout
