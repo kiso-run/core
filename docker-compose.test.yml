@@ -40,19 +40,5 @@ services:
     command: uv run pytest tests/docker/ -v
     profiles: [docker]
 
-  test-plugins:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    # Default: test all plugins. Override with custom command for specific ones:
-    #   docker compose -f docker-compose.test.yml run --rm test-plugins \
-    #     uv run python -m cli.plugin_test_runner browser
-    command: uv run python -m cli.plugin_test_runner
-    environment:
-      - UV_LINK_MODE=copy
-    volumes:
-      - dep-cache:/root/.cache
-    profiles: [plugins]
-
 volumes:
   dep-cache:

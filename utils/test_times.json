@@ -23,10 +23,6 @@
     "avg_seconds": 9.8463,
     "count": 70
   },
-  "Plugin tests": {
-    "avg_seconds": 4.1667,
-    "count": 6
-  },
   "Unit tests": {
     "avg_seconds": 0.0203,
     "count": 4379

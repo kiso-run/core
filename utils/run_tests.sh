@@ -460,21 +460,6 @@ run_extended() {
         uv run pytest tests/functional/ -v --functional --extended -m extended
 }
 
-run_plugins() {
-    local filter="${1:-}"
-    if [[ "$HAS_DOCKER" == true ]]; then
-        # Docker: same environment as production, with dep-cache volume
-        local cmd="uv run python -m cli.plugin_test_runner ${filter}"
-        run_suite "Plugin tests${filter:+ ($filter)}" \
-            docker compose -f docker-compose.test.yml run --build --rm \
-            -e FORCE_COLOR=1 \
-            test-plugins $cmd
-    else
-        run_suite "Plugin tests${filter:+ ($filter)}" \
-            uv run python -m cli.plugin_test_runner "$filter"
-    fi
-}
-
 run_interactive() {
     if [[ "$HAS_DOCKER" != true ]]; then
         echo -e "${YELLOW}⚠ Skipping interactive tests — no Docker${NC}"
@@ -548,7 +533,7 @@ run_auto() {
 
     # Collect --no-X skip flags
     local skip_unit=false skip_bash=false skip_integration=false
-    local skip_live=false skip_docker=false skip_func=false skip_plugins=false
+    local skip_live=false skip_docker=false skip_func=false
     local has_suite=false
     local flags=()
     for arg in "$@"; do
@@ -559,7 +544,6 @@ run_auto() {
             --no-live)        skip_live=true ;;
             --no-docker)      skip_docker=true ;;
             --no-func|--no-functional) skip_func=true ;;
-            --no-plugins)     skip_plugins=true ;;
             *)                flags+=("$arg"); has_suite=true ;;
         esac
     done
@@ -571,7 +555,6 @@ run_auto() {
         [[ "$skip_integration" == false ]] && run_integration
         [[ "$skip_live" == false ]]        && run_live
         [[ "$skip_docker" == false ]]      && run_docker
-        [[ "$skip_plugins" == false ]]     && run_plugins ""
         [[ "$skip_func" == false ]]        && run_functional
         run_extended
         return
@@ -587,15 +570,12 @@ run_auto() {
             --func|--functional) run_functional ;;
             --extended)     run_extended ;;
             --interactive)  run_interactive ;;
-            --plugins)      run_plugins "" ;;
-            --plugins=*)    run_plugins "${flag#*=}" ;;
             --fast)
                 run_unit
                 run_bash
                 run_integration
                 run_live
                 run_docker
-                run_plugins ""
                 ;;
             --all)
                 run_unit
@@ -605,13 +585,12 @@ run_auto() {
                 run_docker
                 run_functional
                 run_extended
-                run_plugins ""
                 run_interactive
                 ;;
             *)
                 echo -e "${RED}Unknown flag: $flag${NC}"
-                echo "Available: --unit --bash --integration --live --docker --func/--functional --extended --interactive --plugins[=filter] --fast --all"
-                echo "Skip flags: --no-unit --no-bash --no-integration --no-live --no-docker --no-func --no-plugins"
+                echo "Available: --unit --bash --integration --live --docker --func/--functional --extended --interactive --fast --all"
+                echo "Skip flags: --no-unit --no-bash --no-integration --no-live --no-docker --no-func"
                 exit 1
                 ;;
         esac
@@ -676,7 +655,6 @@ run_interactive_menu() {
     t_int="$(_tier_line 'Integration tests')"
     t_live="$(_tier_line 'Live tests')"
     t_docker="$(_tier_line 'Docker tests')"
-    t_plugin="$(_tier_line 'Plugin tests')"
     t_func="$(_tier_line 'Functional tests')"
     t_ext="$(_tier_line 'Extended tests')"
 
@@ -694,24 +672,22 @@ run_interactive_menu() {
     echo ""
     echo -e "  ${DIM}── Docker container ──────────────────────────${NC}"
     echo -e "  ${CYAN}5${NC}  Docker tests            ${DIM}${t_docker}${NC}${miss_docker}"
-    echo -e "  ${CYAN}6${NC}  Plugin tests            ${DIM}${t_plugin}${NC}"
-    echo -e "     ${DIM}Clone + build + test each official plugin${NC}"
     echo ""
     echo -e "  ${DIM}── Full pipeline (Docker + API key) ─────────${NC}"
-    echo -e "  ${CYAN}7${NC}  Functional tests        ${DIM}${t_func}${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}6${NC}  Functional tests        ${DIM}${t_func}${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Single-plan end-to-end: classify → plan → exec → msg${NC}"
-    echo -e "  ${CYAN}8${NC}  Extended tests          ${DIM}${t_ext}, nightly${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}7${NC}  Extended tests          ${DIM}${t_ext}, nightly${NC}${miss_docker}${miss_api}"
     echo -e "     ${DIM}Multi-plan orchestration (tool install → use → report)${NC}"
     echo ""
     echo -e "  ${DIM}── Special ──────────────────────────────────${NC}"
-    echo -e "  ${CYAN}9${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
-    echo -e "  ${CYAN}a${NC}  All automatic           ${DIM}1-8 (skip 9 interactive)${NC}"
-    echo -e "  ${CYAN}f${NC}  Fast all               ${DIM}1-6 (~3min, skip pipeline tests)${NC}"
+    echo -e "  ${CYAN}8${NC}  Interactive tests       ${DIM}requires human at terminal${NC}${miss_docker}${miss_api}"
+    echo -e "  ${CYAN}a${NC}  All automatic           ${DIM}1-7 (skip 8 interactive)${NC}"
+    echo -e "  ${CYAN}f${NC}  Fast all                ${DIM}1-5 (~3min, skip pipeline tests)${NC}"
     echo -e "  ${CYAN}s${NC}  Run specific test       ${DIM}path::Class::test or -k pattern${NC}"
     echo ""
 
     local choice
-    read -rp "  Choose [1-9, a, f, s, comma-separated, or 'q' to quit]: " choice
+    read -rp "  Choose [1-8, a, f, s, comma-separated, or 'q' to quit]: " choice
 
     if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
         echo "Aborted."
@@ -737,42 +713,15 @@ _process_choices() {
             3) run_integration ;;
             4) run_live ;;
             5) run_docker ;;
-            6)
-                if [[ -n "$extra" ]]; then
-                    run_plugins "$extra"
-                else
-                    echo ""
-                    echo -e "  ${BOLD}What to test?${NC}"
-                    echo -e "  a) All tools"
-                    echo -e "  b) All connectors"
-                    echo -e "  c) All plugins (tools + connectors)"
-                    echo -e "  d) Specific (enter names)"
-                    echo ""
-                    local pchoice
-                    read -rp "  Choice [a/b/c/d]: " pchoice
-                    case "$pchoice" in
-                        a) run_plugins "tools" ;;
-                        b) run_plugins "connectors" ;;
-                        c) run_plugins "" ;;
-                        d)
-                            local pnames
-                            read -rp "  Names (comma-separated): " pnames
-                            run_plugins "$pnames"
-                            ;;
-                        *) echo -e "${RED}Invalid choice${NC}" ;;
-                    esac
-                fi
-                ;;
-            7) run_functional ;;
-            8) run_extended ;;
-            9) run_interactive ;;
+            6) run_functional ;;
+            7) run_extended ;;
+            8) run_interactive ;;
             a|A)
                 run_unit
                 run_bash
                 run_integration
                 run_live
                 run_docker
-                run_plugins ""
                 run_functional
                 run_extended
                 ;;
@@ -782,7 +731,6 @@ _process_choices() {
                 run_integration
                 run_live
                 run_docker
-                run_plugins ""
                 ;;
             s|S)
                 if [[ -n "$extra" ]]; then

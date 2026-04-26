@@ -423,30 +423,26 @@ Verifies sandbox isolation — the security boundary between kiso and exec tasks
 No LLM calls needed.
 
 
-## Plugin tests (`cli/plugin_test_runner.py`)
-
-**~600 tests across ~9 plugins, ~35 seconds.**
-
-Clones each official plugin from the registry, installs deps, and runs its
-internal test suite. Validates that plugins build and pass in a clean environment
-with no secrets leaked from the parent process.
-
-
 ## Live tests (`tests/live/`)
 
-**72 tests, ~15 minutes, needs API key.**
+**~63 tests, ~15 minutes, needs API key.**
 
-Real LLM API calls but everything else is mocked (subprocess, filesystem, wrappers).
+Real LLM API calls but everything else is mocked (subprocess, filesystem).
 Isolates the LLM-compliance question from infrastructure concerns.
 
 Organized by scope: `test_roles.py` (each role in isolation), `test_flows.py`
 (role chains), `test_e2e.py` (full planning loop), `test_practical.py`
-(acceptance scenarios), `test_cli_live.py` (CLI with real network),
-`test_plugins.py` (clone + test official plugins).
+(acceptance scenarios), `test_v010_pipeline_live.py` (end-to-end pipeline
+test), `test_mcp_auth_servers.py` and `test_mcp_reference_servers.py` (MCP
+protocol compliance against real servers).
 
 Use live tests for semantic LLM-compliance questions. Real-network tests with
 only weak stdout-based oracles belong in optional smoke, not as the primary
 coverage for a feature.
+
+The standalone `kiso-run/*-mcp` and `kiso-run/*-skill` repositories each
+have their own GitHub Actions CI (M1549). The local runner does not centrally
+test them — that work happens on each repo independently on every push.
 
 
 ## Functional tests (`tests/functional/`)
