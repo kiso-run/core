@@ -532,7 +532,6 @@ async def _persist_plan_tasks(
             db, plan_id, session,
             type=contract.task_type,
             detail=contract.intent,
-            wrapper=contract.wrapper_name,
             args=args_payload,
             expect=contract.expect,
             parallel_group=t.get("group"),
@@ -552,7 +551,7 @@ async def _review_task(
     user_message: str,
     selected_skills: "list | None" = None,
 ) -> dict:
-    """Review an exec/wrapper task. Returns review dict. Stores learning if present."""
+    """Review an exec/mcp task. Returns review dict. Stores learning if present."""
     return await _review_task_impl(
         config,
         db,
@@ -898,7 +897,7 @@ async def _handle_msg_task(
     )
 
 
-# shared review-result helpers (used by wrapper, exec, search handlers)
+# shared review-result helpers (used by exec and mcp handlers)
 
 
 async def _should_retry_task(
@@ -925,7 +924,7 @@ async def _review_stop_stuck(
     ctx: _PlanCtx, task_id: int, review: dict, plan_output: "dict | None",
     usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle REVIEW_STATUS_STUCK — shared by wrapper/exec/search handlers."""
+    """Handle REVIEW_STATUS_STUCK — shared by exec/mcp handlers."""
     stuck_reason = review.get("reason", "")
     if ctx.slog:
         ctx.slog.info("Review → stuck: %s", stuck_reason)
@@ -966,7 +965,7 @@ async def _review_finalize_ok(
     ctx: _PlanCtx, task_id: int, task_row: dict, review: dict,
     plan_output: "dict | None", usage_idx_before: int,
 ) -> _TaskHandlerResult:
-    """Handle review ok after loop — shared by wrapper/exec/search handlers."""
+    """Handle review ok after loop — shared by exec/mcp handlers."""
     await _store_step_usage(ctx.db, task_id, usage_idx_before)
     if ctx.slog:
         ctx.slog.info("Review → %s", review["status"])
@@ -1174,7 +1173,6 @@ async def _handle_exec_task(
                 ctx.session,
                 pre_snapshot,
                 task_index=i + 1,
-                wrapper_name="exec",
             ),
         )
         await _write_plan_outputs(ctx.session, ctx.plan_outputs + [local_plan_output])
@@ -1347,7 +1345,6 @@ async def _execute_plan(
         for idx, task_row in batch:
             perm = revalidate_permissions(
                 fresh_config, username, task_row["type"],
-                wrapper_name=task_row.get("wrapper"),
             )
             if not perm.allowed:
                 await update_task(db, task_row["id"], "failed", output=perm.reason)
@@ -1527,7 +1524,7 @@ async def _apply_curator_result(
     """Apply curator evaluations: promote facts, create pending questions, discard.
 
     If session has project_id, facts with category in {"project", "behavior"}
-    are scoped to that project. Facts with category in {"general", "wrapper", "system"}
+    are scoped to that project. Facts with category in {"general", "system"}
     remain global (project_id=NULL).
     """
     # resolve project_id once for the session

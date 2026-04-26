@@ -145,7 +145,7 @@ class TestMsgDetailValidation:
         """msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian.",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
@@ -154,7 +154,7 @@ class TestMsgDetailValidation:
         plan = {"tasks": [
             {"type": "msg",
              "detail": "Answer in Italian. Tell the user the SSH key is at ~/.kiso/sys/ssh/",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
@@ -163,7 +163,7 @@ class TestMsgDetailValidation:
         """msg detail without prefix is accepted if substantive (_msg_task adds prefix)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)

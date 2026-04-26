@@ -119,7 +119,6 @@ class TestPromptsEndToEnd:
             await create_task(
                 db, pid, "s1", "mcp",
                 "fetch code review prompt",
-                wrapper=None,
                 args={
                     "name": "code_review",
                     "prompt_args": {"repo": "kiso-run", "focus": "mcp"},

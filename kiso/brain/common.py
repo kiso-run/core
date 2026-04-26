@@ -80,8 +80,8 @@ WORKER_PHASES: frozenset[str] = frozenset({
 _MAX_MESSENGER_FACTS = 50  # cap on facts injected into the messenger LLM context
 _MESSENGER_RETRY_BACKOFF: float = 1.0  # seconds between retries (0 in tests)
 _MAX_MESSENGER_RETRIES = 2  # max retries on transient LLM errors
-_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "wrapper", "user", "system", "safety", "behavior"})
-_ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "wrapper", "person", "project", "concept", "system"})
+_VALID_FACT_CATEGORIES: frozenset[str] = frozenset({"general", "project", "user", "system", "safety", "behavior"})
+_ENTITY_KINDS: frozenset[str] = frozenset({"website", "company", "person", "project", "concept", "system"})
 
 # In-flight message classification
 INFLIGHT_CATEGORIES: frozenset[str] = frozenset({"stop", "update", "independent", "conflict"})
@@ -868,14 +868,13 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
         "properties": {
             "type": {"type": "string", "enum": ["exec", "msg", "replan", "mcp"]},
             "detail": {"type": "string"},
-            "wrapper": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "args": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
             "expect": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "group": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
             "server": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "method": {"anyOf": [{"type": "string"}, {"type": "null"}]},
         },
-        "required": ["type", "detail", "wrapper", "args", "expect"],
+        "required": ["type", "detail", "args", "expect"],
         "additionalProperties": False,
     }},
     "extend_replan": {"anyOf": [{"type": "integer"}, {"type": "null"}]},

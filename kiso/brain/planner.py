@@ -92,7 +92,7 @@ log = logging.getLogger("kiso.brain")
 
 _IMPORTED_NAMES = set(globals())
 
-_KISO_CMD_KEYWORDS = frozenset({"wrapper", "connector", "env", "instance", "kiso"})
+_KISO_CMD_KEYWORDS = frozenset({"mcp", "skill", "env", "instance", "kiso"})
 _USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
 
 def _validate_plan_structure(
@@ -155,7 +155,7 @@ def _validate_plan_tasks(
     install_approved: bool = False,
     mcp_methods_pool: dict[str, list] | None = None,
 ) -> list[str]:
-    """Check per-task rules: type, detail, expect, args, wrapper validation."""
+    """Check per-task rules: type, detail, expect, args validation."""
     errors: list[str] = []
     replan_count = 0
     for i, task in enumerate(tasks, 1):
@@ -205,7 +205,7 @@ def _validate_plan_tasks(
                 f"to tell/send results to the user."
             )
         if t == TASK_TYPE_MSG:
-            for field in ("expect", "wrapper", "args"):
+            for field in ("expect", "args"):
                 if task.get(field) is not None:
                     errors.append(f"Task {i}: msg task must have {field} = null")
             # Language prefix ("Answer in X.") is NOT validated here —
@@ -222,8 +222,6 @@ def _validate_plan_tasks(
             replan_count += 1
             if task.get("expect") is not None:
                 errors.append(f"Task {i}: replan task must have expect = null")
-            if task.get("wrapper") is not None:
-                errors.append(f"Task {i}: replan task must have wrapper = null")
             if task.get("args") is not None:
                 errors.append(f"Task {i}: replan task must have args = null")
             if i != len(tasks):
@@ -231,10 +229,6 @@ def _validate_plan_tasks(
         if t == TASK_TYPE_MCP:
             server = task.get("server")
             method = task.get("method")
-            if task.get("wrapper") is not None:
-                errors.append(
-                    f"Task {i}: mcp task must have wrapper=null"
-                )
             if not isinstance(server, str) or not server:
                 errors.append(
                     f"Task {i}: mcp task requires a non-empty 'server' field "
@@ -340,7 +334,7 @@ def _validate_plan_tasks(
     return errors
 
 
-# goal-plan mismatch — detect artifact requests with no exec/wrapper task.
+# goal-plan mismatch — detect artifact requests with no exec/mcp task.
 _ARTIFACT_VERBS = frozenset({"create", "write", "generate", "build", "produce", "make"})
 _ARTIFACT_NOUNS = frozenset({
     "file", "document", "script", "markdown", "csv", "report",
@@ -516,7 +510,7 @@ def validate_plan(
     ))
     errors.extend(_validate_plan_groups(tasks))
 
-    # goal mentions creating a file/artifact but plan has no exec/wrapper task
+    # goal mentions creating a file/artifact but plan has no exec/mcp task
     goal_words = set(plan.get("goal", "").lower().split())
     has_verb = bool(goal_words & _ARTIFACT_VERBS)
     has_noun = bool(goal_words & _ARTIFACT_NOUNS)
@@ -605,7 +599,7 @@ def _split_facts_by_session(
 
 def _group_facts_by_category(fact_list: list[dict], label_session: bool = False) -> list[str]:
     """Group facts by category and return formatted section parts."""
-    cats: dict[str, list[str]] = {"project": [], "user": [], "wrapper": [], "general": []}
+    cats: dict[str, list[str]] = {"project": [], "user": [], "general": []}
     for f in fact_list:
         cat = f.get("category", "general")
         if cat not in cats:
@@ -618,18 +612,10 @@ def _group_facts_by_category(fact_list: list[dict], label_session: bool = False)
             line += f" [session:{f['session']}]"
         cats[cat].append(line)
     parts: list[str] = []
-    for cat in ("project", "user", "wrapper", "general"):
+    for cat in ("project", "user", "general"):
         if cats[cat]:
             parts.append(f"### {cat.title()}\n" + "\n".join(cats[cat]))
     return parts
-
-
-# Capability keywords → wrapper name they require.  Used by the
-# capability-gap heuristic to inject plugin-install guidance when the
-# message implies a capability not covered by installed wrappers.
-# Keep minimal — only precise keywords that unambiguously require a wrapper.
-_KISO_CMD_KEYWORDS = frozenset({"wrapper", "connector", "env", "instance", "kiso"})
-_USER_MGMT_KEYWORDS = frozenset({"user", "admin", "alias"})
 
 
 
@@ -954,7 +940,7 @@ async def build_planner_messages(
     context_parts: list[str] = []
 
     if briefing:
-        # Briefer path: use synthesized context + filtered wrappers
+        # Briefer path: use synthesized context + filtered skill/MCP catalog
         _add_section(context_parts, "Context", briefing["context"])
         _add_section(context_parts, "Relevant Facts", scored_facts_text)
         # inject essential system env always (~60 tok). Full version
@@ -1068,7 +1054,7 @@ async def build_planner_messages(
     # to actually emit `type=mcp` tasks. Set by build_planner_messages
     # via the `mcp_catalog_text` parameter when a caller has an
     # MCPManager in scope. When empty, the section is omitted entirely
-    # and the planner falls back to wrappers/exec routing.
+    # and the planner falls back to plain exec routing.
     if context_pool.get("mcp_methods"):
         context_parts.append(
             f"## MCP Methods\n{context_pool['mcp_methods']}"

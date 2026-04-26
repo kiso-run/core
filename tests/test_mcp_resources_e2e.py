@@ -117,7 +117,6 @@ class TestResourcesEndToEnd:
             await create_task(
                 db, pid, "s1", "mcp",
                 "read today's log",
-                wrapper=None,
                 args={"uri": "kiso://logs/today"},
                 expect="log body",
                 server="mock",

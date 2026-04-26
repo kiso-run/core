@@ -38,7 +38,6 @@ def _method(server: str, name: str, input_schema: dict | None = None) -> MCPMeth
 _FINAL_MSG = {
     "type": "msg",
     "detail": "report the result",
-    "wrapper": None,
     "args": None,
     "expect": None,
 }
@@ -65,7 +64,6 @@ def _mcp_task(server="github", method="create_issue", args=None, **overrides) ->
     base = {
         "type": "mcp",
         "detail": "open an issue",
-        "wrapper": None,
         "args": args or {"title": "bug", "body": "x"},
         "expect": "issue created",
         "server": server,
@@ -284,17 +282,10 @@ class TestValidateMCPTask:
         )
         assert errors == []
 
-    def test_mcp_task_with_wrapper_field_rejected(self):
-        task = _mcp_task()
-        task["wrapper"] = "aider"
-        errors = validate_plan(_plan([task]))
-        assert any("wrapper=null" in e or "wrapper" in e for e in errors)
-
     def test_non_mcp_task_with_server_field_rejected(self):
         task = {
             "type": "exec",
             "detail": "echo hi",
-            "wrapper": None,
             "args": None,
             "expect": "hi",
             "server": "github",  # stray

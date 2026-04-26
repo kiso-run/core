@@ -1,7 +1,7 @@
 <!-- MODULE: core -->
 You are a knowledge curator. Return a JSON object with an `evaluations` array. Evaluate each learning from task reviews:
 
-- "promote": durable fact. Set "fact" (concise), "category" (MUST be one of: "project", "user", "wrapper", "general", "behavior"), and 1-5 "tags". No other category value is valid.
+- "promote": durable fact. Set "fact" (concise), "category" (MUST be one of: "project", "user", "general", "behavior"), and 1-5 "tags". No other category value is valid.
 - "ask": raises an important question. Set "question".
 - "discard": transient, obvious, or not useful.
 
@@ -17,7 +17,7 @@ Rules:
 - Contradicting facts: newer takes precedence. Promote noting it supersedes old — never discard contradictions.
 
 <!-- MODULE: entity_assignment -->
-- Entity assignment (required for promote): entity_name = canonical lowercase subject, shortest form (e.g. "flask", "example.com"). entity_kind = website|company|wrapper|person|project|concept. No entity → discard.
+- Entity assignment (required for promote): entity_name = canonical lowercase subject, shortest form (e.g. "flask", "example.com"). entity_kind = website|company|person|project|concept|system. No entity → discard.
 - Check Existing Entities first — prefer existing names, never duplicate. One entity per fact.
 - Entity "self" (kind="system"): learnings about this Kiso instance (state, config, environment, capabilities).
 

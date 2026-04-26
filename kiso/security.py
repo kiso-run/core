@@ -215,7 +215,6 @@ def revalidate_permissions(
     config: Config,
     username: str | None,
     task_type: str,
-    wrapper_name: str | None = None,
 ) -> PermissionResult:
     """Re-check user permissions against current config."""
     if username is None:

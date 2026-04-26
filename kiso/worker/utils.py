@@ -264,7 +264,7 @@ def _build_exec_env() -> dict[str, str]:
 
     - PATH: sys/bin + kiso venv bin + system PATH
     - HOME: real home directory (so ``Path.home() / ".kiso"`` resolves correctly
-      in child processes like ``kiso wrapper install``)
+      in child processes like ``kiso mcp install``)
     - GIT_CONFIG_GLOBAL: point to sys/gitconfig if it exists
     - GIT_SSH_COMMAND: use sys/ssh config if it exists
     """
@@ -522,7 +522,6 @@ def _make_file_ref(
     *,
     workspace: Path | None = None,
     origin_task_index: int | None = None,
-    origin_wrapper: str | None = None,
 ) -> FileRef:
     """Create a canonical FileRef from an absolute or relative path."""
     file_path = Path(path)
@@ -545,7 +544,6 @@ def _make_file_ref(
         exists=file_path.exists(),
         module_name=_module_name_for_path(file_path),
         origin_task_index=origin_task_index,
-        origin_wrapper=origin_wrapper,
     )
 
 
@@ -554,14 +552,12 @@ def _make_artifact_ref(
     *,
     workspace: Path,
     origin_task_index: int | None = None,
-    origin_wrapper: str | None = None,
 ) -> ArtifactRef:
     """Create a file-backed ArtifactRef."""
     file_ref = _make_file_ref(
         path,
         workspace=workspace,
         origin_task_index=origin_task_index,
-        origin_wrapper=origin_wrapper,
     )
     artifact_key = file_ref.workspace_path or file_ref.abs_path
     return ArtifactRef(
@@ -636,15 +632,15 @@ def _format_workspace_files(files: list[dict]) -> str:
 
 def _build_provenance_index(
     plan_outputs: list[dict] | None,
-) -> dict[str, tuple[str | None, int | None]]:
-    """Map workspace-relative path → (origin_wrapper, origin_task_index).
+) -> dict[str, int | None]:
+    """Map workspace-relative path → origin_task_index.
 
     Walks each plan_output's ``file_refs`` and ``artifact_refs`` and pulls
-    the (wrapper, index) declared on each ref. Refs without a usable path
-    are skipped. When two refs target the same path, the first wins
+    the task index declared on each ref. Refs without a usable path are
+    skipped. When two refs target the same path, the first wins
     (consistent with append-order semantics of plan_outputs).
     """
-    index: dict[str, tuple[str | None, int | None]] = {}
+    index: dict[str, int | None] = {}
     for output in plan_outputs or []:
         for ref_list_key in ("file_refs", "artifact_refs"):
             for ref in output.get(ref_list_key) or []:
@@ -653,10 +649,7 @@ def _build_provenance_index(
                 key = ref.get("workspace_path") or ref.get("path") or ref.get("abs_path")
                 if not key or key in index:
                     continue
-                index[key] = (
-                    ref.get("origin_wrapper"),
-                    ref.get("origin_task_index"),
-                )
+                index[key] = ref.get("origin_task_index")
     return index
 
 
@@ -689,16 +682,14 @@ def _build_last_plan_summary_data(
         if any(p.startswith(".") for p in parts):
             continue
         rel_str = str(rel)
-        origin_wrapper, origin_task_index = provenance.get(
-            rel_str, provenance.get(str(f), (None, None))
+        origin_task_index = provenance.get(
+            rel_str, provenance.get(str(f))
         )
         artifact = _make_artifact_ref(
             f,
             workspace=workspace,
             origin_task_index=origin_task_index,
-            origin_wrapper=origin_wrapper,
         ).to_dict()
-        artifact["wrapper"] = origin_wrapper
         produced_files.append(artifact)
 
     # Key results — reviewer summaries from completed tasks
@@ -809,7 +800,6 @@ def _build_execution_state(session: str) -> ExecutionState:
             normalized_produced_files.append(item)
             continue
         artifact = _make_artifact_ref(raw_path, workspace=workspace).to_dict()
-        artifact["wrapper"] = item.get("wrapper")
         normalized_produced_files.append(artifact)
     return ExecutionState(
         session=session,

@@ -84,11 +84,16 @@ def _format_plan_outputs_for_msg(
 
 
 def _task_type_label(task: dict) -> str:
-    """Format task type, including wrapper name when present."""
+    """Format task type, suffixing the MCP server:method when relevant."""
     result = _task_result_from_source(task)
     label = result.task_type
-    if result.wrapper_name:
-        label += f"/{result.wrapper_name}"
+    if result.task_type == "mcp":
+        server = task.get("server")
+        method = task.get("method")
+        if server and method:
+            label = f"mcp/{server}:{method}"
+        elif server:
+            label = f"mcp/{server}"
     return label
 
 

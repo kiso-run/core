@@ -488,14 +488,16 @@ async def test_create_task_all_fields(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     task_id = await create_task(
-        db, plan_id, "sess1", type="wrapper", detail="search web",
-        wrapper="search", args='{"query": "test"}', expect="results found",
+        db, plan_id, "sess1", type="mcp", detail="search web",
+        args='{"query": "test"}', expect="results found",
+        server="kiso-search", method="web_search",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert len(tasks) == 1
     t = tasks[0]
-    assert t["type"] == "wrapper"
-    assert t["wrapper"] == "search"
+    assert t["type"] == "mcp"
+    assert t["server"] == "kiso-search"
+    assert t["method"] == "web_search"
     assert t["args"] == '{"query": "test"}'
     assert t["expect"] == "results found"
     assert t["status"] == "pending"
@@ -505,8 +507,9 @@ async def test_create_task_serializes_dict_args(db: aiosqlite.Connection):
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
     await create_task(
-        db, plan_id, "sess1", type="wrapper", detail="search web",
-        wrapper="search", args={"query": "test", "page": 1}, expect="results found",
+        db, plan_id, "sess1", type="mcp", detail="search web",
+        args={"query": "test", "page": 1}, expect="results found",
+        server="kiso-search", method="web_search",
     )
     tasks = await get_tasks_for_plan(db, plan_id)
     assert json.loads(tasks[0]["args"]) == {"page": 1, "query": "test"}
@@ -516,9 +519,9 @@ async def test_create_task_parallel_group_persists(db: aiosqlite.Connection):
     """parallel_group round-trips through create_task → get_tasks_for_plan."""
     await create_session(db, "sess1")
     plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
-    await create_task(db, plan_id, "sess1", type="search", detail="A",
+    await create_task(db, plan_id, "sess1", type="exec", detail="A",
                       parallel_group=1)
-    await create_task(db, plan_id, "sess1", type="search", detail="B",
+    await create_task(db, plan_id, "sess1", type="exec", detail="B",
                       parallel_group=1)
     await create_task(db, plan_id, "sess1", type="msg", detail="report")
     tasks = await get_tasks_for_plan(db, plan_id)
@@ -1172,11 +1175,11 @@ async def test_facts_archive_table_exists(db: aiosqlite.Connection):
 
 
 async def test_save_fact_with_category_and_confidence(db: aiosqlite.Connection):
-    fid = await save_fact(db, "Uses Docker", "curator", category="wrapper", confidence=0.9)
+    fid = await save_fact(db, "Uses Docker", "curator", category="general", confidence=0.9)
     facts = await get_facts(db)
     assert len(facts) == 1
     assert facts[0]["content"] == "Uses Docker"
-    assert facts[0]["category"] == "wrapper"
+    assert facts[0]["category"] == "general"
     assert facts[0]["confidence"] == 0.9
 
 
@@ -1361,9 +1364,9 @@ async def test_get_facts_user_fact_visible_in_own_session(db: aiosqlite.Connecti
 
 
 async def test_get_facts_global_categories_always_visible(db: aiosqlite.Connection):
-    """: project / wrapper / general facts are returned regardless of session."""
+    """: project / general facts are returned regardless of session."""
     await save_fact(db, "Uses FastAPI", "curator", session="session-X", category="project")
-    await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="wrapper")
+    await save_fact(db, "ffmpeg installed", "curator", session="session-X", category="general")
     await save_fact(db, "Async preferred", "curator", session="session-X", category="general")
 
     for sess in ("session-X", "session-Y", "session-Z"):
@@ -2139,7 +2142,7 @@ async def test_decay_facts_zero_rate_no_confidence_change(db: aiosqlite.Connecti
 async def test_archive_preserves_all_fields(db: aiosqlite.Connection):
     """archive_low_confidence_facts copies all fields to facts_archive correctly."""
     fid = await save_fact(
-        db, "Weak fact", "curator", session="sess1", category="wrapper", confidence=0.1
+        db, "Weak fact", "curator", session="sess1", category="general", confidence=0.1
     )
     archived = await archive_low_confidence_facts(db, threshold=0.3)
     assert archived == 1
@@ -2149,7 +2152,7 @@ async def test_archive_preserves_all_fields(db: aiosqlite.Connection):
     assert row["content"] == "Weak fact"
     assert row["source"] == "curator"
     assert row["session"] == "sess1"
-    assert row["category"] == "wrapper"
+    assert row["category"] == "general"
     assert row["confidence"] == pytest.approx(0.1)
     assert row["archived_at"] is not None
 
@@ -2378,9 +2381,9 @@ async def test_find_or_create_entity_normalizes_https(db: aiosqlite.Connection):
 
 async def test_find_or_create_entity_updates_kind(db: aiosqlite.Connection):
     """calling with different kind updates the entity."""
-    eid = await find_or_create_entity(db, "flask", "wrapper")
+    eid = await find_or_create_entity(db, "flask", "system")
     cur = await db.execute("SELECT kind FROM entities WHERE id = ?", (eid,))
-    assert (await cur.fetchone())[0] == "wrapper"
+    assert (await cur.fetchone())[0] == "system"
 
     eid2 = await find_or_create_entity(db, "flask", "framework")
     assert eid2 == eid  # same entity
@@ -2429,7 +2432,7 @@ async def test_search_facts_by_entity(db: aiosqlite.Connection):
 
 async def test_save_fact_with_entity_id(db: aiosqlite.Connection):
     """save_fact stores entity_id in facts table."""
-    eid = await find_or_create_entity(db, "flask", "wrapper")
+    eid = await find_or_create_entity(db, "flask", "system")
     fid = await save_fact(db, "Flask uses Jinja2 templates", "curator", entity_id=eid)
     cur = await db.execute("SELECT entity_id FROM facts WHERE id = ?", (fid,))
     row = await cur.fetchone()
@@ -2792,24 +2795,25 @@ async def test_list_knowledge_combined_category_and_tag(db: aiosqlite.Connection
     """list_knowledge with both category and tag filters applied together."""
     from kiso.store import list_knowledge
     await create_session(db, "s1")
-    # Create facts with different categories and tags
-    await save_fact(db, "Flask is a Python web framework wrapper", "admin",
-                    category="wrapper", tags=["python", "web"])
-    await save_fact(db, "React is a JavaScript UI library wrapper", "admin",
-                    category="wrapper", tags=["javascript", "web"])
+    # Three facts spanning two categories and overlapping tags so the
+    # combined (category, tag) filter has to narrow correctly.
+    await save_fact(db, "ApiX project uses Flask", "admin",
+                    category="project", tags=["python", "web"])
+    await save_fact(db, "ApiX project uses React on the frontend", "admin",
+                    category="project", tags=["javascript", "web"])
     await save_fact(db, "Python async programming is a general topic", "admin",
                     category="general", tags=["python"])
 
-    # Combined filter: category=wrapper AND tag=python → only Flask fact
-    results = await list_knowledge(db, category="wrapper", tag="python")
+    # category=project AND tag=python → only the Flask project fact
+    results = await list_knowledge(db, category="project", tag="python")
     assert len(results) == 1
     assert "Flask" in results[0]["content"]
 
-    # Combined filter: category=wrapper AND tag=web → both wrapper facts
-    results = await list_knowledge(db, category="wrapper", tag="web")
+    # category=project AND tag=web → both project facts (Flask + React)
+    results = await list_knowledge(db, category="project", tag="web")
     assert len(results) == 2
 
-    # Combined filter: category=general AND tag=python → only async fact
+    # category=general AND tag=python → only the async general fact
     results = await list_knowledge(db, category="general", tag="python")
     assert len(results) == 1
     assert "async" in results[0]["content"]

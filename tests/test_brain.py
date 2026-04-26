@@ -202,8 +202,8 @@ class TestLearningContradictsOutput:
 class TestValidatePlan:
     def test_valid_plan(self):
         plan = {"tasks": [
-            {"type": "exec", "detail": "ls", "expect": "files listed", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "exec", "detail": "ls", "expect": "files listed", "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         assert validate_plan(plan) == []
 
@@ -230,18 +230,10 @@ class TestValidatePlan:
         errors = validate_plan(plan)
         assert any("msg task must have expect = null" in e for e in errors)
 
-    def test_msg_with_non_null_skill(self):
-        """M84i: msg task with wrapper != null must fail validation."""
-        plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": "my-wrapper", "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("msg task must have wrapper = null" in e for e in errors)
-
     def test_msg_with_non_null_args(self):
         """M84i: msg task with args != null must fail validation."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": '{"key": "val"}'},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": '{"key": "val"}'},
         ]}
         errors = validate_plan(plan)
         assert any("msg task must have args = null" in e for e in errors)
@@ -249,7 +241,7 @@ class TestValidatePlan:
     def test_msg_detail_only_language_prefix_fails(self):
         """msg detail with only language prefix is rejected (too short)."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in Italian.", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in Italian.", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
@@ -258,7 +250,7 @@ class TestValidatePlan:
         """msg detail with substantive content after prefix passes."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Answer in Italian. Tell user the SSH key is at ~/.kiso/sys/ssh/",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("empty or too short" in e for e in errors)
@@ -267,7 +259,7 @@ class TestValidatePlan:
         """msg detail without language prefix is accepted (_msg_task injects it at runtime)."""
         plan = {"tasks": [
             {"type": "msg", "detail": "Tell the user the results of the analysis",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("must start with" in e for e in errors)
@@ -276,7 +268,7 @@ class TestValidatePlan:
     def test_msg_detail_too_short_without_prefix_fails(self):
         """very short msg detail (no prefix, <5 chars) is still rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "done", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "done", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("empty or too short" in e for e in errors)
@@ -284,7 +276,7 @@ class TestValidatePlan:
     def test_knowledge_valid_items_accepted(self):
         """knowledge items with sufficient length pass validation."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "args": None},
         ], "knowledge": ["Artemis project uses PostgreSQL 16 as primary database"]}
         errors = validate_plan(plan)
         assert not any("knowledge" in e for e in errors)
@@ -292,8 +284,8 @@ class TestValidatePlan:
     def test_knowledge_null_accepted(self):
         """knowledge=null passes validation."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "wrapper": None, "args": None},
+            {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "args": None},
         ], "knowledge": None}
         errors = validate_plan(plan)
         assert not any("knowledge" in e for e in errors)
@@ -301,7 +293,7 @@ class TestValidatePlan:
     def test_knowledge_short_item_rejected(self):
         """knowledge items shorter than _MIN_PROMOTED_FACT_LEN are rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. noted", "expect": None, "args": None},
         ], "knowledge": ["too short"]}
         errors = validate_plan(plan)
         assert any("knowledge" in e for e in errors)
@@ -341,7 +333,7 @@ class TestValidatePlan:
         """goal mentions file creation without exec/wrapper → rejected."""
         plan = {"goal": "Write a Python script word_count.py", "tasks": [
             {"type": "msg", "detail": "Here is your script", "expect": None,
-             "wrapper": None, "args": None},
+             "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("Goal mentions creating" in e for e in errors)
@@ -351,7 +343,7 @@ class TestValidatePlan:
         plan = {"goal": "Write a Python script word_count.py",
                 "needs_install": ["aider"], "tasks": [
             {"type": "msg", "detail": "I need to install aider first",
-             "expect": None, "wrapper": None, "args": None},
+             "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("Goal mentions creating" in e for e in errors)
@@ -399,9 +391,9 @@ class TestValidatePlan:
     def test_msg_before_exec_rejected(self):
         """[msg, exec, msg] — msg first is rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in Italian. describe results", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in Italian. describe results", "expect": None, "args": None},
             {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("msg task must come after" in e for e in errors)
@@ -411,7 +403,7 @@ class TestValidatePlan:
         plan = {"tasks": [
             {"type": "exec", "detail": "curl site", "expect": "HTML fetched"},
             {"type": "exec", "detail": "grep title", "expect": "title found"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
@@ -419,7 +411,7 @@ class TestValidatePlan:
     def test_msg_only_plan_rejected_without_flags(self):
         """plan with only a msg (no data tasks) is rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. Hello!", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. Hello!", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("only msg tasks" in e for e in errors)
@@ -428,8 +420,8 @@ class TestValidatePlan:
         """[exec, msg, replan] — msg after exec, before replan — valid."""
         plan = {"tasks": [
             {"type": "exec", "detail": "ls", "expect": "files"},
-            {"type": "msg", "detail": "Answer in English. progress update", "expect": None, "wrapper": None, "args": None},
-            {"type": "replan", "detail": "decide next", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. progress update", "expect": None, "args": None},
+            {"type": "replan", "detail": "decide next", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("msg task must come after" in e for e in errors)
@@ -439,9 +431,9 @@ class TestValidatePlan:
     def test_announce_msg_first_rejected(self):
         """[msg, exec, msg] — announce msg before exec is rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. I will search for the info now.", "expect": None, "args": None},
             {"type": "exec", "detail": "search for data", "expect": "results"},
-            {"type": "msg", "detail": "Answer in English. Here are the results.", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. Here are the results.", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("msg task must come after" in e for e in errors)
@@ -451,7 +443,7 @@ class TestValidatePlan:
         plan = {
             "needs_install": ["browser"],
             "tasks": [
-                {"type": "msg", "detail": "Answer in English. Browser needs installing.", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. Browser needs installing.", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan)
@@ -462,16 +454,16 @@ class TestValidatePlan:
     def test_replan_as_last_task_valid(self):
         """Plan with exec + replan → valid."""
         plan = {"tasks": [
-            {"type": "exec", "detail": "read registry", "expect": "JSON output", "wrapper": None, "args": None},
-            {"type": "replan", "detail": "install appropriate wrapper", "expect": None, "wrapper": None, "args": None},
+            {"type": "exec", "detail": "read registry", "expect": "JSON output", "args": None},
+            {"type": "replan", "detail": "install appropriate wrapper", "expect": None, "args": None},
         ]}
         assert validate_plan(plan) == []
 
     def test_replan_not_last_task_invalid(self):
         """Replan followed by msg → invalid."""
         plan = {"tasks": [
-            {"type": "replan", "detail": "investigate", "expect": None, "wrapper": None, "args": None},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "replan", "detail": "investigate", "expect": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("replan task can only be the last task" in e for e in errors)
@@ -479,23 +471,15 @@ class TestValidatePlan:
     def test_replan_with_expect_invalid(self):
         """Replan task with non-null expect → invalid."""
         plan = {"tasks": [
-            {"type": "replan", "detail": "investigate", "expect": "something", "wrapper": None, "args": None},
+            {"type": "replan", "detail": "investigate", "expect": "something", "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("replan task must have expect = null" in e for e in errors)
 
-    def test_replan_with_skill_invalid(self):
-        """Replan task with non-null wrapper → invalid."""
-        plan = {"tasks": [
-            {"type": "replan", "detail": "investigate", "expect": None, "wrapper": "search", "args": None},
-        ]}
-        errors = validate_plan(plan)
-        assert any("replan task must have wrapper = null" in e for e in errors)
-
     def test_replan_with_args_invalid(self):
         """Replan task with non-null args → invalid."""
         plan = {"tasks": [
-            {"type": "replan", "detail": "investigate", "expect": None, "wrapper": None, "args": "{}"},
+            {"type": "replan", "detail": "investigate", "expect": None, "args": "{}"},
         ]}
         errors = validate_plan(plan)
         assert any("replan task must have args = null" in e for e in errors)
@@ -503,8 +487,8 @@ class TestValidatePlan:
     def test_multiple_replan_tasks_invalid(self):
         """Two replan tasks → invalid."""
         plan = {"tasks": [
-            {"type": "replan", "detail": "first", "expect": None, "wrapper": None, "args": None},
-            {"type": "replan", "detail": "second", "expect": None, "wrapper": None, "args": None},
+            {"type": "replan", "detail": "first", "expect": None, "args": None},
+            {"type": "replan", "detail": "second", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("at most one replan task" in e for e in errors)
@@ -512,7 +496,7 @@ class TestValidatePlan:
     def test_replan_only_plan_valid(self):
         """Plan with only a replan task → valid."""
         plan = {"tasks": [
-            {"type": "replan", "detail": "investigate first", "expect": None, "wrapper": None, "args": None},
+            {"type": "replan", "detail": "investigate first", "expect": None, "args": None},
         ]}
         assert validate_plan(plan) == []
 
@@ -521,8 +505,8 @@ class TestValidatePlan:
         plan = {
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
             ],
         }
         assert validate_plan(plan) == []
@@ -855,20 +839,17 @@ class TestBuildPlannerMessages:
         from kiso.store import save_fact
         await save_fact(db, "Uses Flask", "curator", category="project")
         await save_fact(db, "Prefers dark mode", "curator", category="user")
-        await save_fact(db, "Git available", "curator", category="wrapper")
         await save_fact(db, "Some general fact", "curator", category="general")
         msgs = await build_planner_messages(db, config, "sess1", "admin", "hello")
         content = msgs[1]["content"]
         assert "### Project" in content
         assert "### User" in content
-        assert "### Wrapper" in content
         assert "### General" in content
-        # Verify order: project before user before wrapper before general
+        # Verify order: project before user before general
         proj_pos = content.index("### Project")
         user_pos = content.index("### User")
-        tool_pos = content.index("### Wrapper")
         gen_pos = content.index("### General")
-        assert proj_pos < user_pos < tool_pos < gen_pos
+        assert proj_pos < user_pos < gen_pos
 
     async def test_admin_facts_hierarchy(self, db, config):
         """M44f: admin context shows current-session+global facts in ## Known Facts (primary)
@@ -899,7 +880,7 @@ class TestBuildPlannerMessages:
         """M44f: non-admin planner context never shows session labels or the other-sessions block."""
         from kiso.store import save_fact
         await create_session(db, "sess1")
-        await save_fact(db, "Uses pytest", "curator", session="sess1", category="wrapper")
+        await save_fact(db, "Uses pytest", "curator", session="sess1", category="general")
         msgs = await build_planner_messages(db, config, "sess1", "user", "hello")
         content = msgs[1]["content"]
         assert "Uses pytest" in content
@@ -1495,15 +1476,15 @@ VALID_PLAN = json.dumps({
     "goal": "Say hello",
     "secrets": None,
     "tasks": [
-        {"type": "exec", "detail": "echo hello", "wrapper": None, "args": None, "expect": "hello"},
-        {"type": "msg", "detail": "Answer in English. Hello!", "wrapper": None, "args": None, "expect": None},
+        {"type": "exec", "detail": "echo hello", "args": None, "expect": "hello"},
+        {"type": "msg", "detail": "Answer in English. Hello!", "args": None, "expect": None},
     ],
 })
 
 INVALID_PLAN = json.dumps({
     "goal": "Bad plan",
     "secrets": None,
-    "tasks": [{"type": "exec", "detail": "ls", "wrapper": None, "args": None, "expect": None}],
+    "tasks": [{"type": "exec", "detail": "ls", "args": None, "expect": None}],
 })
 
 
@@ -1779,7 +1760,7 @@ class TestValidateReview:
 
 _PLAN_SCHEMA_INNER = PLAN_SCHEMA["json_schema"]["schema"]
 _REVIEW_SCHEMA_INNER = REVIEW_SCHEMA["json_schema"]["schema"]
-_MSG_TASK_DICT = {"type": "msg", "detail": "Hello", "wrapper": None, "args": None, "expect": None}
+_MSG_TASK_DICT = {"type": "msg", "detail": "Hello", "args": None, "expect": None}
 
 
 class TestPlanSchema:
@@ -1814,11 +1795,11 @@ class TestPlanSchema:
 
     @pytest.mark.parametrize("t", ["exec", "msg", "replan", "mcp"])
     def test_valid_task_type(self, t):
-        self._valid(self._plan(tasks=[{"type": t, "detail": "x", "wrapper": None, "args": None, "expect": None}]))
+        self._valid(self._plan(tasks=[{"type": t, "detail": "x", "args": None, "expect": None}]))
 
     def test_exec_task_object_args_valid(self):
         self._valid(self._plan(tasks=[
-            {"type": "exec", "detail": "search", "wrapper": None, "args": {"q": "test"}, "expect": "results"},
+            {"type": "exec", "detail": "search", "args": {"q": "test"}, "expect": "results"},
         ]))
 
     # Invalid ---
@@ -1848,18 +1829,18 @@ class TestPlanSchema:
         self._invalid(self._plan(unexpected="boom"))
 
     def test_task_invalid_type_enum(self):
-        self._invalid(self._plan(tasks=[{"type": "fly", "detail": "x", "wrapper": None, "args": None, "expect": None}]))
+        self._invalid(self._plan(tasks=[{"type": "fly", "detail": "x", "args": None, "expect": None}]))
 
     def test_task_missing_required_field(self):
         # missing "expect"
-        self._invalid(self._plan(tasks=[{"type": "msg", "detail": "x", "wrapper": None, "args": None}]))
+        self._invalid(self._plan(tasks=[{"type": "msg", "detail": "x", "args": None}]))
 
     def test_task_extra_field(self):
         self._invalid(self._plan(tasks=[{**_MSG_TASK_DICT, "extra": "x"}]))
 
     def test_task_string_args_invalid(self):
         self._invalid(self._plan(tasks=[
-            {"type": "exec", "detail": "search", "wrapper": None, "args": "{}", "expect": "results"},
+            {"type": "exec", "detail": "search", "args": "{}", "expect": "results"},
         ]))
 
     def test_extend_replan_wrong_type(self):
@@ -1868,34 +1849,34 @@ class TestPlanSchema:
     # group field on tasks
     def test_task_group_integer_valid(self):
         self._valid(self._plan(tasks=[
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "ok", "group": 1},
+            {"type": "exec", "detail": "A", "args": None, "expect": "ok", "group": 1},
         ]))
 
     def test_task_group_null_valid(self):
         self._valid(self._plan(tasks=[
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "ok", "group": None},
+            {"type": "exec", "detail": "A", "args": None, "expect": "ok", "group": None},
         ]))
 
     def test_task_group_zero_invalid(self):
         """group minimum is 1."""
         self._invalid(self._plan(tasks=[
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "ok", "group": 0},
+            {"type": "exec", "detail": "A", "args": None, "expect": "ok", "group": 0},
         ]))
 
     def test_task_group_negative_invalid(self):
         self._invalid(self._plan(tasks=[
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "ok", "group": -1},
+            {"type": "exec", "detail": "A", "args": None, "expect": "ok", "group": -1},
         ]))
 
     def test_task_group_string_invalid(self):
         self._invalid(self._plan(tasks=[
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "ok", "group": "one"},
+            {"type": "exec", "detail": "A", "args": None, "expect": "ok", "group": "one"},
         ]))
 
     def test_task_without_group_valid(self):
         """Tasks without group field (omitted entirely) are valid."""
         self._valid(self._plan(tasks=[
-            {"type": "msg", "detail": "Hello", "wrapper": None, "args": None, "expect": None},
+            {"type": "msg", "detail": "Hello", "args": None, "expect": None},
         ]))
 
     # knowledge field
@@ -2455,7 +2436,7 @@ class TestRunCurator:
     async def test_entities_forwarded_to_messages(self, config):
         """run_curator forwards available_entities to build_curator_messages."""
         learnings = [{"id": 1, "content": "Uses Python"}]
-        entities = [{"name": "flask", "kind": "wrapper"}]
+        entities = [{"name": "flask", "kind": "concept"}]
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=VALID_CURATOR) as mock_llm:
             await run_curator(config, learnings, available_entities=entities)
         # The user message should contain the entities section
@@ -3402,7 +3383,7 @@ class TestPlannerPromptContent:
         """exec task with >500 char detail is rejected."""
         plan = {"tasks": [
             {"type": "exec", "detail": "x" * 501, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert any("too long" in e for e in errors)
@@ -3411,7 +3392,7 @@ class TestPlannerPromptContent:
         """exec task with <=500 char detail is fine."""
         plan = {"tasks": [
             {"type": "exec", "detail": "x" * 500, "expect": "ok"},
-            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan)
         assert not any("too long" in e for e in errors)
@@ -3494,8 +3475,8 @@ class TestStripExtendReplan:
         plan = {
             "extend_replan": 3,
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "wrapper": None, "args": None},
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, is_replan=False)
@@ -3506,8 +3487,8 @@ class TestStripExtendReplan:
         plan = {
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "wrapper": None, "args": None},
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, is_replan=True)
@@ -3517,8 +3498,8 @@ class TestStripExtendReplan:
     def test_no_extend_replan_no_error(self):
         plan = {
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "wrapper": None, "args": None},
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+                {"type": "msg", "detail": "Answer in English. hello", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, is_replan=False)
@@ -3536,14 +3517,12 @@ _MSG_PLAN_FOR_USER = json.dumps({
         {
             "type": "exec",
             "detail": "List current users with kiso user list",
-            "wrapper": None,
             "args": None,
             "expect": "User list output",
         },
         {
             "type": "msg",
             "detail": "Answer in English. I cannot add users directly. Please ask your admin to run: kiso user add bob --role user",
-            "wrapper": None,
             "args": None,
             "expect": None,
         },
@@ -3642,11 +3621,10 @@ class TestPlannerAskThenAdd:
             "goal": "test", "secrets": None, "extend_replan": None,
             "needs_install": None,
             "tasks": [
-                {"type": "exec", "detail": f"step {i}", "wrapper": None,
-                 "args": None, "expect": "ok"}
+                {"type": "exec", "detail": f"step {i}", "args": None, "expect": "ok"}
                 for i in range(6)
             ] + [{"type": "msg", "detail": "Answer in English. report results",
-                  "wrapper": None, "args": None, "expect": None}],
+                  "args": None, "expect": None}],
         })
         with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=big_plan):
             # 7 tasks with max_tasks_override=5 → should fail validation
@@ -4488,13 +4466,15 @@ class TestCuratorCategoryField:
         assert "null" in types_in_anyof
 
     def test_48d_curator_schema_category_enum_contains_all_values(self):
-        """48d: category enum must contain project/user/wrapper/general."""
+        """category enum must contain project/user/general/behavior
+        (M1566 retired the legacy `wrapper` category)."""
         item_props = CURATOR_SCHEMA["json_schema"]["schema"]["properties"]["evaluations"]["items"]["properties"]
         cat = item_props["category"]
         enum_values = [x.get("enum", []) for x in cat.get("anyOf", []) if x.get("type") == "string"]
         flat = [v for sub in enum_values for v in sub]
-        for v in ("project", "user", "wrapper", "general"):
+        for v in ("project", "user", "general", "behavior"):
             assert v in flat
+        assert "wrapper" not in flat
 
     def test_48d_curator_schema_category_in_required_list(self):
         """48d: category must be in the required field list of the item schema."""
@@ -4622,11 +4602,13 @@ class TestCuratorEntityFields:
         kind = item_props["entity_kind"]
         enum_values = [x.get("enum", []) for x in kind.get("anyOf", []) if x.get("type") == "string"]
         flat = [v for sub in enum_values for v in sub]
-        for v in ("website", "company", "wrapper", "person", "project", "concept"):
+        # M1566: `wrapper` retired from entity kinds.
+        for v in ("website", "company", "person", "project", "concept", "system"):
             assert v in flat
+        assert "wrapper" not in flat
 
     def test_build_curator_messages_with_entities(self):
-        entities = [{"name": "flask", "kind": "wrapper"}, {"name": "myproject", "kind": "project"}]
+        entities = [{"name": "flask", "kind": "concept"}, {"name": "myproject", "kind": "project"}]
         msgs = build_curator_messages(
             [{"id": 1, "content": "test"}],
             available_entities=entities,
@@ -4744,19 +4726,19 @@ class TestGroupFactsByCategory:
         from kiso.brain import _group_facts_by_category
         assert _group_facts_by_category([]) == []
 
-    def test_all_four_categories_grouped(self):
+    def test_all_categories_grouped(self):
+        """M1566: `wrapper` retired; planner-visible categories are
+        project / user / general."""
         from kiso.brain import _group_facts_by_category
         facts = [
             self._fact("proj note", "project"),
             self._fact("user pref", "user"),
-            self._fact("wrapper info", "wrapper"),
             self._fact("general note", "general"),
         ]
         parts = _group_facts_by_category(facts)
-        assert len(parts) == 4
+        assert len(parts) == 3
         assert any("Project" in p for p in parts)
         assert any("User" in p for p in parts)
-        assert any("Wrapper" in p for p in parts)
         assert any("General" in p for p in parts)
 
     def test_unknown_category_falls_to_general(self):
@@ -4962,8 +4944,8 @@ class TestRetryJsonErrorPosition:
         valid_plan = json.dumps({
             "goal": "test", "secrets": None, "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "expect": "hello", "wrapper": None, "args": None},
-                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "wrapper": None, "args": None},
+                {"type": "exec", "detail": "echo hello", "expect": "hello", "args": None},
+                {"type": "msg", "detail": "Answer in English. report results", "expect": None, "args": None},
             ],
         })
         mock_messages = [
@@ -5103,10 +5085,9 @@ class TestEscalatingValidationError:
             captured_messages.append(list(messages))
             # Always return a valid JSON that fails validation the same way
             return json.dumps({"tasks": [
-                {"type": "exec", "detail": "do", "wrapper": None,
-                 "args": None, "expect": "done"},
+                {"type": "exec", "detail": "do", "args": None, "expect": "done"},
                 {"type": "msg", "detail": "Answer in English. report results", "expect": None,
-                 "wrapper": None, "args": None},
+                 "args": None},
             ]})
 
         def always_fail(plan):
@@ -6042,9 +6023,9 @@ class TestBrieferPlannerIntegration:
             return json.dumps({
                 "goal": "browse", "secrets": None,
                 "tasks": [
-                    {"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"},
+                    {"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"},
                     {"type": "msg", "detail": "Answer in English. report results",
-                     "wrapper": None, "args": None, "expect": None},
+                     "args": None, "expect": None},
                 ],
             })
 
@@ -6097,10 +6078,10 @@ class TestBrieferPlannerIntegration:
 
         # Create entity "flask" with a fact whose content shares no words
         # with the user message, so FTS5 cannot find it — only entity matching will.
-        eid = await find_or_create_entity(db, "flask", "wrapper")
+        eid = await find_or_create_entity(db, "flask", "concept")
         await save_fact(
             db, "Supports Jinja2 templating and WSGI interface",
-            source="curator", category="wrapper",
+            source="curator", category="general",
             tags=["python"], entity_id=eid,
         )
         config = self._config(briefer_enabled=False)
@@ -6124,9 +6105,9 @@ class TestBrieferPlannerIntegration:
             return json.dumps({
                 "goal": "test", "secrets": None,
                 "tasks": [
-                    {"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"},
+                    {"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"},
                     {"type": "msg", "detail": "Answer in English. hello there",
-                     "wrapper": None, "args": None, "expect": None},
+                     "args": None, "expect": None},
                 ],
             })
 
@@ -7016,8 +6997,8 @@ class TestRetryOnLLMError:
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hello", "wrapper": None, "args": None, "expect": "hello"},
-                {"type": "msg", "detail": "Answer in English. hello there", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hello", "args": None, "expect": "hello"},
+                {"type": "msg", "detail": "Answer in English. hello there", "args": None, "expect": None},
             ],
         })
 
@@ -7057,7 +7038,7 @@ class TestRetryOnLLMError:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
         captured_messages: list[list[dict]] = []
 
@@ -7114,7 +7095,7 @@ class TestFallbackModel:
         models_seen: list[str | None] = []
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, model_override=None, **kw):
@@ -7173,10 +7154,9 @@ class TestFallbackModel:
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo ok", "wrapper": None,
-                 "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"},
                 {"type": "msg", "detail": "Answer in English. done",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
         })
 
@@ -7211,7 +7191,7 @@ class TestFallbackModel:
         models_seen: list[str | None] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _ok(cfg, role, messages, model_override=None, **kw):
@@ -7234,7 +7214,7 @@ class TestFallbackModel:
         retry_reasons: list[str] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, **kw):
@@ -7279,9 +7259,9 @@ class TestCircuitBreakerFallback:
         valid_plan = json.dumps({
             "goal": "test", "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"},
                 {"type": "msg", "detail": "Answer in English. Report the results to the user",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
         })
 
@@ -7396,7 +7376,7 @@ class TestReplanContextDedup:
         )
         plan_with_extend = json.dumps({
             "goal": "test", "secrets": None, "extend_replan": 2,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. hello there", "args": None, "expect": None}],
         })
 
         async def _mock_llm(cfg, role, messages, **kw):
@@ -7587,7 +7567,7 @@ class TestNoTimeoutPartitioning:
         captured_kwargs: list[dict] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _capture(cfg, role, messages, **kw):
@@ -7613,7 +7593,7 @@ class TestNoTimeoutPartitioning:
             settings=full_settings(llm_timeout=250),
             raw={},
         )
-        plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"Answer in English. report results","wrapper":null,"args":null,"expect":null}]}'
+        plan_content = '{"goal":"x","secrets":null,"tasks":[{"type":"msg","detail":"Answer in English. report results","args":null,"expect":null}]}'
         with patch("kiso.llm._http_client") as mock_client:
             mock_client.stream = MagicMock(return_value=_brain_stream_cm(plan_content))
             await call_llm(
@@ -7629,7 +7609,7 @@ class TestNoTimeoutPartitioning:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _timeout_then_ok(cfg, role, messages, **kw):
@@ -7719,7 +7699,7 @@ class TestRetryNotification:
         retry_calls: list[tuple] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
         call_count = [0]
 
@@ -7749,7 +7729,7 @@ class TestRetryNotification:
         retry_calls: list[tuple] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _ok(cfg, role, messages, **kw):
@@ -7772,7 +7752,7 @@ class TestRetryNotification:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _flaky(cfg, role, messages, **kw):
@@ -7816,7 +7796,7 @@ class TestStallRetryIntegration:
         calls = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _stall_then_ok(cfg, role, messages, **kw):
@@ -7928,7 +7908,7 @@ class TestStallRetryIntegration:
         call_count = [0]
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _mixed_failures(cfg, role, messages, **kw):
@@ -7967,7 +7947,7 @@ class TestStallRetryIntegration:
         captured_kwargs: list[dict] = []
         valid_plan = json.dumps({
             "goal": "ok", "secrets": None,
-            "tasks": [{"type": "exec", "detail": "echo ok", "wrapper": None, "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "exec", "detail": "echo ok", "args": None, "expect": "ok"}, {"type": "msg", "detail": "Answer in English. report results", "args": None, "expect": None}],
         })
 
         async def _capture(cfg, role, messages, **kw):
@@ -8447,7 +8427,7 @@ class TestMsgOnlyValidation:
     def test_msg_only_via_validate_plan_with_skills(self):
         """validate_plan with installed_skills=["browser"] → rejected."""
         plan = {"tasks": [
-            {"type": "msg", "detail": "Answer in English. hello", "expect": None, "wrapper": None, "args": None},
+            {"type": "msg", "detail": "Answer in English. hello", "expect": None, "args": None},
         ]}
         errors = validate_plan(plan, installed_skills=["browser"])
         assert any("Plan has only msg tasks" in e for e in errors)
@@ -8511,7 +8491,7 @@ class TestKbAnswerFlag:
             "kb_answer": True,
             "tasks": [
                 {"type": "exec", "detail": "ls -la", "expect": "files"},
-                {"type": "msg", "detail": "Answer in English. result", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. result", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, installed_skills=[])
@@ -8527,9 +8507,9 @@ class TestKbAnswerFlag:
             "kb_answer": True,
             "tasks": [
                 {"type": "mcp", "detail": "call tool",
-                 "wrapper": None, "args": {"url": "https://example.com"},
+                 "args": {"url": "https://example.com"},
                  "server": "fetcher", "method": "get", "expect": "page"},
-                {"type": "msg", "detail": "Answer in English. done", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. done", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, installed_skills=[])
@@ -8543,7 +8523,7 @@ class TestKbAnswerFlag:
             "kb_answer": True,
             "tasks": [
                 {"type": "msg", "detail": "Answer in English. The project uses Flask 3.0",
-                 "expect": None, "wrapper": None, "args": None},
+                 "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, installed_skills=[])
@@ -8570,7 +8550,7 @@ class TestKbAnswerFlag:
             "kb_answer": True,
             "tasks": [
                 {"type": "msg", "detail": "Answer in English. fact",
-                 "expect": None, "wrapper": None, "args": None},
+                 "expect": None, "args": None},
             ],
         }
         # Should not raise
@@ -8589,7 +8569,7 @@ class TestKbAnswerFlag:
             "kb_answer": None,
             "tasks": [
                 {"type": "exec", "detail": "ls", "expect": "files",
-                 "wrapper": None, "args": None},
+                 "args": None},
             ],
         }
         jsonschema.validate(instance=plan, schema=self._inner_schema())
@@ -8601,7 +8581,7 @@ class TestKbAnswerFlag:
             "secrets": [],
             "msg_only_fallback": "unavailable_named_tool",
             "tasks": [
-                {"type": "msg", "detail": "Answer in English. missing wrapper", "expect": None, "wrapper": None, "args": None},
+                {"type": "msg", "detail": "Answer in English. missing wrapper", "expect": None, "args": None},
             ],
         }
         errors = validate_plan(plan, installed_skills=[])
@@ -8693,14 +8673,12 @@ class TestValidatePlanGroups:
         plan = {
             "goal": "Compare competitors",
             "tasks": [
-                {"type": "exec", "detail": "fetch comp A", "wrapper": None,
-                 "args": None, "expect": "info", "group": 1},
-                {"type": "exec", "detail": "fetch comp B", "wrapper": None,
-                 "args": None, "expect": "info", "group": 1},
+                {"type": "exec", "detail": "fetch comp A", "args": None, "expect": "info", "group": 1},
+                {"type": "exec", "detail": "fetch comp B", "args": None, "expect": "info", "group": 1},
                 {"type": "exec", "detail": "Create comparison table",
-                 "wrapper": None, "args": None, "expect": "file created"},
+                 "args": None, "expect": "file created"},
                 {"type": "msg", "detail": "Answer in English. Here is the comparison",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
             "needs_install": None,
             "extend_replan": None,
@@ -8765,9 +8743,9 @@ class TestActionTaskUserDeliveryRouting:
     def test_exec_with_user_delivery_wording_rejected(self):
         plan = {"goal": "test", "tasks": [
             {"type": "exec", "detail": "Run word_count.py and send me the top 10 words",
-             "wrapper": None, "args": None, "expect": "top words computed"},
+             "args": None, "expect": "top words computed"},
             {"type": "msg", "detail": "Answer in English. report results",
-             "wrapper": None, "args": None, "expect": None},
+             "args": None, "expect": None},
         ]}
         errors = validate_plan(plan)
         assert any("user-delivery wording" in e for e in errors)
@@ -8775,20 +8753,20 @@ class TestActionTaskUserDeliveryRouting:
     def test_action_detail_about_file_output_still_accepted(self):
         plan = {"goal": "test", "tasks": [
             {"type": "exec", "detail": "Run word_count.py using ocr.txt and save the top 10 words to results.txt",
-             "wrapper": None, "args": None, "expect": "results.txt created"},
+             "args": None, "expect": "results.txt created"},
             {"type": "msg", "detail": "Answer in English. report results",
-             "wrapper": None, "args": None, "expect": None},
+             "args": None, "expect": None},
         ]}
         assert not validate_plan(plan)
 
     def test_normal_multi_step_plan_with_final_msg_still_accepted(self):
         plan = {"goal": "test", "tasks": [
             {"type": "exec", "detail": "Extract text from screenshot.png",
-             "wrapper": None, "args": None, "expect": "ocr text extracted"},
+             "args": None, "expect": "ocr text extracted"},
             {"type": "exec", "detail": "Run word_count.py using the extracted text and save top words to results.txt",
-             "wrapper": None, "args": None, "expect": "results.txt created"},
+             "args": None, "expect": "results.txt created"},
             {"type": "msg", "detail": "Answer in English. report the top words",
-             "wrapper": None, "args": None, "expect": None},
+             "args": None, "expect": None},
         ]}
         assert not validate_plan(plan)
 
@@ -8905,8 +8883,7 @@ class TestNeedsInstallCoherence:
 
     def test_exec_in_needs_install_plan_rejected(self):
         plan = {"goal": "test", "needs_install": ["browser"], "tasks": [
-            {"type": "exec", "detail": "navigate", "wrapper": None,
-             "args": None, "expect": "page loaded"},
+            {"type": "exec", "detail": "navigate", "args": None, "expect": "page loaded"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
         errors = validate_plan(plan)
@@ -8915,8 +8892,7 @@ class TestNeedsInstallCoherence:
     def test_not_approved_gives_ask_user_guidance(self):
         """when not approved, feedback says ask user first."""
         plan = {"goal": "write code", "needs_install": ["aider"], "tasks": [
-            {"type": "exec", "detail": "write script", "wrapper": None,
-             "args": None, "expect": "done"},
+            {"type": "exec", "detail": "write script", "args": None, "expect": "done"},
             {"type": "msg", "detail": "Answer in English. result"},
         ]}
         errors = validate_plan(plan, install_approved=False)
@@ -9008,8 +8984,7 @@ class TestArtifactGoalMismatch:
 
     def test_generate_report_with_exec_accepted(self):
         plan = {"goal": "Generate a CSV report with sales data", "tasks": [
-            {"type": "exec", "detail": "Generate CSV", "wrapper": None,
-             "args": None, "expect": "csv file"},
+            {"type": "exec", "detail": "Generate CSV", "args": None, "expect": "csv file"},
             {"type": "msg", "detail": "Answer in English. Report ready"},
         ]}
         errors = validate_plan(plan)

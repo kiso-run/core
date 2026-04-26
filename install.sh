@@ -844,31 +844,13 @@ if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
     if find "$INST_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
         bold "Cleaning root-owned files from previous install..."
         docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine sh -c '
-            for d in sessions audit sys reference wrappers/*/; do
+            for d in sessions audit sys reference; do
                 rm -rf "/mnt/kiso/$d" 2>/dev/null
             done
             rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
             chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
         ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
     fi
-fi
-
-# ── 3f. Wipe wrappers/connectors on reset ───────────────────────────────────────
-# When a reset is requested AND the image is being rebuilt, unconditionally
-# remove wrappers/ and connectors/ directories. deps.sh artifacts live in the
-# image (gone after rebuild), so keeping stale skill dirs leads to "installed
-# but broken" wrappers.
-
-if [[ "$NEED_BUILD" == true && "$RESET_REQUESTED" == true ]]; then
-    for _wipe_dir in wrappers connectors; do
-        if [[ -d "$INST_DIR/$_wipe_dir" ]]; then
-            bold "Wiping $_wipe_dir directory (reset requested)..."
-            # Use alpine container to handle root-owned files
-            docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine rm -rf "/mnt/kiso/$_wipe_dir" \
-                && green "  $_wipe_dir directory wiped" \
-                || yellow "  warning: could not wipe $_wipe_dir directory"
-        fi
-    done
 fi
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────

@@ -131,7 +131,6 @@ async def _make_task(db, *, args: Any, server: str = "github", method: str = "cr
     pid = await create_plan(db, "s1", 0, "Test plan")
     await create_task(
         db, pid, "s1", "mcp", "call github create_issue",
-        wrapper=None,
         args=args,
         expect="ok",
         server=server,

@@ -82,7 +82,6 @@ def _plan_json(
             {
                 "type": "mcp",
                 "detail": f"Echo the snippet via {server}:{method}",
-                "wrapper": None,
                 "args": args,
                 "expect": "the echoed message",
                 "server": server,
@@ -94,7 +93,6 @@ def _plan_json(
                     "Answer in English. Tell the user what the echo "
                     "returned."
                 ),
-                "wrapper": None,
                 "args": None,
                 "expect": None,
             },

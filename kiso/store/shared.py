@@ -53,7 +53,6 @@ class TaskDict(TypedDict):
     session: str
     type: str
     detail: str
-    wrapper: str | None
     args: str | None
     expect: str | None
     command: str | None
@@ -135,7 +134,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     session      TEXT NOT NULL,
     type         TEXT NOT NULL,
     detail       TEXT NOT NULL,
-    wrapper      TEXT,
     args         TEXT,
     expect       TEXT,
     command      TEXT,

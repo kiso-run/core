@@ -229,7 +229,7 @@ class TestBrieferFallback:
             return json.dumps({
                 "goal": "test", "secrets": None,
                 "tasks": [{"type": "msg", "detail": "Answer in English. hi",
-                           "wrapper": None, "args": None, "expect": None}],
+                           "args": None, "expect": None}],
             })
 
         with patch("kiso.brain.call_llm", side_effect=_failing_llm):

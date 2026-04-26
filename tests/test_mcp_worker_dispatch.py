@@ -161,7 +161,6 @@ async def _make_mcp_task_row(db, task_type: str = "mcp", **task_overrides):
     task_data = {
         "type": task_type,
         "detail": "call github create_issue",
-        "wrapper": None,
         "args": {"title": "bug", "body": "x"},
         "expect": "issue",
         "server": "github",
@@ -171,7 +170,6 @@ async def _make_mcp_task_row(db, task_type: str = "mcp", **task_overrides):
     await create_task(
         db, pid, "s1", task_type,
         task_data["detail"],
-        wrapper=task_data["wrapper"],
         args=task_data["args"],
         expect=task_data["expect"],
         server=task_data.get("server"),

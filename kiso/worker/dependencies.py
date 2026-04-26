@@ -156,17 +156,16 @@ def _format_dependency_context(dependencies: list[dict]) -> str:
     return "## Authoritative Dependencies\n" + "\n".join(lines)
 
 
-def _build_wrapper_file_refs(
+def _build_arg_file_refs(
     session: str,
     args: dict,
     *,
     task_index: int,
-    wrapper_name: str | None,
 ) -> list[dict]:
-    """Build canonical file refs for wrapper args that point at real files.
+    """Build canonical file refs for task args that point at real files.
 
     Only inspects args that are plausible file references — free-form
-    instruction strings (e.g. aider.message) are skipped to avoid
+    instruction strings (e.g. aider.prompt) are skipped to avoid
     ``OSError`` from impossibly long path candidates.
     """
     workspace = _session_workspace(session)
@@ -189,7 +188,6 @@ def _build_wrapper_file_refs(
             candidate,
             workspace=workspace,
             origin_task_index=task_index,
-            origin_wrapper=wrapper_name,
         ).to_dict()
         if file_ref["file_id"] in seen:
             continue
@@ -203,7 +201,6 @@ def _build_new_artifact_refs(
     pre_snapshot: set[Path],
     *,
     task_index: int,
-    wrapper_name: str | None,
 ) -> list[dict]:
     """Build artifact refs for newly created visible files since *pre_snapshot*."""
     workspace = _session_workspace(session)
@@ -225,11 +222,9 @@ def _build_new_artifact_refs(
                 path,
                 workspace=workspace,
                 origin_task_index=task_index,
-                origin_wrapper=wrapper_name,
             ).to_dict(),
             "artifact_id": f"artifact:{rel.as_posix()}",
             "artifact_kind": "file",
-            "wrapper": wrapper_name,
         }
         refs.append(artifact)
     return refs
@@ -260,7 +255,7 @@ def _repair_exec_pythonpath(command: str, plan_outputs: list[dict]) -> str:
 
 
 def _looks_like_workspace_file_arg(arg_name: str, arg_schema: dict, value: object) -> bool:
-    """Heuristic: True when a wrapper arg likely references a workspace file."""
+    """Heuristic: True when an MCP arg likely references a workspace file."""
     if not isinstance(value, str):
         return False
     text = value.strip()
@@ -355,15 +350,3 @@ def _resolve_workspace_file_reference(session: str, value: str) -> str | None:
     return None
 
 
-def _repair_wrapper_workspace_args(wrapper_info: dict, args: dict, session: str) -> dict:
-    """Repair missing local-file wrapper args when a unique workspace match exists."""
-    corrected = dict(args)
-    args_schema = wrapper_info.get("args_schema", {}) or {}
-    for arg_name, value in list(corrected.items()):
-        schema = args_schema.get(arg_name, {})
-        if not _looks_like_workspace_file_arg(arg_name, schema, value):
-            continue
-        resolved = _resolve_workspace_file_reference(session, value)
-        if resolved and resolved != value:
-            corrected[arg_name] = resolved
-    return corrected

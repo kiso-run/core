@@ -88,15 +88,15 @@ from tests.conftest import patch_kiso_dir as _patch_kiso_dir
 VALID_PLAN = {
     "goal": "Say hello",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "Hello!", "args": None, "expect": None}],
 }
 
 EXEC_THEN_MSG_PLAN = {
     "goal": "List files",
     "secrets": None,
     "tasks": [
-        {"type": "exec", "detail": "echo hello", "wrapper": None, "args": None, "expect": "prints hello"},
-        {"type": "msg", "detail": "Report the output", "wrapper": None, "args": None, "expect": None},
+        {"type": "exec", "detail": "echo hello", "args": None, "expect": "prints hello"},
+        {"type": "msg", "detail": "Report the output", "args": None, "expect": None},
     ],
 }
 
@@ -648,7 +648,7 @@ class TestRunWorker:
         plan_with_secrets = {
             "goal": "Use token",
             "secrets": [{"key": "api_token", "value": "tok_abc"}],
-            "tasks": [{"type": "msg", "detail": "Done", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Done", "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -678,8 +678,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -705,8 +705,8 @@ class TestRunWorker:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -848,8 +848,8 @@ class TestRunWorker:
             "goal": "First attempt",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -857,7 +857,7 @@ class TestRunWorker:
             "goal": "Second attempt",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "Explaining the failure", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Explaining the failure", "args": None, "expect": None},
             ],
         }
 
@@ -898,8 +898,8 @@ class TestRunWorker:
             "goal": "Run something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo test", "wrapper": None, "args": None, "expect": "output"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo test", "args": None, "expect": "output"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -937,8 +937,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -980,8 +980,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -1027,8 +1027,8 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -1068,15 +1068,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "report", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "report", "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "args": None, "expect": None},
             ],
         }
 
@@ -1119,15 +1119,15 @@ class TestRunWorker:
             "goal": "Will fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Fixed",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "args": None, "expect": None},
             ],
         }
 
@@ -1182,15 +1182,15 @@ class TestRunWorker:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "explain", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "explain", "args": None, "expect": None},
             ],
         }
 
@@ -1621,7 +1621,7 @@ class TestBuildReplanContext:
         completed = [
             {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
             {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
-            {"type": "exec", "detail": "run plugin", "status": "done", "output": "result", "wrapper": None, "args": None},
+            {"type": "exec", "detail": "run plugin", "status": "done", "output": "result", "args": None},
         ]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "install" in ctx
@@ -1759,7 +1759,7 @@ class TestTaskTypeLabel:
 
     def test_tool_none_no_suffix(self):
         """Wrapper field is None (e.g. exec task) — no slash suffix."""
-        completed = [{"type": "exec", "wrapper": None, "detail": "ls",
+        completed = [{"type": "exec", "detail": "ls",
                        "status": "done", "output": "files"}]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[exec]" in ctx
@@ -2360,8 +2360,8 @@ class TestPersistPlanTasks:
     async def test_persists_all_tasks(self, db):
         plan_id = await create_plan(db, "sess1", 1, "Test")
         tasks = [
-            {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-            {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+            {"type": "msg", "detail": "done", "args": None, "expect": None},
         ]
         ids = await _persist_plan_tasks(db, plan_id, "sess1", tasks)
         assert len(ids) == 2
@@ -4091,8 +4091,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4150,8 +4150,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4194,8 +4194,8 @@ class TestCancelMechanism:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4238,8 +4238,8 @@ class TestCancelMechanism:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4435,8 +4435,8 @@ class TestCancelDuringReplanWindow:
             "goal": "Fail",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4522,8 +4522,8 @@ class TestWorkerCrashRecovery:
             "goal": "Crash during exec",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -4599,7 +4599,7 @@ class TestMalformedSecrets:
         plan_with_bad_secrets = {
             "goal": "Say hello",
             "secrets": [{"k": "v"}],  # wrong keys
-            "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -4623,7 +4623,7 @@ class TestMalformedSecrets:
         plan_with_string_secrets = {
             "goal": "Say hello",
             "secrets": ["not-a-dict"],
-            "tasks": [{"type": "msg", "detail": "Hello!", "wrapper": None, "args": None, "expect": None}],
+            "tasks": [{"type": "msg", "detail": "Hello!", "args": None, "expect": None}],
         }
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -4881,8 +4881,8 @@ class TestSanitizeTaskDetail:
             "secrets": [{"key": "API_KEY", "value": "sk-secret-value-1234"}],
             "tasks": [
                 {"type": "exec", "detail": "curl -H 'Authorization: Bearer sk-secret-value-1234' https://api.example.com",
-                 "wrapper": None, "args": None, "expect": "200 OK"},
-                {"type": "msg", "detail": "Done deploying", "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": "200 OK"},
+                {"type": "msg", "detail": "Done deploying", "args": None, "expect": None},
             ],
         }
 
@@ -5100,8 +5100,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5145,8 +5145,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5178,8 +5178,8 @@ class TestRecoveryMsgTask:
             "goal": "Do stuff",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo hi", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo hi", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5337,8 +5337,8 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "echo registry", "wrapper": None, "args": None, "expect": "JSON output"},
-                {"type": "replan", "detail": "install the right wrapper", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo registry", "args": None, "expect": "JSON output"},
+                {"type": "replan", "detail": "install the right wrapper", "args": None, "expect": None},
             ],
         }
 
@@ -5347,7 +5347,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done investigating", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done investigating", "args": None, "expect": None},
             ],
         }
 
@@ -5398,7 +5398,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "investigate more", "wrapper": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "investigate more", "args": None, "expect": None},
             ],
         }
 
@@ -5428,7 +5428,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "replan", "detail": "decide next step", "wrapper": None, "args": None, "expect": None},
+                {"type": "replan", "detail": "decide next step", "args": None, "expect": None},
             ],
         }
 
@@ -5437,7 +5437,7 @@ class TestSelfDirectedReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "All done", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "All done", "args": None, "expect": None},
             ],
         }
 
@@ -5490,8 +5490,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5501,8 +5501,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 2,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5512,7 +5512,7 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "Done!", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Done!", "args": None, "expect": None},
             ],
         }
 
@@ -5575,8 +5575,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5586,8 +5586,8 @@ class TestExtendReplan:
             "secrets": None,
             "extend_replan": 10,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -5599,8 +5599,8 @@ class TestExtendReplan:
                 "secrets": None,
                 "extend_replan": None,
                 "tasks": [
-                    {"type": "exec", "detail": f"approach {n} exit 1", "wrapper": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": f"approach {n} exit 1", "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "args": None, "expect": None},
                 ],
             }
 
@@ -5664,8 +5664,8 @@ class TestExtendReplan:
                 "secrets": None,
                 "extend_replan": extend,
                 "tasks": [
-                    {"type": "exec", "detail": f"approach {n} exit 1", "wrapper": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": f"approach {n} exit 1", "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "args": None, "expect": None},
                 ],
             }
 
@@ -6189,7 +6189,7 @@ class TestFastPathChat:
 CHAT_PLAN = {
     "goal": "Chat",
     "secrets": None,
-    "tasks": [{"type": "msg", "detail": "hi", "wrapper": None, "args": None, "expect": None}],
+    "tasks": [{"type": "msg", "detail": "hi", "args": None, "expect": None}],
 }
 
 
@@ -6260,11 +6260,10 @@ class TestFastPathIntegration:
                 {
                     "type": "exec",
                     "detail": "Open the page",
-                    "wrapper": None,
                     "args": {"action": "navigate", "url": "https://example.com"},
                     "expect": "Page loaded",
                 },
-                {"type": "msg", "detail": "Answer in English. Done.", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "Answer in English. Done.", "args": None, "expect": None},
             ],
         }
         mock_planner = AsyncMock(return_value=plan)
@@ -7720,7 +7719,7 @@ class TestRunPlanningLoop:
             "goal": "Do something",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "run cmd", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "run cmd", "args": None, "expect": "ok"},
             ],
         }
         plan_id = await create_plan(db, "sess1", 0, plan["goal"])
@@ -7764,7 +7763,7 @@ class TestRunPlanningLoop:
         replan_plan = {
             "goal": "Retry", "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         with patch("kiso.worker.loop._execute_plan", side_effect=_mock_execute_plan), \
@@ -7887,7 +7886,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
             ],
         }
         success_plan = {
@@ -7895,7 +7894,7 @@ class TestRunPlanningLoop:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -8115,8 +8114,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -8188,8 +8187,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try approach A with curl", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try approach A with curl", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         plan_b = {
@@ -8197,8 +8196,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try another approach with curl", "wrapper": None, "args": None, "expect": "results"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try another approach with curl", "args": None, "expect": "results"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -8207,8 +8206,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "try approach C with wget", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "try approach C with wget", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         plan_iter = iter([plan_a, plan_b, plan_c])
@@ -8269,8 +8268,8 @@ class TestCircularReplanDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -8613,7 +8612,7 @@ class TestPreReplanCancelFix:
             "goal": "Fail then cancel",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "ok"},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "ok"},
             ],
         }
 
@@ -8844,15 +8843,15 @@ class TestProcessMessagePhaseCallback:
             "goal": "First",
             "secrets": None,
             "tasks": [
-                {"type": "exec", "detail": "echo fail", "wrapper": None, "args": None, "expect": "ok"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "echo fail", "args": None, "expect": "ok"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
         success_plan = {
             "goal": "Second",
             "secrets": None,
             "tasks": [
-                {"type": "msg", "detail": "fixed", "wrapper": None, "args": None, "expect": None},
+                {"type": "msg", "detail": "fixed", "args": None, "expect": None},
             ],
         }
 
@@ -9232,11 +9231,11 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "curl -sL example.com to describe the company",
-                 "wrapper": None, "args": None, "expect": "description of the company"},
+                 "args": None, "expect": "description of the company"},
                 {"type": "exec", "detail": "check kiso registry for browser wrapper",
-                 "wrapper": None, "args": None, "expect": "registry JSON"},
+                 "args": None, "expect": "registry JSON"},
                 {"type": "replan", "detail": "install browser and take screenshot",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
         }
         # Plan 2: install browser wrapper + replan
@@ -9246,9 +9245,9 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "install the browser wrapper",
-                 "wrapper": None, "args": None, "expect": "wrapper installed"},
+                 "args": None, "expect": "wrapper installed"},
                 {"type": "replan", "detail": "use browser wrapper for screenshot",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
         }
         # Plan 3: use browser wrapper + msg
@@ -9258,9 +9257,9 @@ class TestE2EWebScenario:
             "extend_replan": None,
             "tasks": [
                 {"type": "exec", "detail": "take screenshot of example.com and save to pub/",
-                 "wrapper": None, "args": None, "expect": "screenshot saved"},
+                 "args": None, "expect": "screenshot saved"},
                 {"type": "msg", "detail": "Answer in Italian. Tell user about the company and share screenshot",
-                 "wrapper": None, "args": None, "expect": None},
+                 "args": None, "expect": None},
             ],
         }
 
@@ -10358,8 +10357,8 @@ class TestBroadenedCircularDetection:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -10449,8 +10448,8 @@ class TestBlockExtendWhenStuck:
                 "secrets": None,
                 "extend_replan": 3,  # always request extension
                 "tasks": [
-                    {"type": "exec", "detail": "exit 1", "wrapper": None, "args": None, "expect": "success"},
-                    {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                    {"type": "exec", "detail": "exit 1", "args": None, "expect": "success"},
+                    {"type": "msg", "detail": "done", "args": None, "expect": None},
                 ],
             }
 
@@ -10661,8 +10660,8 @@ class TestStuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "fill form", "wrapper": None, "args": None, "expect": "submitted"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "fill form", "args": None, "expect": "submitted"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -10721,8 +10720,8 @@ class TestStuckFlow:
             "secrets": None,
             "extend_replan": None,
             "tasks": [
-                {"type": "exec", "detail": "curl site", "wrapper": None, "args": None, "expect": "page loaded"},
-                {"type": "msg", "detail": "done", "wrapper": None, "args": None, "expect": None},
+                {"type": "exec", "detail": "curl site", "args": None, "expect": "page loaded"},
+                {"type": "msg", "detail": "done", "args": None, "expect": None},
             ],
         }
 
@@ -11044,10 +11043,10 @@ class TestPersistPlanTasksGroup:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Test")
         plan_tasks = [
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
-            {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "A", "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "B", "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "args": None, "expect": "done"},
+            {"type": "msg", "detail": "Answer in English. report", "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -11071,9 +11070,9 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Parallel test")
         plan_tasks = [
-            {"type": "exec", "detail": "exec alpha", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "exec beta", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "msg", "detail": "Answer in English. summarize results", "wrapper": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "exec alpha", "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "exec beta", "args": None, "expect": "info", "group": 1},
+            {"type": "msg", "detail": "Answer in English. summarize results", "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -11100,12 +11099,12 @@ class TestParallelGroupFromDB:
         await create_session(db, "sess1")
         pid = await create_plan(db, "sess1", message_id=1, goal="Multi-group test")
         plan_tasks = [
-            {"type": "exec", "detail": "A", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "B", "wrapper": None, "args": None, "expect": "info", "group": 1},
-            {"type": "exec", "detail": "merge", "wrapper": None, "args": None, "expect": "done"},
-            {"type": "exec", "detail": "C", "wrapper": None, "args": None, "expect": "info", "group": 2},
-            {"type": "exec", "detail": "D", "wrapper": None, "args": None, "expect": "info", "group": 2},
-            {"type": "msg", "detail": "Answer in English. report", "wrapper": None, "args": None, "expect": None},
+            {"type": "exec", "detail": "A", "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "B", "args": None, "expect": "info", "group": 1},
+            {"type": "exec", "detail": "merge", "args": None, "expect": "done"},
+            {"type": "exec", "detail": "C", "args": None, "expect": "info", "group": 2},
+            {"type": "exec", "detail": "D", "args": None, "expect": "info", "group": 2},
+            {"type": "msg", "detail": "Answer in English. report", "args": None, "expect": None},
         ]
         await _persist_plan_tasks(db, pid, "sess1", plan_tasks)
         tasks = await get_tasks_for_plan(db, pid)
@@ -11294,7 +11293,6 @@ class TestPlannerTaskPersistence:
                 {
                     "type": "exec",
                     "detail": "Use echo",
-                    "wrapper": None,
                     "args": {"text": "hello"},
                     "expect": "ok",
                 },
@@ -11408,7 +11406,6 @@ class TestTaskContract:
                 "exists": True,
                 "module_name": "kiso_test_f42",
                 "origin_task_index": 1,
-                "origin_wrapper": None,
             }],
         }]
 
@@ -11499,19 +11496,17 @@ class TestWriteLastPlanSummary:
             assert f["file_id"].endswith("out.txt")
             assert f["artifact_id"].endswith("out.txt")
             # provenance NOT invented from unrelated task scan
-            assert f.get("origin_wrapper") is None
             assert f.get("origin_task_index") is None
-            assert f.get("wrapper") is None
 
     def test_provenance_uses_plan_output_file_ref(self, tmp_path):
-        """When a plan_output declares a file_ref, that file gets the producing wrapper/index."""
+        """When a plan_output declares a file_ref, that file gets the producing task index."""
         from kiso.worker.utils import _write_last_plan_summary, _session_workspace
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             ws = _session_workspace("s-prov-one")
             pre = set(ws.rglob("*"))
             (ws / "report.md").write_text("# report")
             completed = [
-                {"type": "exec", "wrapper": "aider", "reviewer_summary": "wrote report"},
+                {"type": "exec", "reviewer_summary": "wrote report"},
             ]
             plan_outputs = [
                 {
@@ -11527,7 +11522,6 @@ class TestWriteLastPlanSummary:
                             "abs_path": str(ws / "report.md"),
                             "type": "text",
                             "origin_task_index": 1,
-                            "origin_wrapper": "aider",
                         }
                     ],
                 }
@@ -11541,17 +11535,12 @@ class TestWriteLastPlanSummary:
             assert len(data["produced_files"]) == 1
             f = data["produced_files"][0]
             assert f["path"] == "report.md"
-            assert f.get("origin_wrapper") == "aider"
             assert f.get("origin_task_index") == 1
-            assert f.get("wrapper") == "aider"
 
     def test_provenance_per_file_in_multitool_plan(self, tmp_path):
-        """Two tasks producing different files: each file gets its own correct provenance.
-
-        Regression: previously every file got the *same* wrapper — whichever
-        was iterated last in the completed_tasks loop. This test pins the
-        per-file mapping.
-        """
+        """Two tasks producing different files: each file gets its own
+        task index. Pins per-file mapping (regression: every file used to
+        receive the same provenance from the last completed task)."""
         from kiso.worker.utils import _write_last_plan_summary, _session_workspace
         with patch("kiso.worker.utils.KISO_DIR", tmp_path):
             ws = _session_workspace("s-prov-multi")
@@ -11559,8 +11548,8 @@ class TestWriteLastPlanSummary:
             (ws / "code.py").write_text("print(1)")
             (ws / "shot.png").write_bytes(b"\x89PNG" + b"x" * 100)
             completed = [
-                {"type": "exec", "wrapper": "aider", "reviewer_summary": "wrote code"},
-                {"type": "exec", "wrapper": "browser", "reviewer_summary": "took shot"},
+                {"type": "exec", "reviewer_summary": "wrote code"},
+                {"type": "exec", "reviewer_summary": "took shot"},
             ]
             plan_outputs = [
                 {
@@ -11568,7 +11557,7 @@ class TestWriteLastPlanSummary:
                     "file_refs": [{
                         "path": "code.py", "workspace_path": "code.py",
                         "abs_path": str(ws / "code.py"), "type": "code",
-                        "origin_task_index": 1, "origin_wrapper": "aider",
+                        "origin_task_index": 1,
                     }],
                 },
                 {
@@ -11576,7 +11565,7 @@ class TestWriteLastPlanSummary:
                     "file_refs": [{
                         "path": "shot.png", "workspace_path": "shot.png",
                         "abs_path": str(ws / "shot.png"), "type": "image",
-                        "origin_task_index": 2, "origin_wrapper": "browser",
+                        "origin_task_index": 2,
                     }],
                 },
             ]
@@ -11588,9 +11577,7 @@ class TestWriteLastPlanSummary:
             data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
             by_path = {f["path"]: f for f in data["produced_files"]}
             assert "code.py" in by_path and "shot.png" in by_path
-            assert by_path["code.py"].get("origin_wrapper") == "aider"
             assert by_path["code.py"].get("origin_task_index") == 1
-            assert by_path["shot.png"].get("origin_wrapper") == "browser"
             assert by_path["shot.png"].get("origin_task_index") == 2
 
     def test_provenance_partial_some_files_unknown(self, tmp_path):
@@ -11607,23 +11594,20 @@ class TestWriteLastPlanSummary:
                     "file_refs": [{
                         "path": "tracked.md", "workspace_path": "tracked.md",
                         "abs_path": str(ws / "tracked.md"), "type": "text",
-                        "origin_task_index": 1, "origin_wrapper": "aider",
+                        "origin_task_index": 1,
                     }],
                 },
             ]
             _write_last_plan_summary(
-                "s-prov-partial", "do", [{"type": "exec", "wrapper": "aider"}], pre,
+                "s-prov-partial", "do", [{"type": "exec"}], pre,
                 plan_outputs=plan_outputs,
             )
 
             data = json.loads((ws / ".kiso" / "last_plan_summary.json").read_text())
             by_path = {f["path"]: f for f in data["produced_files"]}
-            assert by_path["tracked.md"].get("origin_wrapper") == "aider"
             assert by_path["tracked.md"].get("origin_task_index") == 1
             # Orphan: no fake provenance
-            assert by_path["orphan.log"].get("origin_wrapper") is None
             assert by_path["orphan.log"].get("origin_task_index") is None
-            assert by_path["orphan.log"].get("wrapper") is None
 
 
 class TestLoadLastPlanSummary:

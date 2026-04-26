@@ -37,28 +37,38 @@ class TestWrapperRenameRuntimeInvariants:
         for path in legacy_paths:
             assert not path.exists(), f"legacy file still present: {path.relative_to(ROOT)}"
 
-    def test_fact_categories_use_wrapper(self):
+    def test_fact_categories_no_wrapper(self):
+        """M1566: `wrapper` retired from fact categories alongside the
+        wrapper subsystem. New facts about a tool/server should be
+        categorised under `general` or `project` and entity-linked to
+        the relevant entity (e.g. an MCP server name)."""
         from kiso.brain.common import _VALID_FACT_CATEGORIES
-        assert "wrapper" in _VALID_FACT_CATEGORIES
+        assert "wrapper" not in _VALID_FACT_CATEGORIES
         assert "tool" not in _VALID_FACT_CATEGORIES
 
-    def test_entity_kinds_use_wrapper(self):
+    def test_entity_kinds_no_wrapper(self):
+        """M1566: `wrapper` retired from entity kinds. Use `system` for
+        infrastructure-style entities, `concept` for ideas, etc."""
         from kiso.brain.common import _ENTITY_KINDS
-        assert "wrapper" in _ENTITY_KINDS
+        assert "wrapper" not in _ENTITY_KINDS
         assert "tool" not in _ENTITY_KINDS
 
-    def test_db_tasks_column_is_wrapper(self):
-        """: DB schema uses 'wrapper' column, not 'skill'."""
+    def test_db_tasks_no_wrapper_column(self):
+        """M1566: `tasks.wrapper` column dropped from the schema."""
         from kiso.store.shared import SCHEMA
-        assert "wrapper" in SCHEMA
-        assert "skill" not in SCHEMA
+        # We can't word-match `wrapper` because the schema text contains
+        # things like ``wrapper TEXT,``; assert by matching the column
+        # declaration shape instead.
+        import re as _re
+        assert _re.search(r"\bwrapper\s+TEXT", SCHEMA) is None, (
+            "tasks.wrapper column must be removed from the schema"
+        )
 
-    def test_create_task_uses_wrapper_kwarg(self):
-        """: create_task() accepts wrapper= kwarg, not skill=."""
+    def test_create_task_no_wrapper_kwarg(self):
+        """M1566: `create_task(...)` no longer accepts a `wrapper` kwarg."""
         from kiso.store.plans import create_task
         sig = inspect.signature(create_task)
-        assert "wrapper" in sig.parameters
-        assert "skill" not in sig.parameters
+        assert "wrapper" not in sig.parameters
 
     def test_cli_user_skills_and_mcp_flags(self):
         """CLI user command exposes --skills and --mcp, not --wrappers."""

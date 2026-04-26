@@ -114,7 +114,6 @@ def _exec_plan(detail: str) -> dict:
                 "type": "exec",
                 "detail": detail,
                 "expect": "ok",
-                "wrapper": None,
                 "args": None,
             }
         ]

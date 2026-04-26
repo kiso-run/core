@@ -33,7 +33,7 @@ CURATOR_SCHEMA: dict = _build_strict_schema("curator", {
             "learning_id": {"type": "integer"},
             "verdict": {"type": "string", "enum": ["promote", "ask", "discard"]},
             "fact": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "wrapper", "general", "behavior"]}, {"type": "null"}]},
+            "category": {"anyOf": [{"type": "string", "enum": ["project", "user", "general", "behavior"]}, {"type": "null"}]},
             "question": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "reason": {"type": "string"},
             "tags": {"anyOf": [
