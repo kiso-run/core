@@ -153,6 +153,64 @@ generate_token() {
     fi
 }
 
+# ── Inline change indicator (M1571) ──────────────────────────────────────────
+# When re-installing on top of an existing config.toml, prompts that
+# yield a value different from the loaded "current" state emit a small
+# inline marker so the operator immediately sees what they just changed.
+# On clean install (no existing config), EXISTING is empty so the
+# marker never fires (graceful degradation).
+declare -A EXISTING=()
+CHANGE_COUNT=0
+
+# Compare a freshly-collected value against EXISTING[$key]. If they
+# differ, emit `  ✓ changed (was: "<previous>")` and bump CHANGE_COUNT.
+# Otherwise silent. If EXISTING does not contain $key (clean install
+# or new field), also silent.
+_indicate_change() {
+    local key="$1" new="$2"
+    local prev="${EXISTING[$key]:-}"
+    local exists=0
+    if [[ ${EXISTING[$key]+set} ]]; then exists=1; fi
+    if [[ $exists -eq 0 ]]; then return 0; fi
+    if [[ "$new" == "$prev" ]]; then return 0; fi
+    printf '  \033[0;32m✓ changed (was: "%s")\033[0m\n' "$prev" >&2
+    CHANGE_COUNT=$((CHANGE_COUNT + 1))
+}
+
+# Parse an existing config.toml into the EXISTING associative array.
+# Reads only the [settings] section keys we know about. Quoted strings
+# are stripped of their quotes; numbers stay as-is. Anything else is
+# ignored. The parser is best-effort — failures leave EXISTING empty.
+_load_existing_config() {
+    local file="${1:-}"
+    [[ -f "$file" ]] || return 0
+    local in_settings=0 line key val
+    while IFS= read -r line; do
+        # Strip trailing comments and whitespace.
+        line="${line%%#*}"
+        line="${line%"${line##*[![:space:]]}"}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$line" ]] && continue
+        if [[ "$line" == "[settings]" ]]; then in_settings=1; continue; fi
+        if [[ "$line" =~ ^\[ ]]; then in_settings=0; continue; fi
+        if [[ $in_settings -eq 0 ]]; then continue; fi
+        if [[ "$line" == *"="* ]]; then
+            key="${line%%=*}"
+            val="${line#*=}"
+            key="${key%"${key##*[![:space:]]}"}"
+            key="${key#"${key%%[![:space:]]*}"}"
+            val="${val#"${val%%[![:space:]]*}"}"
+            val="${val%"${val##*[![:space:]]}"}"
+            # Strip surrounding double quotes if present.
+            if [[ "$val" =~ ^\".*\"$ ]]; then
+                val="${val#\"}"
+                val="${val%\"}"
+            fi
+            EXISTING[$key]="$val"
+        fi
+    done < "$file"
+}
+
 validate_instance_name() {
     local name="$1"
     if [[ -z "$name" ]]; then
@@ -850,6 +908,7 @@ NEED_CONFIG=true
 NEED_ENV=true
 
 if [[ -f "$CONFIG" ]]; then
+    _load_existing_config "$CONFIG"
     yellow "  $CONFIG already exists. Current contents:"
     echo
     printf '\033[0;36m'
@@ -916,14 +975,20 @@ if [[ "$NEED_CONFIG" == true ]]; then
     : "${bot_persona:=a friendly and knowledgeable assistant}"
 
     while true; do
+        # Reset CHANGE_COUNT on each `edit` re-walk so the running
+        # tally reflects only the latest pass through the prompts.
+        CHANGE_COUNT=0
+
         echo
         bold "## Bot identity"
         echo "  How Kiso presents itself in conversation."
         echo
         echo "  bot name: $bot_name"
+        _indicate_change "bot_name" "$bot_name"
         safe_read -rp "  Bot persona [$bot_persona]: " _persona_input
         bot_persona="${_persona_input:-$bot_persona}"
         echo "  persona: $bot_persona"
+        _indicate_change "bot_persona" "$bot_persona"
         echo "  (To change later: edit bot_persona in $CONFIG and 'kiso restart'.)"
 
         echo
@@ -949,7 +1014,12 @@ if [[ "$NEED_CONFIG" == true ]]; then
 
         ask_models
         ask_resource_limits
+        _indicate_change "max_memory_gb" "$MAX_MEMORY_GB"
+        _indicate_change "max_cpus" "$MAX_CPUS"
+        _indicate_change "max_disk_gb" "$MAX_DISK_GB"
+        _indicate_change "max_pids" "$MAX_PIDS"
         ask_network_and_external_url
+        _indicate_change "external_url" "$EXTERNAL_URL"
 
     config_body=$(cat <<PREVIEW
 [tokens]
@@ -1021,6 +1091,16 @@ PREVIEW
         print_config_preview "$config_body"
         echo
 
+        # When re-installing on top of an existing config (EXISTING is
+        # non-empty) and the user did not change a single value, skip
+        # the Write prompt — there is nothing to write — and break out
+        # of the prompt loop.
+        if [[ ${#EXISTING[@]} -gt 0 && "$CHANGE_COUNT" -eq 0 ]]; then
+            green "  No changes — config matches current state."
+            _SKIP_WRITE=true
+            break
+        fi
+
         _final_choice=""
         _decision=""
         while [[ -z "$_decision" ]]; do
@@ -1044,8 +1124,14 @@ PREVIEW
         echo
     done
 
-    printf '%s\n' "$config_body" > "$CONFIG"
-    green "  config.toml created"
+    if [[ "${_SKIP_WRITE:-false}" != "true" ]]; then
+        printf '%s\n' "$config_body" > "$CONFIG"
+        if [[ "$CHANGE_COUNT" -gt 0 ]]; then
+            green "  Wrote $CHANGE_COUNT changes to config.toml."
+        else
+            green "  config.toml created"
+        fi
+    fi
 fi
 echo
 

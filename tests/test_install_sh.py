@@ -1019,3 +1019,179 @@ class TestM1570UnifiedSectionTemplate:
             f"section headers must be preceded by a blank-emit line: "
             f"{offenders}"
         )
+
+
+class TestM1571InlineChangeIndicator:
+    """M1571 — inline change indicator (re-install only).
+
+    A `✓ changed (was: "<previous>")` marker is emitted immediately
+    after any prompt whose value differs from the loaded "current"
+    value. On clean install (no existing config) the marker never
+    appears — graceful degradation.
+    """
+
+    SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+
+    @classmethod
+    def _read(cls) -> str:
+        with open(cls.SCRIPT_PATH) as f:
+            return f.read()
+
+    def test_indicate_change_helper_defined(self):
+        """install.sh defines a callable `_indicate_change` helper."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            if type _indicate_change >/dev/null 2>&1; then
+                echo "exit=0"
+            else
+                echo "exit=1"
+            fi
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "exit=0" in result.stdout
+
+    def test_indicate_change_emits_marker_when_value_differs(self):
+        """When EXISTING[<key>] is set AND differs from the supplied
+        new value, _indicate_change prints `✓ changed (was: "<prev>")`
+        and increments CHANGE_COUNT. The marker goes to stderr (sits
+        beside the prompt-emit stream)."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            declare -A EXISTING=([bot_name]="Kiso")
+            CHANGE_COUNT=0
+            _indicate_change "bot_name" "Bobi"
+            echo "CHANGE_COUNT=$CHANGE_COUNT"
+        """)
+        assert result.returncode == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert "changed (was:" in combined
+        assert '"Kiso"' in combined
+        assert "CHANGE_COUNT=1" in result.stdout
+
+    def test_indicate_change_silent_when_unchanged(self):
+        """When EXISTING[<key>] equals the new value, no marker is
+        emitted and CHANGE_COUNT is not incremented."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            declare -A EXISTING=([bot_name]="Kiso")
+            CHANGE_COUNT=0
+            _indicate_change "bot_name" "Kiso"
+            echo "CHANGE_COUNT=$CHANGE_COUNT"
+            echo "OUTPUT_END"
+        """)
+        assert result.returncode == 0, result.stderr
+        # No "changed" marker before OUTPUT_END.
+        before_end = result.stdout.split("OUTPUT_END")[0]
+        assert "changed" not in before_end
+        assert "CHANGE_COUNT=0" in result.stdout
+
+    def test_indicate_change_silent_when_no_existing_entry(self):
+        """When EXISTING does not contain <key> (clean install or
+        new field), no marker is emitted."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            declare -A EXISTING=()
+            CHANGE_COUNT=0
+            _indicate_change "bot_name" "Bobi"
+            echo "CHANGE_COUNT=$CHANGE_COUNT"
+            echo "OUTPUT_END"
+        """)
+        assert result.returncode == 0, result.stderr
+        before_end = result.stdout.split("OUTPUT_END")[0]
+        assert "changed" not in before_end
+        assert "CHANGE_COUNT=0" in result.stdout
+
+    def test_change_count_global_initialized(self):
+        """CHANGE_COUNT is declared at top level so the post-write
+        summary block can read it unconditionally."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            echo "CHANGE_COUNT=$CHANGE_COUNT"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "CHANGE_COUNT=0" in result.stdout
+
+    def test_load_existing_config_helper_defined(self):
+        """install.sh defines a `_load_existing_config` helper that
+        parses an existing config.toml into the EXISTING associative
+        array."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            if type _load_existing_config >/dev/null 2>&1; then
+                echo "exit=0"
+            else
+                echo "exit=1"
+            fi
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "exit=0" in result.stdout
+
+    def test_load_existing_config_populates_known_keys(self):
+        """_load_existing_config reads bot_name, bot_persona,
+        max_memory_gb (and similar settings) from a TOML file into
+        the EXISTING array."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            tmp=$(mktemp)
+            cat > "$tmp" <<TOML
+[settings]
+bot_name = "Bobi"
+bot_persona = "a brilliant strategist"
+max_memory_gb = 8
+TOML
+            declare -A EXISTING=()
+            _load_existing_config "$tmp"
+            echo "bot_name=${EXISTING[bot_name]:-MISSING}"
+            echo "persona=${EXISTING[bot_persona]:-MISSING}"
+            echo "ram=${EXISTING[max_memory_gb]:-MISSING}"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "bot_name=Bobi" in result.stdout
+        assert "persona=a brilliant strategist" in result.stdout
+        assert "ram=8" in result.stdout
+
+    def test_post_write_summary_present(self):
+        """install.sh emits a post-write summary line that mentions
+        the change count when CHANGE_COUNT > 0, and a "no changes"
+        line when CHANGE_COUNT == 0 in re-install mode."""
+        content = self._read()
+        # Static check: the summary literals are present.
+        assert "Wrote" in content and "changes to config.toml" in content, (
+            "post-write summary line `Wrote N changes to config.toml.` "
+            "must be present"
+        )
+        assert "No changes" in content, (
+            "no-changes branch line `No changes — config matches "
+            "current state.` must be present"
+        )
+
+    def test_no_changes_skips_write_prompt(self):
+        """When CHANGE_COUNT remains 0 in re-install mode, the final
+        `Write this config?` prompt is skipped (the user didn't
+        actually change anything)."""
+        content = self._read()
+        # Static cue: the post-write logic conditionally skips the
+        # confirm prompt when CHANGE_COUNT == 0 AND we are re-installing
+        # (EXISTING is non-empty).
+        # Look for the guard literal used to decide.
+        assert "CHANGE_COUNT" in content
+        # The logic should reference CHANGE_COUNT in a conditional that
+        # gates the Write prompt — search for the pattern.
+        # Soft check: at least one `if` line tests CHANGE_COUNT against
+        # zero. Allow either `-eq 0` or `== 0` form, with $CHANGE_COUNT
+        # quoted or unquoted.
+        import re
+        pattern = r'CHANGE_COUNT["}]?\s*(?:-eq|==)\s*"?0"?'
+        gates = re.findall(pattern, content)
+        assert gates, (
+            "expected at least one branch that gates on CHANGE_COUNT "
+            "being zero"
+        )
