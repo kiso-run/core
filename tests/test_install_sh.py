@@ -646,3 +646,276 @@ PASSWD
             "prompt must use the phrase 'existing Linux user' to make "
             "clear no user will be created"
         )
+
+
+class TestM1569InstallShPolish:
+    """M1569 — install.sh flow + layout polish (10 sub-changes).
+
+    Each test pins one sub-change. Most are static-source checks
+    against install.sh; a few drive the script in lib mode.
+    """
+
+    SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+
+    @classmethod
+    def _read(cls) -> str:
+        with open(cls.SCRIPT_PATH) as f:
+            return f.read()
+
+    # ── 1. rebuild prompt after write ────────────────────────────────
+
+    def test_rebuild_prompt_after_write(self):
+        """The container `Restart with new config?` prompt must appear
+        AFTER `Write this config?` has accepted, not before."""
+        content = self._read()
+        write_idx = content.find('Write this config to')
+        assert write_idx > 0, "could not locate config-write prompt"
+        # The container rebuild/restart prompt is the only `confirm "Restart`
+        # / `confirm "Rebuild` prompt for an existing container; assert
+        # it lives AFTER the write index.
+        rebuild_idx = content.find('Restart with new config', write_idx)
+        # If "Restart with new config" is the new wording, it is after write.
+        # Equivalently, no "Rebuild and restart" should appear BEFORE write.
+        before = content[:write_idx]
+        assert "Rebuild and restart" not in before, (
+            "container rebuild prompt must be moved to after the "
+            "config write — it currently fires before the user has "
+            "even configured anything"
+        )
+        # And there is some restart-style prompt after write.
+        assert rebuild_idx > 0 or "Restart container" in content[write_idx:], (
+            "expected a post-write container restart prompt"
+        )
+
+    # ── 2. indent consistency ────────────────────────────────────────
+
+    def test_all_interactive_prompts_indented_two_spaces(self):
+        """Every interactive `safe_read -rp` / `read -erp` prompt
+        string starts with two spaces."""
+        import re
+        content = self._read()
+        # Match: `safe_read -rp "<prompt>"` or `read -erp "<prompt>"`
+        # also `safe_read -rsp "<prompt>"` (silent).
+        pattern = re.compile(
+            r'(?:safe_read|read)\s+-\w*r\w*p\s+"([^"]+)"',
+        )
+        offenders = []
+        for m in pattern.finditer(content):
+            prompt_text = m.group(1)
+            # Skip empty prompts and prompts that are pure variables
+            # like "$_kiso_user_prompt"
+            if not prompt_text or prompt_text.startswith("$"):
+                continue
+            if not prompt_text.startswith("  "):
+                offenders.append(prompt_text)
+        assert not offenders, (
+            f"these prompts do not start with two spaces: {offenders}"
+        )
+
+    # ── 3. External URL wording ──────────────────────────────────────
+
+    def test_external_url_wording_mentions_webhooks_and_mcp(self):
+        content = self._read()
+        idx = content.find("External URL [")
+        assert idx > 0, "could not locate External URL prompt"
+        # Scope the wording check to the 400 chars before and 200 chars
+        # after the prompt invocation — this is where the prompt's
+        # accompanying header / description lives.
+        window = content[max(0, idx - 400):idx + 200]
+        assert "webhook" in window.lower(), (
+            f"External URL prompt block should mention 'webhook'"
+        )
+        assert "MCP" in window, (
+            f"External URL prompt block should mention 'MCP' outputs"
+        )
+
+    # ── 4. Network warning reversibility hint ───────────────────────
+
+    def test_network_warning_includes_revert_hint(self):
+        content = self._read()
+        # The new line in the public-network warning must mention
+        # the config knob to revert.
+        assert 'host = "127.0.0.1"' in content, (
+            "network warning must mention `host = \"127.0.0.1\"` "
+            "as the revert path"
+        )
+
+    # ── 5. persona post-prompt hint ──────────────────────────────────
+
+    def test_persona_post_prompt_hint_emitted(self):
+        content = self._read()
+        # After the bot_persona prompt the installer prints a hint
+        # that mentions both `bot_persona` and `kiso restart`.
+        # Static check — find the `kiso restart` literal (it is unique
+        # to the persona hint) and assert `bot_persona` appears within
+        # the same line.
+        kr_idx = content.find("kiso restart")
+        assert kr_idx > 0, "the `kiso restart` literal must appear in install.sh"
+        # Find the line containing kiso restart.
+        line_start = content.rfind("\n", 0, kr_idx) + 1
+        line_end = content.find("\n", kr_idx)
+        line = content[line_start:line_end]
+        assert "bot_persona" in line, (
+            f"the persona post-prompt hint must mention both "
+            f"`bot_persona` and `kiso restart` on the same line; "
+            f"got: {line!r}"
+        )
+
+    # ── 6. no decorative dividers ────────────────────────────────────
+
+    def test_no_decorative_box_dividers(self):
+        """The `─` box-drawing character must not appear in install.sh.
+
+        Section headers like `# ── Kiso installer ──` previously used
+        these glyphs. M1569 drops them in favor of plain ASCII so the
+        installer looks coherent across all section types."""
+        content = self._read()
+        # Skip mode marker — sub-change 6 says drop the divider in
+        # `print_config_preview` (the `local sep="────"`). Section
+        # comment headers like `# ── Kiso installer ──` are NOT the
+        # decorative dividers under discussion (they are file-level
+        # comments, not user-visible output). Allow them; forbid only
+        # the string assigned to a `sep` variable used in printf.
+        offenders = [
+            line for line in content.splitlines()
+            if 'sep=' in line and '─' in line
+        ]
+        assert not offenders, (
+            f"runtime decorative dividers (sep variables containing "
+            f"box-drawing chars) must be dropped: {offenders}"
+        )
+
+    # ── 7. final prompt accepts edit ─────────────────────────────────
+
+    def test_final_write_prompt_accepts_edit_option(self):
+        """The final `Write this config?` prompt must accept `edit`
+        as a third option that loops back to the first prompt."""
+        content = self._read()
+        # The new prompt advertises Y/n/edit.
+        assert "[Y/n/edit]" in content or "[y/N/edit]" in content, (
+            "final write prompt must show `Y/n/edit` as the choice set"
+        )
+
+    # ── 8. persona near bot_name ─────────────────────────────────────
+
+    def test_persona_prompted_before_username(self):
+        """Bot persona is asked immediately after Bot name (under the
+        same logical "Bot identity" group), before ask_username."""
+        content = self._read()
+        # In the NEED_CONFIG block, find the order of these literals.
+        # `Bot persona` is the prompt header for persona; `ask_username`
+        # is the function call.
+        persona_idx = content.find("Bot persona")
+        username_call_idx = content.rfind("ask_username")
+        # We want persona BEFORE the ask_username call.
+        # Note: the helper function _list_available_users is defined
+        # earlier than ask_username; we match against the call site,
+        # which should be the LAST occurrence (the call inside
+        # NEED_CONFIG). Use rfind for that, find for persona.
+        assert persona_idx > 0 and username_call_idx > 0
+        assert persona_idx < username_call_idx, (
+            f"Bot persona prompt (idx {persona_idx}) must come before "
+            f"the ask_username call (idx {username_call_idx})"
+        )
+
+    # ── 9. API key inline + no pre-flight ────────────────────────────
+
+    def test_no_preflight_api_key_announcement(self):
+        content = self._read()
+        assert "will ask for API key" not in content, (
+            "the misleading pre-flight 'will ask for API key' notice "
+            "must be removed"
+        )
+
+    def test_api_key_prompted_inline_in_provider_block(self):
+        """ask_api_key is invoked from inside the NEED_CONFIG block,
+        between ask_base_url and ask_models — not after the config
+        preview. Uses first-occurrence positions of each call site
+        (excluding the `()` definition lines)."""
+        import re
+        content = self._read()
+        # Match call sites — bare function name on its own logical line,
+        # NOT the `func()` definition. The call-site form is
+        # `        ask_api_key\n` (indented inside an if/while block).
+        def first_call(name: str) -> int:
+            m = re.search(rf"\n[ \t]+{name}\n", content)
+            return m.start() if m else -1
+        base_url_call = first_call("ask_base_url")
+        api_key_call = first_call("ask_api_key")
+        models_call = first_call("ask_models")
+        preview_idx = content.find("print_config_preview \"")
+        assert api_key_call > 0, "ask_api_key call site not found"
+        assert base_url_call < api_key_call < models_call, (
+            f"ask_api_key (idx {api_key_call}) must be called between "
+            f"ask_base_url (idx {base_url_call}) and ask_models "
+            f"(idx {models_call})"
+        )
+        assert api_key_call < preview_idx, (
+            "ask_api_key must run BEFORE the config preview, not after"
+        )
+
+    def test_api_key_prompt_uses_silent_read(self):
+        """API key prompt uses `read -s` (silent) so the secret is
+        never echoed to the terminal. M1569 only moves the prompt;
+        this test pins the silence invariant explicitly."""
+        content = self._read()
+        # Within the ask_api_key function, the read invocation must
+        # include the -s (silent) flag. Either `safe_read -rsp` or
+        # `read -srp`.
+        # Locate the function body.
+        idx = content.find("ask_api_key()")
+        assert idx > 0
+        # Look for end of function (next blank line followed by another
+        # top-level function definition)
+        body_end = content.find("\n}\n", idx) + 2
+        body = content[idx:body_end]
+        assert "-rsp" in body or "-srp" in body or "-rs" in body, (
+            "ask_api_key must use a silent read flag (-s / -rsp / -srp)"
+        )
+
+    # ── 10. provider URL auto-fill ───────────────────────────────────
+
+    def test_known_providers_map_defined(self):
+        content = self._read()
+        # The lookup map name is pinned at "KNOWN_PROVIDERS" (associative
+        # array). Three known entries must be present.
+        assert "KNOWN_PROVIDERS" in content, (
+            "install.sh must declare a KNOWN_PROVIDERS associative array"
+        )
+        for name, url in (
+            ("openrouter", "https://openrouter.ai/api/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+            ("ollama", "http://localhost:11434/v1"),
+        ):
+            assert f"[{name}]" in content, f"missing provider key: {name}"
+            assert url in content, f"missing provider URL: {url}"
+
+    def test_known_provider_skips_url_prompt(self):
+        """When the provider name is `openrouter`, ask_base_url returns
+        the mapped URL silently without prompting."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            PROVIDER_NAME="openrouter"
+            ARG_BASE_URL=""
+            ask_base_url
+            echo "BASE_URL=$BASE_URL"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "BASE_URL=https://openrouter.ai/api/v1" in result.stdout
+
+    def test_unknown_provider_asks_url(self):
+        """When the provider name is unknown, ask_base_url falls back
+        to the interactive prompt (which we exercise via stdin
+        redirection)."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            PROVIDER_NAME="custom-thing"
+            ARG_BASE_URL=""
+            # Feed a URL via stdin to simulate the user typing it.
+            ask_base_url <<< "https://my.custom.example/v1"
+            echo "BASE_URL=$BASE_URL"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "BASE_URL=https://my.custom.example/v1" in result.stdout

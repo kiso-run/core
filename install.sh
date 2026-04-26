@@ -51,8 +51,6 @@ bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
 # Print a colorized, boxed TOML preview (reads content from first argument)
 print_config_preview() {
     local content="$1"
-    local sep="────────────────────────────────────────────────────────"
-    printf '\033[2m  %s\033[0m\n' "$sep"
     while IFS= read -r line; do
         if [[ "$line" =~ ^\[.+\] ]]; then
             printf '  \033[1;36m%s\033[0m\n' "$line"
@@ -65,7 +63,6 @@ print_config_preview() {
             printf '  %s\n' "$line"
         fi
     done <<< "$content"
-    printf '\033[2m  %s\033[0m\n' "$sep"
 }
 
 cleanup() {
@@ -367,9 +364,17 @@ ask_provider_name() {
         return
     fi
     local name
-    safe_read -rp "Provider name [openrouter]: " name
+    safe_read -rp "  Provider name [openrouter]: " name
     PROVIDER_NAME="${name:-openrouter}"
 }
+
+# Known providers map: name → default base URL. ask_base_url consults
+# this so the user is asked the URL only when the provider is unknown.
+declare -A KNOWN_PROVIDERS=(
+    [openrouter]="https://openrouter.ai/api/v1"
+    [anthropic]="https://api.anthropic.com/v1"
+    [ollama]="http://localhost:11434/v1"
+)
 
 BASE_URL=""
 ask_base_url() {
@@ -377,15 +382,27 @@ ask_base_url() {
         BASE_URL="$ARG_BASE_URL"
         return
     fi
+    # If the chosen provider is a known one, use its mapped URL silently.
+    if [[ -n "${PROVIDER_NAME:-}" && -n "${KNOWN_PROVIDERS[$PROVIDER_NAME]:-}" ]]; then
+        BASE_URL="${KNOWN_PROVIDERS[$PROVIDER_NAME]}"
+        return
+    fi
     local url
-    safe_read -rp "LLM provider URL [https://openrouter.ai/api/v1]: " url
+    safe_read -rp "  Base URL: " url
     BASE_URL="${url:-https://openrouter.ai/api/v1}"
 }
 
 API_KEY=""
 ask_api_key() {
+    if [[ -n "$API_KEY" ]]; then
+        # Already collected — second call is a no-op (e.g. ask_api_key
+        # was invoked inline inside NEED_CONFIG and the .env-write block
+        # below calls it again as a fallback for the "kept config but
+        # rotate key" path).
+        return
+    fi
     if [[ -n "$ARG_API_KEY" ]]; then
-        echo "API key: (provided via --api-key)" >&2
+        echo "  API key: (provided via --api-key)" >&2
         API_KEY="$ARG_API_KEY"
         return
     fi
@@ -393,13 +410,19 @@ ask_api_key() {
     # This is what makes `OPENROUTER_API_KEY=... curl | sh` work without the
     # installer having to prompt interactively.
     if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-        echo "API key: (from \$OPENROUTER_API_KEY)" >&2
+        echo "  API key: (from \$OPENROUTER_API_KEY)" >&2
         API_KEY="$OPENROUTER_API_KEY"
         return
     fi
-    local key
+    local key prompt_label="API key"
+    # Surface the env-var name to the user when the provider is one we
+    # recognize, so they know where to put the secret in the future.
+    case "${PROVIDER_NAME:-}" in
+        openrouter) prompt_label="OPENROUTER_API_KEY" ;;
+        anthropic)  prompt_label="ANTHROPIC_API_KEY" ;;
+    esac
     while true; do
-        safe_read -rsp "LLM API key for $BASE_URL: " key
+        safe_read -rsp "  ${prompt_label}: " key
         echo >&2
         if [[ -n "$key" ]]; then
             API_KEY="$key"
@@ -530,11 +553,16 @@ ask_network_and_external_url() {
         yellow "  Make sure port ${SERVER_PORT:-8333} is reachable from outside (check firewall/router port forwarding)." >&2
         yellow "  For production use, set up HTTPS with a reverse proxy." >&2
         yellow "  See: docs/https.md — we recommend Caddy + Let's Encrypt." >&2
+        yellow "  You can switch back to local-only anytime by editing" >&2
+        yellow "  ~/.kiso/instances/${INST_NAME:-<name>}/config.toml" >&2
+        yellow '  (set host = "127.0.0.1").' >&2
     fi
     echo >&2
 
-    # External URL for file download links
-    bold "External URL (for file download links):" >&2
+    # Public URL where this Kiso is reachable. Used for download
+    # links, webhook callbacks, and shown by MCP servers in their
+    # outputs (the wording below pins the wider scope for operators
+    # who would otherwise read "external URL" as download-only).
     local pub_ip default_url _port="${SERVER_PORT:-8333}"
     if [[ "$NETWORK_MODE" == "local" ]]; then
         default_url="http://localhost:${_port}"
@@ -557,6 +585,8 @@ ask_network_and_external_url() {
             yellow "  Could not detect public IP." >&2
         fi
     fi
+    bold "Public URL where this Kiso is reachable" >&2
+    echo "    (used in download links, webhook callbacks, MCP outputs)" >&2
     safe_read -rp "  External URL [$default_url]: " EXTERNAL_URL
     EXTERNAL_URL="${EXTERNAL_URL:-$default_url}"
     echo >&2
@@ -830,23 +860,17 @@ if [[ -f "$ENV_FILE" ]]; then
         NEED_ENV=false
         green "  .env kept"
     fi
-else
-    yellow "  $ENV_FILE not found — will ask for API key."
 fi
 echo
 
+# The container rebuild / restart prompt is asked *after* the config
+# is written (see post-write block below). Asking it now would force
+# the operator to decide whether to destroy the running container
+# before they have configured anything — the wrong order.
 NEED_BUILD=true
-
+CONTAINER_EXISTED=false
 if docker inspect "$CONTAINER" &>/dev/null; then
-    state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
-    yellow "  Container '$CONTAINER' exists (state: $state)."
-    if confirm "  Rebuild and restart?" "y"; then
-        docker rm -f "$CONTAINER" &>/dev/null || true
-        green "  old container removed"
-    else
-        NEED_BUILD=false
-        green "  container kept"
-    fi
+    CONTAINER_EXISTED=true
 fi
 
 # ── 3d. Back up files that should survive ───────────────────────────────────
@@ -862,20 +886,10 @@ if [[ "$NEED_CONFIG" == false && -f "$CONFIG" ]]; then
     cp "$CONFIG" "$CONFIG_BACKUP"
 fi
 
-# ── 3e. Clean root-owned files in instance dir ───────────────────────────────
-
-if [[ "$NEED_BUILD" == true && -d "$INST_DIR" ]]; then
-    if find "$INST_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
-        bold "Cleaning root-owned files from previous install..."
-        docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine sh -c '
-            for d in sessions audit sys reference; do
-                rm -rf "/mnt/kiso/$d" 2>/dev/null
-            done
-            rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
-            chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
-        ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
-    fi
-fi
+# ── 3e. Clean root-owned files in instance dir ─────────────────────────────
+# Deferred to post-write — runs only if the user confirms a container
+# restart. Until then we must not touch $INST_DIR contents because the
+# user may opt to keep the running container as-is.
 
 # ── 4. Configure ─────────────────────────────────────────────────────────────
 
@@ -885,27 +899,39 @@ mkdir -p "$INST_DIR"
 BASE_URL=""  # set inside NEED_CONFIG block; used later for NEED_ENV prompt
 
 if [[ "$NEED_CONFIG" == true ]]; then
-    ask_username
-    echo "  user: $KISO_USER"
-
     bot_name="$BOT_NAME"
-    echo "  bot name: $bot_name"
 
-    safe_read -rp "  Bot persona [a friendly and knowledgeable assistant]: " bot_persona
-    bot_persona="${bot_persona:-a friendly and knowledgeable assistant}"
-    echo "  persona: $bot_persona"
+    # Defaults used as the canned [<default>] hint on the very first
+    # prompt walk. On a re-walk triggered by `edit` at the final
+    # confirm prompt, the previously-typed values are already cached
+    # in their globals, so the prompts effectively show those instead.
+    : "${bot_persona:=a friendly and knowledgeable assistant}"
 
-    ask_provider_name
-    echo "  provider: $PROVIDER_NAME"
+    while true; do
+        echo "  bot name: $bot_name"
 
-    ask_base_url
-    echo "  base url: $BASE_URL"
+        safe_read -rp "  Bot persona [$bot_persona]: " _persona_input
+        bot_persona="${_persona_input:-$bot_persona}"
+        echo "  persona: $bot_persona"
+        echo "  (To change later: edit bot_persona in $CONFIG and 'kiso restart'.)"
+        echo
 
-    token="$(generate_token)"
+        ask_username
+        echo "  user: $KISO_USER"
 
-    ask_models
-    ask_resource_limits
-    ask_network_and_external_url
+        ask_provider_name
+        echo "  provider: $PROVIDER_NAME"
+
+        ask_base_url
+        echo "  base url: $BASE_URL"
+
+        ask_api_key
+
+        token="$(generate_token)"
+
+        ask_models
+        ask_resource_limits
+        ask_network_and_external_url
 
     config_body=$(cat <<PREVIEW
 [tokens]
@@ -971,12 +997,34 @@ $MODELS_SECTION
 PREVIEW
 )
 
-    echo
-    printf '  \033[1mConfig preview\033[0m — \033[2m%s\033[0m\n' "$CONFIG"
-    echo
-    print_config_preview "$config_body"
-    echo
-    confirm "Write this config to $CONFIG?"
+        echo
+        printf '  \033[1mConfig preview\033[0m — \033[2m%s\033[0m\n' "$CONFIG"
+        echo
+        print_config_preview "$config_body"
+        echo
+
+        _final_choice=""
+        _decision=""
+        while [[ -z "$_decision" ]]; do
+            safe_read -rp "  Write this config to $CONFIG? [Y/n/edit] " _final_choice
+            _final_choice="${_final_choice:-Y}"
+            case "$_final_choice" in
+                [Yy]*) _decision="write" ;;
+                [Nn]*) _decision="abort" ;;
+                e*|E*) _decision="edit" ;;
+                *) red "  Choose Y, n, or edit." ;;
+            esac
+        done
+        if [[ "$_decision" == "abort" ]]; then
+            red "  Aborted by user. No changes written."
+            exit 1
+        fi
+        if [[ "$_decision" == "write" ]]; then
+            break
+        fi
+        green "  Restarting prompts (current answers will appear as defaults)..."
+        echo
+    done
 
     printf '%s\n' "$config_body" > "$CONFIG"
     green "  config.toml created"
@@ -1010,6 +1058,37 @@ if [[ "$NEED_ENV" == true ]]; then
 
     if [[ -n "$ENV_BACKUP" ]]; then
         cp "$ENV_FILE" "$ENV_BACKUP"
+    fi
+fi
+echo
+
+# ── 4d. Container restart decision (post-write) ──────────────────────────────
+# Asked here, NOT before configuration, so the operator does not have
+# to choose whether to destroy a running container before they have
+# answered any config questions. The cleanup of root-owned files in
+# $INST_DIR is also gated on this prompt — until the user opts in,
+# the running container's data must remain untouched.
+
+if [[ "$CONTAINER_EXISTED" == true ]]; then
+    state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
+    yellow "  Container '$CONTAINER' exists (state: $state)."
+    if confirm "  Restart with new config?" "y"; then
+        docker rm -f "$CONTAINER" &>/dev/null || true
+        green "  old container removed"
+        if [[ -d "$INST_DIR" ]] && \
+           find "$INST_DIR" -not -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
+            bold "Cleaning root-owned files from previous install..."
+            docker run --rm -v "${INST_DIR}:/mnt/kiso" alpine sh -c '
+                for d in sessions audit sys reference; do
+                    rm -rf "/mnt/kiso/$d" 2>/dev/null
+                done
+                rm -f /mnt/kiso/store.db /mnt/kiso/server.log /mnt/kiso/.chat_history 2>/dev/null
+                chown -R '"$(id -u):$(id -g)"' /mnt/kiso/ 2>/dev/null
+            ' && green "  cleaned" || yellow "  warning: could not clean all root-owned files"
+        fi
+    else
+        NEED_BUILD=false
+        green "  container kept"
     fi
 fi
 echo
