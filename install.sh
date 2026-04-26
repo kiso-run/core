@@ -247,13 +247,31 @@ ask_bot_and_instance_name() {
 }
 
 KISO_USER=""
+
+# Print the list of real human users on this host (UID >= 1000, excluding
+# system/daemon/snap accounts that happen to land in that range). The
+# filter is conservative: it removes well-known patterns rather than
+# trying to enumerate every legitimate user, so unusual but real
+# accounts still appear as hints. The filter is informational only —
+# the canonical existence check is `id <name>` later in ask_username.
+#
+# Args: optional passwd file path (defaults to /etc/passwd). The
+#       parameter exists for testing.
+_list_available_users() {
+    local passwd_file="${1:-/etc/passwd}"
+    awk -F: '$3 >= 1000 && $1 != "nobody" { print $1 }' "$passwd_file" 2>/dev/null \
+        | grep -Ev '^(snap_|snapd-|_|systemd-|gnome-)' \
+        | grep -Ev '^(lxd|pollinate|landscape|messagebus|dbus)$' \
+        | sort \
+        | head -20
+}
+
 ask_username() {
     local default_user
     default_user="$(whoami)"
 
-    # List available system users (UID >= 1000, non-nobody) as hints
     local available_users
-    available_users="$(awk -F: '$3 >= 1000 && $1 != "nobody" { print $1 }' /etc/passwd 2>/dev/null | sort | head -20)"
+    available_users="$(_list_available_users)"
 
     if [[ -n "$ARG_USER" ]]; then
         if [[ ! "$ARG_USER" =~ $USERNAME_RE ]]; then
@@ -262,8 +280,8 @@ ask_username() {
         fi
         if ! id "$ARG_USER" &>/dev/null; then
             red "Error: Linux user '$ARG_USER' does not exist on this system."
-            echo "  Create it first:  sudo useradd -m $ARG_USER"
-            echo "  Then re-run the installer."
+            echo "  Pass an existing username via --user, or omit the flag"
+            echo "  to be prompted interactively from the available users."
             exit 1
         fi
         KISO_USER="$ARG_USER"
@@ -271,10 +289,17 @@ ask_username() {
     fi
 
     echo ""
-    echo "  Kiso needs a Linux system user to own files and run tasks."
+    echo "  Which existing Linux user should own Kiso's files and run tasks?"
+    echo "    Default: $default_user (you, current user)"
     if [[ -n "$available_users" ]]; then
-        echo "  Available users: $(echo "$available_users" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')"
+        # Filter out the default from "other users" — already shown above.
+        local others
+        others="$(echo "$available_users" | grep -v "^${default_user}$" || true)"
+        if [[ -n "$others" ]]; then
+            echo "    Other existing users: $(echo "$others" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')"
+        fi
     fi
+    echo "  Press Enter to use the default, or type another existing username."
     echo ""
 
     # Tab-completion for available usernames.
@@ -321,9 +346,8 @@ ask_username() {
             continue
         fi
         if ! id "$kiso_user" &>/dev/null; then
-            red "  Linux user '$kiso_user' does not exist."
-            echo "  Create it first:  sudo useradd -m $kiso_user"
-            echo "  Then enter the name again, or press Ctrl+C to abort."
+            red "  Linux user '$kiso_user' does not exist on this system."
+            echo "  Use one of the existing users above, or press Ctrl+C to abort."
             continue
         fi
         _user_valid=1

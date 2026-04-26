@@ -469,3 +469,180 @@ class TestPresetStep:
         with open(script_path) as f:
             content = f.read()
         assert 'MODE" == "new"' in content
+
+
+class TestM1567UserPromptClarity:
+    """M1567 — install.sh user-prompt clarity.
+
+    The interactive Linux-user prompt should:
+    - filter system/snap/daemon users out of the "available users" hint
+    - explicitly ask for an EXISTING user (no implicit suggestion to
+      create one)
+    - drop the misleading `sudo useradd -m <name>` hint from both
+      interactive and flag-mode error paths
+    """
+
+    SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+
+    @classmethod
+    def _read(cls) -> str:
+        with open(cls.SCRIPT_PATH) as f:
+            return f.read()
+
+    def test_list_available_users_helper_exists(self):
+        """install.sh defines a callable `_list_available_users` helper."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            type _list_available_users >/dev/null 2>&1
+            echo "exit=$?"
+        """)
+        assert result.returncode == 0, result.stderr
+        assert "exit=0" in result.stdout, (
+            "_list_available_users helper must be defined and callable"
+        )
+
+    def test_list_available_users_filters_snap_users(self):
+        """snap_*, snapd-* users at UID >= 1000 are filtered out."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            tmp=$(mktemp)
+            cat > "$tmp" <<PASSWD
+root:x:0:0::/root:/bin/bash
+snap_daemon:x:584788:584788::/nonexistent:/usr/sbin/nologin
+snapd-range-524288-root:x:524288:524288::/nonexistent:/usr/sbin/nologin
+ymx1zq:x:1000:1000:ymx1zq,,,:/home/ymx1zq:/bin/bash
+PASSWD
+            _list_available_users "$tmp"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        out = result.stdout
+        assert "snap_daemon" not in out
+        assert "snapd-range-524288-root" not in out
+        assert "ymx1zq" in out
+
+    def test_list_available_users_filters_underscore_prefix(self):
+        """Names beginning with underscore are filtered out."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            tmp=$(mktemp)
+            cat > "$tmp" <<PASSWD
+_kiso:x:1001:1001::/nonexistent:/usr/sbin/nologin
+_lxd:x:1002:1002::/nonexistent:/usr/sbin/nologin
+alice:x:1100:1100:Alice:/home/alice:/bin/bash
+PASSWD
+            _list_available_users "$tmp"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        out = result.stdout
+        assert "_kiso" not in out
+        assert "_lxd" not in out
+        assert "alice" in out
+
+    def test_list_available_users_filters_known_daemons(self):
+        """Known daemon users at UID >= 1000 are filtered out."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            tmp=$(mktemp)
+            cat > "$tmp" <<PASSWD
+lxd:x:1100:1100::/nonexistent:/usr/sbin/nologin
+pollinate:x:1101:1101::/nonexistent:/usr/sbin/nologin
+landscape:x:1102:1102::/nonexistent:/usr/sbin/nologin
+messagebus:x:1103:1103::/nonexistent:/usr/sbin/nologin
+dbus:x:1104:1104::/nonexistent:/usr/sbin/nologin
+systemd-resolve:x:1105:1105::/nonexistent:/usr/sbin/nologin
+gnome-initial-setup:x:1106:1106::/nonexistent:/usr/sbin/nologin
+bob:x:1200:1200:Bob:/home/bob:/bin/bash
+PASSWD
+            _list_available_users "$tmp"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        out = result.stdout
+        for filtered in (
+            "lxd", "pollinate", "landscape", "messagebus", "dbus",
+            "systemd-resolve", "gnome-initial-setup",
+        ):
+            assert filtered not in out, f"{filtered} should be filtered"
+        assert "bob" in out
+
+    def test_list_available_users_excludes_nobody_and_low_uid(self):
+        """nobody and UID<1000 users are excluded (existing behavior preserved)."""
+        result = _run_bash("""
+            export KISO_INSTALL_LIB=1
+            source ./install.sh
+            tmp=$(mktemp)
+            cat > "$tmp" <<PASSWD
+root:x:0:0::/root:/bin/bash
+daemon:x:1:1::/usr/sbin:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+ymx1zq:x:1000:1000:ymx1zq,,,:/home/ymx1zq:/bin/bash
+PASSWD
+            _list_available_users "$tmp"
+            rm -f "$tmp"
+        """)
+        assert result.returncode == 0, result.stderr
+        out = result.stdout
+        assert "root" not in out
+        assert "daemon" not in out
+        assert "nobody" not in out
+        assert "ymx1zq" in out
+
+    def test_no_useradd_hint_in_interactive_error_path(self):
+        """The interactive 'user does not exist' branch must not suggest
+        `sudo useradd -m`. The installer never creates users; the
+        previous wording misled operators."""
+        content = self._read()
+        # Locate the interactive ask_username error block. The two
+        # cues that scope us to the right region are 'does not exist.'
+        # in red() and the surrounding `continue` / `break` flow.
+        # Simpler: assert the literal `sudo useradd` is absent from
+        # the entire script's user-prompt context.
+        assert "sudo useradd" not in content, (
+            "install.sh must not suggest 'sudo useradd -m <name>' — "
+            "M1567 dropped this misleading hint"
+        )
+
+    def test_interactive_error_directs_to_existing_users(self):
+        """The interactive 'does not exist' branch directs the operator
+        to use one of the existing users above."""
+        content = self._read()
+        # New wording must be present in the interactive error path.
+        assert "Use one of the existing users above" in content or \
+               "use one of the existing users above" in content, (
+            "interactive error must direct to the existing-users list"
+        )
+
+    def test_flag_mode_error_message_aligned(self):
+        """ARG_USER (flag mode) error wording is aligned with interactive
+        (no `useradd` suggestion, points to existing users)."""
+        content = self._read()
+        # Check the flag-mode error block: the surrounding cue is
+        # "Error: Linux user '$ARG_USER' does not exist".
+        assert "does not exist on this system" in content
+        # And the same no-useradd invariant from the test above already
+        # covers absence of "sudo useradd". Add an extra invariant:
+        # the flag-mode error mentions either "--user" or
+        # "existing username" so the operator knows how to proceed.
+        assert "--user" in content, (
+            "flag-mode error should reference the --user flag"
+        )
+
+    def test_prompt_explicitly_asks_existing_user(self):
+        """The prompt wording explicitly mentions 'existing' so the
+        operator knows the installer does not create new users."""
+        content = self._read()
+        # Either the prompt header or the question itself must contain
+        # the word "existing" (case-insensitive).
+        # Scope: just inside ask_username (between the function start
+        # and the matching '}'). We do a soft check on the whole file
+        # since the literal is unique to this prompt.
+        assert "existing Linux user" in content, (
+            "prompt must use the phrase 'existing Linux user' to make "
+            "clear no user will be created"
+        )
