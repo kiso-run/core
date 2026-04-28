@@ -9,7 +9,7 @@ Two messages in the same session:
 
 Key assertions:
 - Planner uses local file path (no curl/download task)
-- OCR wrapper receives correct relative path (pub/...)
+- OCR MCP receives correct relative path (pub/...)
 - No replan needed on either step
 - Messenger does not hallucinate results
 """

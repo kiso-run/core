@@ -118,7 +118,7 @@ class TestF39ToolInstallAndUse:
 
     @pytest.mark.extended
     async def test_install_then_use_single_session(self, run_message):
-        """What: 3-stage flow: proposal → install → use browser wrapper.
+        """What: 3-stage flow: proposal → install → use browser MCP.
 
         Why: F1a/F1b test install and use separately. This tests the
         actual user flow in a single conversation session.

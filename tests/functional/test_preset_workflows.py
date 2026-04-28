@@ -23,12 +23,12 @@ pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
 
 class TestF27BrowseAndDescribe:
-    """Browse a website and describe its content — browser wrapper only."""
+    """Browse a website and describe its content — browser MCP only."""
 
     async def test_browse_and_describe(self, preset_tools_installed, run_message):
         """What: Navigates to example.com and describes the page.
 
-        Why: Validates browser wrapper works end-to-end without install flow.
+        Why: Validates browser MCP works end-to-end without install flow.
         Expects: Success, Italian response, mentions 'example' or 'domain'.
         """
         result = await run_message(

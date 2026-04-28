@@ -297,7 +297,6 @@ class TestExecTranslatorLive:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
         }
         sys_env_text = build_system_env_section(fake_env, session="test-sess")
         command = await asyncio.wait_for(
@@ -459,7 +458,6 @@ class TestPlannerSystemPackageLive:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
             "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
         }
         return build_system_env_section(fake_env, session="test-sess")
@@ -493,7 +491,6 @@ class TestPlannerSystemPackageLive:
                 "max_replan_depth": 3,
                 "sys_bin_path": str(tmp_path / "sys" / "bin"),
                 "reference_docs_path": str(tmp_path / "reference"),
-                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
                 "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
             }),
         ):
@@ -560,7 +557,6 @@ class TestPlannerSystemPackageLive:
                 "max_replan_depth": 3,
                 "sys_bin_path": str(tmp_path / "sys" / "bin"),
                 "reference_docs_path": str(tmp_path / "reference"),
-                "registry_url": "https://raw.githubusercontent.com/kiso-run/core/main/registry.json",
                 "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
             }),
         ):
@@ -626,7 +622,6 @@ class TestExecTranslatorSudoLive:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_url": "https://example.com/registry.json",
         }
         sys_env_text = build_system_env_section(fake_env, session="test-sess")
         command = await asyncio.wait_for(

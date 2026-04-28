@@ -1,11 +1,11 @@
 """F1-F2: Browser navigation functional tests.
 
 These tests exercise the full pipeline: user message → classifier → planner →
-worker (with real browser wrapper) → messenger.  They require a running kiso
-instance with real LLM, network access, and the browser wrapper available in
+worker (with real browser MCP) → messenger.  They require a running kiso
+instance with real LLM, network access, and the browser MCP available in
 the registry.
 
-When the browser wrapper is not pre-installed, the tests exercise the full
+When the browser MCP is not pre-installed, the tests exercise the full
 multi-turn install flow: first message triggers an install proposal, second
 message ("sì, installa") confirms, and the agent installs + proceeds.
 """
@@ -39,8 +39,8 @@ class TestF1BrowserInstall:
         """What: Trigger browser install via multi-turn approval flow.
 
         Why: Validates the install proposal → user approval → exec install cycle
-        for the browser wrapper specifically. Isolates install issues from navigation.
-        Expects: After the flow, the browser wrapper is installed and discoverable.
+        for the browser MCP specifically. Isolates install issues from navigation.
+        Expects: After the flow, the browser MCP is installed and discoverable.
         """
         if tool_installed("browser"):
             pytest.skip("Browser already installed — nothing to test")
@@ -67,7 +67,7 @@ class TestF1BrowserNavigate:
     async def test_navigate_and_describe(self, run_message):
         """What: Navigate to example.com and describe the page content.
 
-        Why: Validates that the browser wrapper can navigate a real page and
+        Why: Validates that the browser MCP can navigate a real page and
         the messenger produces an Italian description of the content.
         example.com is IANA-maintained, no CAPTCHA, always available.
         Expects: Italian response >50 chars mentioning example/dominio/IANA.
@@ -141,7 +141,7 @@ class TestF2WikipediaPython:
     async def test_wikipedia_lookup(self, run_message):
         """What: Navigate to the Python Wikipedia page and ask what Python is.
 
-        Why: Validates that the browser wrapper can navigate to a stable, well-known
+        Why: Validates that the browser MCP can navigate to a stable, well-known
         URL and extract factual information. Wikipedia is always reachable, has
         structured content, and "Python" appears in any reasonable summary.
         Deterministic target avoids fragile dynamic-content assertions.
