@@ -3230,8 +3230,8 @@ class TestApplyCuratorResult:
         result = {"evaluations": [{
             "learning_id": lid, "verdict": "promote",
             "fact": "Flask default port is 5000",
-            "category": "wrapper", "tags": ["web-framework", "python"],
-            "entity_name": "flask", "entity_kind": "wrapper",
+            "category": "system", "tags": ["web-framework", "python"],
+            "entity_name": "flask", "entity_kind": "system",
             "reason": "Durable fact",
         }]}
         await _apply_curator_result(db, "sess1", result)
@@ -3242,7 +3242,7 @@ class TestApplyCuratorResult:
         tags = row[0] if isinstance(row, tuple) else row["review_learning_tags"]
         assert tags is not None
         assert "flask" in tags
-        assert "wrapper" in tags
+        assert "system" in tags
         assert "web-framework" in tags
 
 
@@ -3265,7 +3265,7 @@ class TestCuratorEntityFlow:
             {"learning_id": lid, "verdict": "promote",
              "fact": "Project uses Flask for web API",
              "question": None, "reason": "Good",
-             "entity_name": "flask", "entity_kind": "wrapper"},
+             "entity_name": "flask", "entity_kind": "system"},
         ]}
         await _apply_curator_result(db, "sess1", result)
         facts = await get_facts(db)
@@ -3274,17 +3274,17 @@ class TestCuratorEntityFlow:
         entities = await get_all_entities(db)
         assert len(entities) == 1
         assert entities[0]["name"] == "flask"
-        assert entities[0]["kind"] == "wrapper"
+        assert entities[0]["kind"] == "system"
 
     async def test_promote_reuses_existing_entity(self, db):
         from kiso.store import find_or_create_entity
-        eid = await find_or_create_entity(db, "flask", "wrapper")
+        eid = await find_or_create_entity(db, "flask", "system")
         lid = await save_learning(db, "Flask uses Jinja2 templates", "sess1")
         result = {"evaluations": [
             {"learning_id": lid, "verdict": "promote",
              "fact": "Flask uses Jinja2 templating engine",
              "question": None, "reason": "Good",
-             "entity_name": "flask", "entity_kind": "wrapper"},
+             "entity_name": "flask", "entity_kind": "system"},
         ]}
         await _apply_curator_result(db, "sess1", result)
         entities = await get_all_entities(db)
@@ -3312,11 +3312,11 @@ class TestCuratorEntityFlow:
             {"learning_id": lid1, "verdict": "promote",
              "fact": "Project uses Flask web framework",
              "question": None, "reason": "Good",
-             "entity_name": "flask", "entity_kind": "wrapper"},
+             "entity_name": "flask", "entity_kind": "system"},
             {"learning_id": lid2, "verdict": "promote",
              "fact": "Docker is used for deployment",
              "question": None, "reason": "Good",
-             "entity_name": "docker", "entity_kind": "wrapper"},
+             "entity_name": "docker", "entity_kind": "system"},
         ]}
         await _apply_curator_result(db, "sess1", result)
         entities = await get_all_entities(db)
@@ -6914,10 +6914,10 @@ class TestApplyCuratorCategory:
         assert row[0] == "sess1"
 
     async def test_tool_fact_has_no_session(self, db):
-        """Wrapper facts must be global (not session-scoped)."""
+        """System-category facts must be global (not session-scoped)."""
         lid = await save_learning(db, "jq is available", "sess1")
         result = {"evaluations": [
-            {"learning_id": lid, "verdict": "promote", "fact": "jq is available", "category": "wrapper", "question": None, "reason": "Good"},
+            {"learning_id": lid, "verdict": "promote", "fact": "jq is available", "category": "system", "question": None, "reason": "Good"},
         ]}
         await _apply_curator_result(db, "sess1", result)
         cur = await db.execute("SELECT session FROM facts LIMIT 1")

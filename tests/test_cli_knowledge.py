@@ -81,7 +81,7 @@ class TestKnowledgeSearch:
     def test_search_with_results(self, capsys):
         from cli.knowledge import knowledge_search
         args = make_cli_args(query="Flask")
-        facts = [{"id": 1, "content": "Uses Flask framework", "category": "wrapper",
+        facts = [{"id": 1, "content": "Uses Flask framework", "category": "general",
                   "entity_name": "flask", "tags": []}]
         with patch("kiso.config.load_config", return_value=mock_cli_config()), \
              mock_http_response({"facts": facts}):

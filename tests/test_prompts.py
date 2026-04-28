@@ -147,7 +147,7 @@ class TestCLICommandAudit:
                 result[name] = sorted(subs)
         return result
 
-    @pytest.mark.parametrize("cmd_group", ["wrapper", "connector", "env", "user", "reset"])
+    @pytest.mark.parametrize("cmd_group", ["connector", "env", "user", "reset"])
     def test_subcommands_match(self, cmd_group):
         from kiso.brain import _load_modular_prompt
         prompt = _load_modular_prompt("planner", ["kiso_commands"])

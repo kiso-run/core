@@ -1375,7 +1375,7 @@ def test_render_llm_call_output_panel_curator_formatted():
     curator_response = json.dumps({"evaluations": [
         {"learning_id": 1, "verdict": "promote",
          "fact": "Uses Flask for web API", "reason": "Tech choice",
-         "tags": ["tech-stack", "web"], "entity_name": "flask", "entity_kind": "wrapper"},
+         "tags": ["tech-stack", "web"], "entity_name": "flask", "entity_kind": "system"},
         {"learning_id": 2, "verdict": "discard",
          "fact": None, "reason": "Transient state"},
         {"learning_id": 3, "verdict": "ask",
@@ -1390,7 +1390,7 @@ def test_render_llm_call_output_panel_curator_formatted():
     result = render_llm_call_output_panel(call, _PLAIN)
     assert "promote" in result
     assert "Uses Flask for web API" in result
-    assert "flask (wrapper)" in result
+    assert "flask (system)" in result
     assert "tech-stack, web" in result
     assert "discard" in result
     assert "ask" in result

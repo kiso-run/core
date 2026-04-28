@@ -174,10 +174,10 @@ async def test_session_project_id_default_none(db):
 
 async def test_fact_global_visible_to_all(db):
     """Global facts (no project_id, non-user category) are visible to everyone."""
-    await save_fact(db, "Global wrapper fact for everyone", "system", category="wrapper")
+    await save_fact(db, "Global system fact for everyone", "system", category="system")
     # Non-admin, with username — should see global facts
     facts = await get_facts(db, session="sess1", username="bob")
-    assert any("Global wrapper fact" in f["content"] for f in facts)
+    assert any("Global system fact" in f["content"] for f in facts)
 
 
 async def test_fact_project_scoped_visible_to_member(db):

@@ -113,11 +113,11 @@ class TestEntityLifecycle:
             {"learning_id": lid1, "verdict": "promote",
              "fact": "Project uses Flask web framework",
              "question": None, "reason": "Tech stack",
-             "entity_name": "flask", "entity_kind": "wrapper"},
+             "entity_name": "flask", "entity_kind": "system"},
             {"learning_id": lid2, "verdict": "promote",
              "fact": "Docker used for containerized deployment",
              "question": None, "reason": "Infra",
-             "entity_name": "docker", "entity_kind": "wrapper"},
+             "entity_name": "docker", "entity_kind": "system"},
         ]}
         await _apply_curator_result(db, "sess1", result)
 
