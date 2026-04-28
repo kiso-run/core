@@ -101,15 +101,33 @@ def _validate_plan_structure(
     """Check top-level plan fields and strip extend_replan from initial plans.
 
     Returns (errors, tasks) so callers can short-circuit on structural failures.
+
+    Side effect (M1591): `extend_replan` (top-level) and `task["group"]`
+    (per-task) string values are coerced to int in place. V4-Flash
+    json_object mode sometimes emits stringified ints despite the
+    strict schema; downstream consumers compare/index on real ints.
+    Non-numeric strings are left as-is and will surface via the schema
+    or per-field validators.
     """
     if not is_replan:
         plan.pop("extend_replan", None)
+    elif isinstance(plan.get("extend_replan"), str):
+        try:
+            plan["extend_replan"] = int(plan["extend_replan"])
+        except ValueError:
+            pass
     errors: list[str] = []
     tasks = plan.get("tasks", [])
     if not tasks:
         errors.append("tasks list must not be empty")
     elif max_tasks is not None and len(tasks) > max_tasks:
         errors.append(f"Plan has {len(tasks)} tasks, max allowed is {max_tasks}")
+    for task in tasks:
+        if isinstance(task, dict) and isinstance(task.get("group"), str):
+            try:
+                task["group"] = int(task["group"])
+            except ValueError:
+                pass
     return errors, tasks
 
 

@@ -67,6 +67,11 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
 
     *expected_count* is the number of input learnings. The curator may return
     **fewer** evaluations (consolidation) but never **more** than expected.
+
+    Side effect (M1591): `learning_id` strings ("1") are coerced to int
+    in place. V4-Flash json_object mode sometimes emits stringified ints
+    despite the strict schema; downstream SQL bindings expect real ints.
+    Non-numeric strings are flagged as errors rather than silently kept.
     """
     errors: list[str] = []
     evals = result.get("evaluations", [])
@@ -75,6 +80,15 @@ def validate_curator(result: dict, expected_count: int | None = None) -> list[st
     if expected_count is not None and expected_count > 0 and len(evals) == 0:
         errors.append("Expected at least 1 evaluation but got 0 — every learning must be evaluated")
     for i, ev in enumerate(evals, 1):
+        lid = ev.get("learning_id")
+        if isinstance(lid, str):
+            try:
+                ev["learning_id"] = int(lid)
+            except ValueError:
+                errors.append(
+                    f"Evaluation {i}: learning_id must be an integer "
+                    f"(got non-numeric string {lid!r})"
+                )
         verdict = ev.get("verdict")
         if not ev.get("reason"):
             errors.append(f"Evaluation {i}: reason is required")

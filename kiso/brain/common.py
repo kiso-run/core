@@ -1602,6 +1602,28 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         errors.append("context must be a string")
     if not isinstance(briefing.get("output_indices"), list):
         errors.append("output_indices must be an array")
+    else:
+        # M1591: coerce stringified int items (V4-Flash json_object
+        # sometimes emits ["1", "2"] instead of [1, 2]). Non-numeric
+        # strings stay as-is and surface as a validation error.
+        coerced: list = []
+        bad: list = []
+        for item in briefing["output_indices"]:
+            if isinstance(item, str):
+                try:
+                    coerced.append(int(item))
+                    continue
+                except ValueError:
+                    bad.append(item)
+                    coerced.append(item)
+                    continue
+            coerced.append(item)
+        briefing["output_indices"] = coerced
+        if bad:
+            errors.append(
+                f"output_indices items must be integers (got non-numeric "
+                f"strings: {bad!r})"
+            )
     if not isinstance(briefing.get("relevant_tags"), list):
         errors.append("relevant_tags must be an array")
     if not isinstance(briefing.get("relevant_entities"), list):
