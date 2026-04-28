@@ -892,7 +892,13 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
     # msg-only plans when this flag is true. A coherence check rejects
     # plans where kb_answer=true is mixed with non-msg tasks.
     "kb_answer": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
-}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge", "kb_answer"])
+    # M1579a: broker model "awaiting input" escape hatch. The planner
+    # sets this to true when it is pausing to ask the user a question
+    # (capability missing, ambiguous request, missing detail). Parallels
+    # `kb_answer`: msg-only plans with this flag pass the validator;
+    # mixing it with action tasks fails the coherence check.
+    "awaits_input": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge", "kb_answer", "awaits_input"])
 
 
 REVIEW_SCHEMA: dict = _build_strict_schema("review", {

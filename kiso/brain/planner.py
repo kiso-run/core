@@ -365,6 +365,7 @@ def _validate_plan_ordering(
     has_needs_install: bool = False,
     has_knowledge: bool = False,
     has_kb_answer: bool = False,
+    has_awaits_input: bool = False,
     allow_msg_only: bool = False,
 ) -> list[str]:
     """Check cross-task ordering rules and install safety."""
@@ -372,8 +373,8 @@ def _validate_plan_ordering(
 
     # msg-only plans are rejected unless one of the escape flags is set:
     # needs_install (install proposal), knowledge (storage), kb_answer
-    # (: KB recall from briefer context), or allow_msg_only
-    # (structural fallback).
+    # (KB recall from briefer context), awaits_input (broker pause for
+    # user input — M1579a), or allow_msg_only (structural fallback).
     _DATA_TYPES = {TASK_TYPE_EXEC, TASK_TYPE_REPLAN, TASK_TYPE_MCP}
     has_action = any(t.get("type") in _DATA_TYPES for t in tasks)
     if not has_action and not is_replan:
@@ -381,14 +382,16 @@ def _validate_plan_ordering(
             not has_needs_install
             and not has_knowledge
             and not has_kb_answer
+            and not has_awaits_input
             and not allow_msg_only
         ):
             errors.append(
                 "Plan has only msg tasks — include at least one "
                 "exec/mcp task for action requests. "
                 "Msg-only is valid only for install proposals "
-                "(set needs_install), knowledge storage, or KB recall "
-                "(set kb_answer when answering from briefer context)."
+                "(set needs_install), knowledge storage, KB recall "
+                "(set kb_answer when answering from briefer context), "
+                "or pausing for user input (set awaits_input)."
             )
 
     # msg as first task wastes an LLM call before any action runs.
@@ -521,6 +524,7 @@ def validate_plan(
         has_needs_install=bool(plan.get("needs_install")),
         has_knowledge=bool(plan.get("knowledge")),
         has_kb_answer=bool(plan.get("kb_answer")),
+        has_awaits_input=bool(plan.get("awaits_input")),
         allow_msg_only=(
             force_msg_only
             or plan.get("msg_only_fallback") == "unavailable_named_tool"
@@ -577,6 +581,20 @@ def validate_plan(
                 f"(found: {non_msg}). kb_answer is only valid for msg-only "
                 f"plans answering from briefer-supplied KB context. "
                 f"Either remove all action tasks or set kb_answer=false."
+            )
+            return errors
+
+    # M1579a coherence check: awaits_input means the planner is pausing
+    # for user input. A plan that has work to do is by definition not
+    # paused. Reject the mismatch — same pattern as kb_answer above.
+    if plan.get("awaits_input"):
+        non_msg = [t["type"] for t in tasks if t.get("type") != TASK_TYPE_MSG]
+        if non_msg:
+            errors.append(
+                f"awaits_input is set but plan contains action tasks "
+                f"(found: {non_msg}). awaits_input is only valid for "
+                f"msg-only plans pausing for user input. Either remove "
+                f"all action tasks or set awaits_input=false."
             )
             return errors
 

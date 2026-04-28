@@ -53,6 +53,7 @@ from .plans import (
     create_plan,
     create_task,
     get_tasks_for_plan,
+    update_plan_awaits_input,
     update_plan_goal,
     update_plan_install_proposal,
     update_plan_status,

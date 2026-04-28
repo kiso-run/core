@@ -1777,7 +1777,7 @@ class TestPlanSchema:
         base = {
             "goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}],
             "extend_replan": None, "needs_install": None, "knowledge": None,
-            "kb_answer": None,
+            "kb_answer": None, "awaits_input": None,
         }
         base.update(overrides)
         return base
@@ -8548,6 +8548,7 @@ class TestKbAnswerFlag:
             "needs_install": None,
             "knowledge": None,
             "kb_answer": True,
+            "awaits_input": None,
             "tasks": [
                 {"type": "msg", "detail": "Answer in English. fact",
                  "expect": None, "args": None},
@@ -8567,6 +8568,7 @@ class TestKbAnswerFlag:
             "needs_install": None,
             "knowledge": None,
             "kb_answer": None,
+            "awaits_input": None,
             "tasks": [
                 {"type": "exec", "detail": "ls", "expect": "files",
                  "args": None},

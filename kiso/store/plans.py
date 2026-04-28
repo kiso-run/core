@@ -130,6 +130,12 @@ async def update_plan_install_proposal(
     await _update_field(db, "plans", "install_proposal", int(value), plan_id)
 
 
+async def update_plan_awaits_input(
+    db: aiosqlite.Connection, plan_id: int, value: bool = True,
+) -> None:
+    await _update_field(db, "plans", "awaits_input", int(value), plan_id)
+
+
 async def update_plan_usage(
     db: aiosqlite.Connection,
     plan_id: int,

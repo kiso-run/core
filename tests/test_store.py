@@ -2883,3 +2883,83 @@ async def test_archive_skips_safety_facts(db: aiosqlite.Connection):
     # Normal fact should be deleted (archived)
     cur = await db.execute("SELECT id FROM facts WHERE id = ?", (normal_id,))
     assert await cur.fetchone() is None
+
+
+# ---------------------------------------------------------------------------
+# M1579a — `awaits_input` plan column + helper + idempotent migration.
+# ---------------------------------------------------------------------------
+
+
+async def test_create_plan_defaults_awaits_input_false(db: aiosqlite.Connection):
+    """New plans default `awaits_input` to 0 (false)."""
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+    cur = await db.execute(
+        "SELECT awaits_input FROM plans WHERE id = ?", (plan_id,),
+    )
+    row = await cur.fetchone()
+    assert row[0] == 0
+
+
+async def test_update_plan_awaits_input_round_trip(db: aiosqlite.Connection):
+    """update_plan_awaits_input writes the value, get_plan_for_session reads it back."""
+    from kiso.store import update_plan_awaits_input
+    await create_session(db, "sess1")
+    plan_id = await create_plan(db, "sess1", message_id=1, goal="Test")
+
+    await update_plan_awaits_input(db, plan_id, True)
+    cur = await db.execute(
+        "SELECT awaits_input FROM plans WHERE id = ?", (plan_id,),
+    )
+    row = await cur.fetchone()
+    assert row[0] == 1
+
+    await update_plan_awaits_input(db, plan_id, False)
+    cur = await db.execute(
+        "SELECT awaits_input FROM plans WHERE id = ?", (plan_id,),
+    )
+    row = await cur.fetchone()
+    assert row[0] == 0
+
+
+async def test_init_db_adds_awaits_input_to_existing_plans(tmp_path):
+    """init_db on a pre-migration DB (without `awaits_input`) adds
+    the column with default 0; existing plan rows are preserved."""
+    from kiso.store import init_db
+    db_path = tmp_path / "old.db"
+
+    # Hand-build an old plans table without the new column.
+    pre = await aiosqlite.connect(db_path)
+    await pre.executescript("""
+        CREATE TABLE plans (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            session             TEXT NOT NULL,
+            message_id          INTEGER NOT NULL,
+            parent_id           INTEGER,
+            goal                TEXT NOT NULL,
+            status              TEXT NOT NULL DEFAULT 'running',
+            total_input_tokens  INTEGER NOT NULL DEFAULT 0,
+            total_output_tokens INTEGER NOT NULL DEFAULT 0,
+            model               TEXT,
+            llm_calls           TEXT,
+            install_proposal    BOOLEAN DEFAULT 0,
+            created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO plans (session, message_id, goal) VALUES ('s1', 1, 'old goal');
+    """)
+    await pre.commit()
+    await pre.close()
+
+    db = await init_db(db_path)
+    try:
+        cur = await db.execute("PRAGMA table_info(plans)")
+        cols = {row[1] for row in await cur.fetchall()}
+        assert "awaits_input" in cols, (
+            f"awaits_input column missing post-migration; cols={cols}"
+        )
+        cur = await db.execute("SELECT goal, awaits_input FROM plans")
+        row = await cur.fetchone()
+        assert row[0] == "old goal"
+        assert row[1] == 0
+    finally:
+        await db.close()

@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS plans (
     model               TEXT,
     llm_calls           TEXT,
     install_proposal    BOOLEAN DEFAULT 0,
+    awaits_input        INTEGER DEFAULT 0,
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_plans_session ON plans(session, id);
