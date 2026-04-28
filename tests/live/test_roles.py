@@ -711,7 +711,10 @@ class TestClassifierV4FlashLive:
             ("installami ripgrep",                    "plan",        "Italian"),
             ("perché il comando di prima è fallito?", "investigate", "Italian"),
             ("ciao come va oggi?",                    "chat",        "Italian"),
-            ("what do you know about flask?",         "chat_kb",     "English"),
+            # M1579b: with NO Known Entities, "what do you know about
+            # flask?" is a general-knowledge question → chat (the
+            # classifier should NOT match the trigger phrase alone).
+            ("what do you know about flask?",         "chat",        "English"),
             ("write a python script that calls the github api",
                                                        "plan",        "English"),
         ],
@@ -732,6 +735,23 @@ class TestClassifierV4FlashLive:
         )
         # Language detection is best-effort; require non-empty result.
         assert lang, f"V4-Flash classifier returned empty language for {msg!r}"
+
+    async def test_classifier_chat_kb_when_entity_known(self, live_config):
+        """M1579b: same prompt, but `flask` is supplied as a Known
+        Entity → classifier flips to `chat_kb` (the user is asking
+        about something the system has stored)."""
+        from kiso.brain import run_classifier
+        category, _ = await asyncio.wait_for(
+            run_classifier(
+                live_config, "what do you know about flask?",
+                recent_context="", entity_names="flask",
+            ),
+            timeout=TIMEOUT,
+        )
+        assert category == "chat_kb", (
+            f"classifier with flask in Known Entities expected "
+            f"chat_kb, got {category!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
