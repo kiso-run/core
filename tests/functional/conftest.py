@@ -479,6 +479,38 @@ def func_session() -> str:
 
 
 @pytest_asyncio.fixture()
+async def clean_session(tmp_path):
+    """M1582: per-test isolated KISO_DIR + fresh DB + fresh session id.
+
+    The session-scoped `_func_kiso_dir` autouse fixture shares one
+    temp KISO_DIR across the whole functional run, so facts persisted
+    in test A leak into test B's classifier / messenger reads. Tests
+    that must NOT see prior-test KB state opt into this fixture: a
+    private KISO_DIR rooted at `tmp_path / "kiso_clean"`, a fresh DB
+    file, and a fresh session id. The fixture yields a small dataclass
+    wrapper so call sites can use attribute access.
+
+    Note (M1582 scope split): the fixture is wired here; rolling it
+    out across F1 / F2 / F7 / F40 — i.e. the actual cross-test
+    contamination fix — is deferred to a follow-up that can run the
+    functional tier end-to-end.
+    """
+    kiso_dir = tmp_path / "kiso_clean"
+    (kiso_dir / "sys" / "ssh").mkdir(parents=True)
+    db = await init_db(kiso_dir / "store.db")
+    session_id = f"clean-{uuid.uuid4().hex[:12]}"
+
+    @dataclass
+    class _CleanSession:
+        kiso_dir: Path
+        db: object
+        session_id: str
+
+    yield _CleanSession(kiso_dir=kiso_dir, db=db, session_id=session_id)
+    await db.close()
+
+
+@pytest_asyncio.fixture()
 async def func_app_client(func_config, func_db):
     """ASGI-backed httpx client wired to the FastAPI app.
 
