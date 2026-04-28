@@ -1,34 +1,29 @@
-"""Tests that the runtime base images install the binaries the
-sysenv probe and the v0.10 default preset depend on, plus a
-runtime invariant for the test image (M1371): when running INSIDE
-``Dockerfile.test``, ``npx`` must actually be on ``PATH`` — the
-manifest assertions are not enough by themselves, since a buggy
-build that strips the binary would still pass the manifest test.
+"""Manifest-level tests for `Dockerfile` and `Dockerfile.test`.
 
-Specifically: `nodejs` and `npm` must be installed in both the
-production runtime image (`Dockerfile`) and the test image
-(`Dockerfile.test`), so that:
+These verify that the production runtime image and the test image
+declare the binaries the sysenv probe and the v0.10 default preset
+depend on. They run on the developer host (or in CI) by reading the
+Dockerfile sources directly — they do NOT require the image to be
+built.
 
-- `npx -y <package>` works for npm-distributed MCP servers
-  (the dominant distribution channel for the official
-  `@modelcontextprotocol/*` reference servers and for
-  `@playwright/mcp`).
-- `kiso/sysenv.py:22-53` reports node/npm/npx as available
-  rather than missing.
-- `tests/live/test_mcp_reference_servers.py` no longer
-  skips on the grounds that `npx` is unavailable.
+Specifically: `nodejs` and `npm` must be installed in both images so
+that `npx -y <package>` works for npm-distributed MCP servers (the
+dominant distribution channel for `@modelcontextprotocol/*` reference
+servers and for `@playwright/mcp`).
 
-`uvx` does NOT need a separate install line because `uv`
-is already a hard dependency of kiso (see the
-`COPY --from=ghcr.io/astral-sh/uv:latest` line) and `uvx`
-ships as part of `uv`.
+`uvx` does NOT need a separate install line because `uv` is already
+a hard dependency of kiso (`COPY --from=ghcr.io/astral-sh/uv:latest`
+in both Dockerfiles).
+
+Companion: `tests/docker/test_dockerfile_runtime_baseline.py` runs
+INSIDE the test image (KISO_TEST_IMAGE=1) and checks the binaries
+actually land on PATH. M1576 split this from a single legacy file
+so the two distinct concerns each run in their proper tier.
 """
 
 from __future__ import annotations
 
-import os
 import re
-import shutil
 from pathlib import Path
 
 import pytest
@@ -37,41 +32,34 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = REPO_ROOT / "Dockerfile"
 DOCKERFILE_TEST = REPO_ROOT / "Dockerfile.test"
 
-# The kiso test image does not COPY the Dockerfiles into the runtime
-# (only `kiso/`, `cli/`, `tests/` are copied), so manifest tests
-# cannot run inside the container. Skip them gracefully when the
-# files are absent — the runtime invariants in
-# TestRuntimeImageInvariants cover the in-image side anyway.
+# Allow the manifest tests to skip gracefully when the Dockerfiles
+# are not in the checkout (e.g. when this test file is somehow
+# vendored into a downstream package without the build infra).
 _skip_if_dockerfiles_unreachable = pytest.mark.skipif(
     not DOCKERFILE.is_file() or not DOCKERFILE_TEST.is_file(),
     reason="Dockerfile / Dockerfile.test not in this checkout — "
-    "manifest tests only run on a full repo checkout, not inside "
-    "the kiso test image",
+    "manifest tests only run on a full repo checkout",
 )
 
 
 def _apt_install_packages(dockerfile_text: str) -> set[str]:
-    """Return the set of packages installed by any `apt-get install` RUN.
-
-    Concatenates packages from every `apt-get install ...` invocation in
-    the file. Strips flags (`-y`, `--no-install-recommends`, etc.) and
-    whitespace-separated continuation lines.
-    """
-    packages: set[str] = set()
-    pattern = re.compile(
-        r"apt-get\s+install\s+(.*?)(?:&&|$)",
-        re.DOTALL,
-    )
-    for match in pattern.finditer(dockerfile_text):
-        chunk = match.group(1)
-        chunk = chunk.replace("\\\n", " ")
-        for token in chunk.split():
-            if token.startswith("-"):
-                continue
-            if token in {"&&", "rm", "-rf"}:
-                continue
-            packages.add(token)
-    return packages
+    """Extract the set of packages installed via `apt install` /
+    `apt-get install` from a Dockerfile's text. Strips flags
+    (``-y``, ``--no-install-recommends``, version pins) and joins
+    line continuations."""
+    # Join line continuations.
+    text = re.sub(r"\\\n\s*", " ", dockerfile_text)
+    pkgs: set[str] = set()
+    for m in re.finditer(
+        r"apt(?:-get)?\s+install\s+(.+?)(?:&&|$)", text, re.MULTILINE,
+    ):
+        for tok in m.group(1).split():
+            if tok.startswith("-"):
+                continue  # skip flags
+            tok = tok.split("=", 1)[0]  # strip version pin
+            if tok and not tok.startswith("$"):
+                pkgs.add(tok)
+    return pkgs
 
 
 @pytest.fixture(scope="module")
@@ -144,39 +132,6 @@ class TestTestDockerfileNodeBaseline:
             "Dockerfile.test must set `ENV KISO_TEST_IMAGE=1` so "
             "image-aware tests can detect they are running inside "
             "the kiso test image."
-        )
-
-
-class TestRuntimeImageInvariants:
-    """When running INSIDE the kiso test image, certain binaries must
-    actually exist on PATH. The presence is signalled by the
-    ``KISO_TEST_IMAGE=1`` env var that ``Dockerfile.test`` sets.
-
-    Outside the test image (developer host, CI without docker) these
-    tests pass trivially — they only enforce the invariant when we
-    are *certain* we are inside the image kiso ships. This is the
-    point where M1367 manifest changes get verified end-to-end.
-    """
-
-    @pytest.mark.skipif(
-        os.environ.get("KISO_TEST_IMAGE") != "1",
-        reason="not running inside the kiso test image (KISO_TEST_IMAGE!=1)",
-    )
-    def test_npx_present_in_test_image(self) -> None:
-        assert shutil.which("npx") is not None, (
-            "M1367 regression: KISO_TEST_IMAGE=1 but `npx` is not on PATH. "
-            "Dockerfile.test must apt-install `nodejs npm` and the binary "
-            "must be reachable from a non-login shell."
-        )
-
-    @pytest.mark.skipif(
-        os.environ.get("KISO_TEST_IMAGE") != "1",
-        reason="not running inside the kiso test image (KISO_TEST_IMAGE!=1)",
-    )
-    def test_uvx_present_in_test_image(self) -> None:
-        assert shutil.which("uvx") is not None, (
-            "uvx must be present in the kiso test image. uvx ships with "
-            "uv, which is already a hard dependency of kiso."
         )
 
 

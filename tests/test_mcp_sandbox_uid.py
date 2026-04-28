@@ -413,64 +413,16 @@ class TestManagerPoolByUid:
         await mgr.shutdown_all()
 
 
-@pytest.mark.skipif(
-    os.geteuid() != 0,
-    reason="needs root: creates a real throwaway UID, chowns a workspace, "
-    "and verifies kernel-level privilege drop at exec time",
-)
-class TestLiveSandboxedSpawnOwnership:
-    """Functional guardrail: when an unprivileged UID is passed, the
-    MCP subprocess writes files owned by that UID and is denied access
-    to files owned by the kiso user. Only meaningful under root, where
-    we can actually drop privileges; skipped otherwise (the unit tests
-    already cover the argument plumbing)."""
-
-    async def test_spawned_mcp_process_runs_as_sandbox_uid(self, tmp_path):
-        # pick an unprivileged nobody-ish UID that already exists on
-        # any stock Linux and is not the kiso user
-        try:
-            import pwd
-            sandbox_uid = pwd.getpwnam("nobody").pw_uid
-        except KeyError:
-            pytest.skip("no 'nobody' user on this host")
-        workspace = tmp_path / "ws"
-        workspace.mkdir()
-        os.chown(workspace, sandbox_uid, sandbox_uid)
-        # Write a tiny MCP-like subprocess that records its euid and exits
-        probe = tmp_path / "probe.py"
-        probe.write_text(
-            "import os, sys, json\n"
-            f"(open({str(workspace / 'euid.txt')!r}, 'w')"
-            ".write(str(os.geteuid())))\n"
-            "sys.exit(0)\n"
-        )
-        srv = MCPServer(
-            name="probe",
-            transport="stdio",
-            command=sys.executable,
-            args=[str(probe)],
-            env={},
-            cwd=str(workspace),
-            enabled=True,
-            timeout_s=5.0,
-        )
-        client = MCPStdioClient(srv, sandbox_uid=sandbox_uid)
-        try:
-            # initialize is expected to fail because the probe exits
-            # immediately without speaking MCP — we don't care, we only
-            # want the spawn+wait to happen so the probe runs.
-            try:
-                await client.initialize()
-            except Exception:
-                pass
-        finally:
-            await client.shutdown()
-        # The probe wrote its geteuid() to euid.txt — must equal our UID.
-        euid_file = workspace / "euid.txt"
-        assert euid_file.exists(), "probe did not run"
-        assert euid_file.read_text().strip() == str(sandbox_uid)
-        st = euid_file.stat()
-        assert st.st_uid == sandbox_uid
+# M1576: TestLiveSandboxedSpawnOwnership removed. The class needed
+# real root (`os.geteuid() == 0`) to actually drop privileges and
+# verify kernel-level isolation. No runner in `utils/run_tests.sh`
+# or in CI runs as root, so the test never executed. The unit tests
+# above already cover the argument-plumbing contract (sandbox_uid
+# flag flows from manager into the spawned client). The kernel-level
+# drop verification would belong in a `tests/privileged/` tier
+# (Docker --privileged --user 0); that tier does not exist and
+# adding it was rejected as out of scope. Reintroduce only with
+# the privileged tier.
 
 
 class TestShutdownSessionCoversAllUids:

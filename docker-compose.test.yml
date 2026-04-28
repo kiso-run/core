@@ -1,25 +1,4 @@
 services:
-  test-unit:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    command: uv run pytest tests/ -q --ignore=tests/docker --ignore=tests/live
-    profiles: [unit]
-
-  test-live:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    command: uv run pytest tests/live/ --llm-live --live-network -v
-    env_file:
-      - path: .env
-        required: true
-    environment:
-      - UV_LINK_MODE=copy
-    volumes:
-      - dep-cache:/root/.cache
-    profiles: [live]
-
   test-functional:
     build:
       context: .
