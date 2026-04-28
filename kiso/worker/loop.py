@@ -117,6 +117,7 @@ from kiso.store import (
     search_facts_scored,
     update_fact_usage,
     update_learning,
+    update_plan_awaits_input,
     update_plan_goal,
     update_plan_install_proposal,
     update_plan_status,
@@ -201,8 +202,16 @@ async def _deliver_webhook_if_configured(
 #: (e.g. ``"Italian"``, ``"English"``). Any unknown or empty value falls
 #: back to the English string. Adding a language is a one-line change.
 _CHAT_KB_FALLBACK_MSGS: dict[str, str] = {
-    "English": "I don't have this in my knowledge base — let me check the live system.",
-    "Italian": "Non ho questa informazione nella mia knowledge base — vado a controllare il sistema dal vivo.",
+    "English": (
+        "I don't have this in my knowledge base. "
+        "Want me to search for it? Reply 'search' to look it up, "
+        "or paste a fact or source URL to teach me."
+    ),
+    "Italian": (
+        "Non ho questa informazione nella mia knowledge base. "
+        "Vuoi che la cerchi? Rispondi 'cerca' per cercare, "
+        "oppure incollami un fatto o una URL come fonte."
+    ),
 }
 
 async def _chat_kb_preflight_fallback(
@@ -262,7 +271,12 @@ async def _chat_kb_preflight_fallback(
 
     transition_msg = _CHAT_KB_FALLBACK_MSGS.get(user_lang) or _CHAT_KB_FALLBACK_MSGS["English"]
     deploy_secrets = collect_deploy_secrets()
-    await update_plan_goal(db, plan_id, "KB lookup → investigate")
+    # M1579d: broker-model graceful degradation. Mark the plan as
+    # paused for user input (awaits_input=true) and persist the
+    # graceful msg directly. The caller skips the fast-path; the
+    # next turn will be the user's reply ("search", a URL, a fact).
+    await update_plan_goal(db, plan_id, "KB lookup → admit")
+    await update_plan_awaits_input(db, plan_id, True)
     transition_task_id = await create_task(
         db, plan_id, session, TASK_TYPE_MSG, transition_msg,
     )
@@ -277,9 +291,9 @@ async def _chat_kb_preflight_fallback(
         db, config, session, transition_task_id, transition_msg, False,
         deploy_secrets=deploy_secrets,
     )
-    log.info("chat_kb pre-flight empty → falling back to investigate")
+    log.info("chat_kb pre-flight empty → graceful broker pause (awaits_input)")
     if slog:
-        slog.info("chat_kb pre-flight empty → fallback to investigate")
+        slog.info("chat_kb pre-flight empty → graceful broker pause (awaits_input)")
     return True
 
 
@@ -2329,16 +2343,19 @@ async def _process_message(
             log.warning("Classifier timed out after %ds, falling back to chat",
                         classifier_timeout)
             msg_class = "chat"
-        # chat_kb safety net: if the classifier routed to chat_kb but the
-        # KB has no facts matching the user message, persist a transition
-        # msg and re-route through the investigate planner instead of
-        # returning an empty chat_kb answer. This refines the classifier
-        # decision; it does not override it.
+        # chat_kb safety net (M1291 + M1579d): if the classifier routed
+        # to chat_kb but the KB has no facts matching the user message,
+        # the fallback persists a graceful msg-only plan with
+        # awaits_input=true and we skip the fast-path entirely. The next
+        # turn (user's reply) will pick up where the broker pause left
+        # off. This refines the classifier; it does not override it.
         if msg_class == "chat_kb":
             if await _chat_kb_preflight_fallback(
                 db, config, session, plan_id, content, user_lang, slog=slog,
             ):
-                msg_class = "investigate"
+                clear_llm_budget()
+                _notify_phase(set_phase, WORKER_PHASE_IDLE)
+                return _spawn_knowledge_task(db, config, session, plan_id, llm_timeout)
         if msg_class in ("chat", "chat_kb"):
             log.info("Fast path: %s message, skipping planner", msg_class)
             if slog:

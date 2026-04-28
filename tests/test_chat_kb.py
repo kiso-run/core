@@ -167,7 +167,8 @@ class TestChatKBPreflightFallback:
         assert msg_tasks == []
 
     async def test_preflight_triggers_fallback_on_empty_db(self, db):
-        """Empty KB → fallback signaled, transition msg task persisted."""
+        """M1579d: empty KB → fallback signaled, graceful msg task
+        persisted, plan flagged with `awaits_input=1` (broker pause)."""
         config = _config()
         plan_id = db._test_plan_id
 
@@ -182,6 +183,13 @@ class TestChatKBPreflightFallback:
         msg_tasks = await self._list_msg_tasks(db, plan_id)
         assert len(msg_tasks) == 1
         assert _CHAT_KB_FALLBACK_MSGS["English"] in (msg_tasks[0].get("output") or "")
+        cur = await db.execute(
+            "SELECT awaits_input FROM plans WHERE id = ?", (plan_id,),
+        )
+        row = await cur.fetchone()
+        assert row[0] == 1, (
+            "M1579d: empty-KB fallback must set awaits_input=1 on the plan"
+        )
 
     async def test_preflight_skipped_when_content_empty(self, db):
         """Empty content → no keywords → return False, no fallback."""
@@ -237,6 +245,10 @@ class TestChatKBPreflightFallback:
         output = msg_tasks[0].get("output") or ""
         assert _CHAT_KB_FALLBACK_MSGS["Italian"] in output
         assert "knowledge base" in output  # appears in both languages, sanity
+        # M1579d: broker model — graceful msg invites a user reply
+        # ("search" or "paste a fact / source URL"), not an automatic
+        # investigate-mode pivot.
+        assert "cerca" in output.lower() or "fonte" in output.lower() or "url" in output.lower()
 
     async def test_transition_message_unknown_lang_defaults_english(self, db):
         """Unknown user_lang → English fallback."""
@@ -254,6 +266,8 @@ class TestChatKBPreflightFallback:
         msg_tasks = await self._list_msg_tasks(db, plan_id)
         output = msg_tasks[0].get("output") or ""
         assert _CHAT_KB_FALLBACK_MSGS["English"] in output
+        # M1579d: broker-model graceful wording invites a user reply.
+        assert "search" in output.lower() or "url" in output.lower() or "fact" in output.lower()
 
 
 class TestClassifierIsAuthoritative:

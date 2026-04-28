@@ -93,7 +93,10 @@ class TestPromptBudgetSmoke:
         # note, and the new `mcp_recovery` module (opt-in, only
         # loaded when servers are flagged unhealthy) push the
         # worst-case size up accordingly.
-        ("planner.md", 18000),
+        # M1579c (2026-04-28): bumped from 18000 → 20500 to accommodate
+        # the new "Capability missing — ask-first flow" block + the
+        # FORBIDDEN behaviors block (broker model anti-overfitting).
+        ("planner.md", 20500),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])
