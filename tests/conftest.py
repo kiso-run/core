@@ -385,7 +385,7 @@ async def client(tmp_path: Path, test_config_path: Path):
 
 
 @pytest.fixture()
-def mock_mcp_catalog():
+def mock_mcp_catalog(request):
     """M1580: per-test handle for the in-process Mock MCP framework.
 
     Tests register fake MCPs with arbitrary names + method callbacks
@@ -393,6 +393,28 @@ def mock_mcp_catalog():
     `MCPManager` via `.build_manager()`. Catalog visibility flows
     through the same code path the briefer uses in production. See
     `tests/_mcp_mock.py` for the full API.
+
+    M1581: when a test is decorated with
+    `@pytest.mark.requires_mcp("name")` (or
+    `@pytest.mark.requires_mcp(["a", "b"])`) the catalog is
+    auto-populated with a default stub for each named MCP. The stub
+    exposes a single `default` method that returns
+    `[mock response from <name>:default]`. Tests that need a richer
+    response can register the same name again — `register` overwrites
+    the prior entry — or add additional methods.
     """
     from tests._mcp_mock import MockMCPCatalog
-    return MockMCPCatalog()
+    catalog = MockMCPCatalog()
+    marker = request.node.get_closest_marker("requires_mcp")
+    if marker is not None and marker.args:
+        names = marker.args[0]
+        if isinstance(names, str):
+            names = [names]
+        for name in names:
+            catalog.register(name, {
+                "default": (
+                    lambda _name=name, **kw:
+                        f"[mock response from {_name}:default]"
+                ),
+            })
+    return catalog

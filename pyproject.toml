@@ -33,6 +33,7 @@ markers = [
     "integration: connector protocol integration tests (requires --integration)",
     "interactive: tests requiring real human interaction (requires --interactive)",
     "extended: long-running functional tests (multi-plan, >3min, requires --extended)",
+    "requires_mcp(name_or_names): functional/live tests that need a (real or mocked) MCP server present in the catalog (M1581)",
 ]
 filterwarnings = [
     # pytest-asyncio: subprocess transport.__del__ fires after event loop closes.
