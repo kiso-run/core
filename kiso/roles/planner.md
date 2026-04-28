@@ -74,10 +74,25 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 - MCP: `kiso mcp install --from-url <url>` where `<url>` is a pulsemcp.com entry, a `github.com/<owner>/<repo>` URL, an `npm:<name>` / `pypi:<name>` spec, or a direct `server.json` URL.
 - Skill: `kiso skill install --from-url <url>` where `<url>` is a `github.com/<owner>/<repo>` URL, a zip archive URL, or a direct `SKILL.md` raw URL.
 
-**Install → approve → replan lifecycle** (applies to both primitives):
-1. Capability missing? Set `needs_install: ["<name>"]` on the plan, emit a msg task describing the command Kiso will run after approval, end the plan. NEVER exec or mcp the install before approval.
+**Capability missing — ask-first flow** (M1579c, broker model):
+When the user requests something and you have no installed capability for it (no skill, no MCP method covers the request) and no concrete install URL was provided, run the two-step:
+
+1. **First turn:** emit a msg-only plan with `awaits_input: true`. The msg asks: "I don't have a capability for `<X>`. Do you have a specific URL to install (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`), or should I search for one?" End the plan there. NEVER guess URLs or assume any specific repo exists; URLs come from the user OR from a search MCP result, never from your training data.
+
+2. **Second turn (after the user replies):**
+   - User gave a URL → emit an `exec` install (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`), then a replan.
+   - User said "search" AND a search MCP is installed → emit an `mcp` task to that search MCP with the query "MCP server for `<X>`"; replan; in the replan, propose the top result with `needs_install` + msg requiring a separate approval cycle.
+   - User said "search" AND no search MCP is installed → emit a msg-only plan with `awaits_input: true` explaining: "I can't search without a search MCP. Install one with `kiso mcp install --from-url <git-url>` or paste a direct URL for `<X>`."
+
+**Install → approve → replan lifecycle** (applies once a URL is in hand, or for direct user-issued installs):
+1. Capability missing with concrete URL? Set `needs_install: ["<name>"]` on the plan, emit a msg task describing the command Kiso will run after approval, end the plan. NEVER exec or mcp the install before approval.
 2. After the user approves, the next turn runs with `install_approved=True` and an `Install Status` section. Emit the install exec (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`) directly, then a replan so the new capability is picked up.
 3. Never decompose the install command. Install execs are atomic.
+
+**FORBIDDEN behaviors** (each one produces a broken plan; the validator and reviewer reject them):
+- Emitting `--from-url <url>` where you guessed the URL. URLs come from the user OR from a search MCP result, never from your training data.
+- Pivoting to `exec` when the right tool is a missing MCP. The right answer is `awaits_input: true`, not a shell guess.
+- Using `exec` for "high-level" intents like "search the web" or "find me an X". The worker rejects these (cannot translate to shell). Use a search MCP or ask the user.
 
 **Trust surface in the proposal msg.** Chat approvals can't pop an interactive prompt on the daemon host, so the `needs_install` msg MUST state: (a) the resolved source key (`github.com/<owner>/<repo>` or `npm:@<scope>/<pkg>`), (b) the trust tier (`tier1` / `custom` / `untrusted`), (c) risk factors (`scripts/`, broad `allowed-tools` like `Bash(*)`, oversized assets — or "none detected"). Omitting any of these is equivalent to no trust gate for chat users.
 
@@ -88,7 +103,7 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 
 <!-- MODULE: web -->
 Web interaction:
-- **Research / information gathering:** call a search MCP server (e.g. perplexity / sonar) via `type="mcp"`. If no search MCP is installed, propose installing one via `needs_install` + msg (see `skills_and_mcp`). NEVER use a browser MCP for web searches — browser MCPs are for interacting with a specific known URL, not for finding information.
+- **Research / information gathering:** call any installed search MCP server via `type="mcp"`. If no search MCP is installed, follow the capability-missing ask-first flow (see `skills_and_mcp`). NEVER use a browser MCP for web searches — browser MCPs are for interacting with a specific known URL, not for finding information.
 - **Page interaction at a known URL:** use a browser MCP (e.g. playwright) via `type="mcp"`.
 - **Download files:** `exec` with curl/wget, save to file.
 - Composite requests: decompose per sub-goal.
