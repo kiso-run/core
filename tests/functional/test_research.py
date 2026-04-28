@@ -26,6 +26,7 @@ pytestmark = pytest.mark.functional
 class TestF7ResearchAndPublish:
     """Search for info, create a markdown table, publish it."""
 
+    @pytest.mark.requires_mcp("search-mcp")
     async def test_search_synthesize_publish(self, run_message, func_app_client):
         """What: Multi-step pipeline test: search, synthesize into markdown table, publish.
 

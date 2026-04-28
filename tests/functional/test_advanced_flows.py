@@ -201,6 +201,7 @@ class TestF39ToolInstallAndUse:
 class TestF40SearchCodeExec:
     """F40: Search for info → write script using results → execute."""
 
+    @pytest.mark.requires_mcp("search-mcp")
     async def test_search_then_code_then_exec(self, run_message):
         """What: Search population → write density script → execute → report.
 
