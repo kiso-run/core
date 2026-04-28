@@ -382,3 +382,17 @@ async def client(tmp_path: Path, test_config_path: Path):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     await db_conn.close()
+
+
+@pytest.fixture()
+def mock_mcp_catalog():
+    """M1580: per-test handle for the in-process Mock MCP framework.
+
+    Tests register fake MCPs with arbitrary names + method callbacks
+    via `mock_mcp_catalog.register(...)` and then build a wired
+    `MCPManager` via `.build_manager()`. Catalog visibility flows
+    through the same code path the briefer uses in production. See
+    `tests/_mcp_mock.py` for the full API.
+    """
+    from tests._mcp_mock import MockMCPCatalog
+    return MockMCPCatalog()
