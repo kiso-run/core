@@ -23,6 +23,7 @@ pytestmark = pytest.mark.functional
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF7ResearchAndPublish:
     """Search for info, create a markdown table, publish it."""
 

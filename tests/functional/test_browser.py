@@ -32,6 +32,7 @@ from tests.conftest import LLM_INSTALL_TIMEOUT as BROWSER_TIMEOUT
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF1BrowserInstall:
     """F1a: Browser wrapper install flow."""
 
@@ -61,6 +62,7 @@ class TestF1BrowserInstall:
         )
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF1BrowserNavigate:
     """F1b: Browser navigation + description (requires browser installed)."""
 
@@ -98,6 +100,7 @@ class TestF1BrowserNavigate:
         ), f"No relevant keywords: {output[:300]}"
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF1BrowserScreenshot:
     """F1c: Browser screenshot + publish (requires browser installed)."""
 
@@ -135,6 +138,7 @@ class TestF1BrowserScreenshot:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF2WikipediaPython:
     """Visit Wikipedia and look up what Python is."""
 

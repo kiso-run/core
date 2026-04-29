@@ -198,6 +198,7 @@ class TestF39ToolInstallAndUse:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("clean_session")
 class TestF40SearchCodeExec:
     """F40: Search for info → write script using results → execute."""
 
