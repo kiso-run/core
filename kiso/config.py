@@ -158,7 +158,12 @@ REASONING_DEFAULTS: dict[str, dict | None] = {
 # Only the classifier needs a max_tokens cap (single-word response).
 # All other roles rely on the model's native limit — removing artificial
 # caps prevents silent truncation of complex outputs.
-CLASSIFIER_MAX_TOKENS = 10
+# M1579b (2026-04-29): bumped 10 → 15 to absorb the larger classifier
+# prompt (added Examples block + sharpened ontology). Response is always
+# `<cat>:<Language>` ≤ ~6 BPE tokens; 15 leaves headroom and avoids the
+# silent "max_tokens hit → empty response → fallback to plan" failure
+# mode that surfaced on V4-Flash with the new prompt.
+CLASSIFIER_MAX_TOKENS = 15
 
 # Complete config.toml written on first run. Edit to configure your instance.
 CONFIG_TEMPLATE = """\

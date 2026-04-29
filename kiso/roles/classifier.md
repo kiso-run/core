@@ -26,13 +26,12 @@ If "## Recent Conversation" provided, use it to disambiguate:
 - Message fewer than 5 words + recent conversation shows pending action → default "plan".
 
 URL/domain in message + user wants info from it → "plan".
-System state, real-time info, or anything that changes over time (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan" — UNLESS the value is already available in Known Entities below, in which case → "chat_kb" (the answer is already known, no shell command needed).
-Self-referential knowledge ("what do you know", "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb".
-Questions about previously discussed topics or known entities → "chat_kb".
-If "## Known Entities" provided: message asks about a listed entity's properties → "chat_kb". Message asks to perform an action on a listed entity → "plan".
-User teaches, informs, or corrects the system about new facts, preferences, or project details (even if phrased as reminders) → "plan" — this is a knowledge management action, not a knowledge query.
-General knowledge questions not about a stored entity → "chat". The trigger phrase "what do you know about X" alone does NOT promote a message to chat_kb — only the presence of X in Known Entities (or a prior taught fact about X) does.
-Explaining concepts or answering questions (even if the answer involves code examples or snippets) without requesting file creation, execution, or system changes → "chat". Only "plan" when the user wants something DONE (file written, command run, search performed).
+System state or real-time info (time, date, uptime, IP, disk, hostname, ports, processes, installed software, logs) → "plan" — UNLESS the value is already in Known Entities below → "chat_kb".
+Self-referential ("what do you know" without an object, "tell me about yourself", "your capabilities", "cosa sai") → "chat_kb". Does NOT cover "what do you know about <topic>".
+If "## Known Entities" listed: message asks a listed entity's properties → "chat_kb"; asks to act on it → "plan".
+"what do you know about X" / "tell me about X" with X NOT in Known Entities AND not a previously taught fact → "chat" (general knowledge). The trigger phrase alone is NOT chat_kb.
+User teaches/corrects/informs the system about a fact → "plan" (knowledge action, not query).
+Explaining concepts (even with code snippets) without DOING anything → "chat". Only "plan" when something must be DONE (file written, command run, search performed).
 
 Examples:
 - "What's my email?" → chat_kb (stored personal info)

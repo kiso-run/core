@@ -18,6 +18,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -35,8 +36,33 @@ _VALID_STATUSES: tuple[str, ...] = ("ok", "warn", "fail")
 
 _CATEGORIES: tuple[str, ...] = (
     "Runtime", "Config", "LLM", "MCP", "Skills",
-    "Sandbox", "Trust", "Store", "Workspace",
+    "Sandbox", "Trust", "Store", "Workspace", "Broker",
 )
+
+
+# M1592: heuristic keyword list for "the user requested a capability".
+# Word-boundary-aware match; the broker check uses these to spot plans
+# that ran exec when the briefer reported empty MCP catalog AND the
+# user message hinted at a capability (transcribe / search / OCR / ...).
+# Generalist by design — no MCP-specific names. New verbs are PRs, not
+# auto-discovery, so the heuristic stays auditable.
+CAPABILITY_INTENT_KEYWORDS: frozenset[str] = frozenset({
+    "transcribe", "transcribing",
+    "search", "searching", "find",
+    "screenshot",
+    "ocr", "extract",
+    "summarize", "summary", "summarise",
+    "translate", "translation",
+    "render",
+    "compile",
+    "lint",
+    "deploy",
+    "fetch", "scrape", "crawl",
+    "convert",
+    "compress", "zip",
+    "encode", "decode",
+    "browse", "navigate",
+})
 
 _RUNTIME_TOOLS: tuple[tuple[str, Status, str], ...] = (
     ("uv", "fail", "Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`"),
@@ -102,6 +128,7 @@ def run_checks(ctx: DoctorContext) -> list[CheckResult]:
     out.extend(check_trust(ctx))
     out.extend(check_store(ctx))
     out.extend(check_workspace(ctx))
+    out.extend(check_broker_invariants(ctx))
     return out
 
 
@@ -571,6 +598,202 @@ def check_store(ctx: DoctorContext) -> list[CheckResult]:
                 f"to enable write-ahead logging"
             ),
         ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Workspace
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Broker model invariants (M1592)
+# ---------------------------------------------------------------------------
+
+
+_CAPABILITY_INTENT_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(CAPABILITY_INTENT_KEYWORDS)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _has_capability_intent(content: str) -> bool:
+    """True if the user message text triggers any heuristic verb."""
+    if not content:
+        return False
+    return bool(_CAPABILITY_INTENT_RE.search(content))
+
+
+def _broker_db_path(ctx: DoctorContext) -> Path:
+    """The store DB path used by the broker invariant checks.
+
+    `init_db` (kiso/store/setup.py) writes `store.db`; the legacy
+    `check_store` looks at `kiso.db` instead. M1592 explicitly aligns
+    with the live filename so the check runs against real plan rows.
+    """
+    return ctx.kiso_dir / "store.db"
+
+
+def _fetch_recent_plans(db_path: Path, limit: int = 100) -> list[dict]:
+    """Return up to *limit* most recent plans with the broker-relevant
+    columns + each plan's task count by type. One round-trip pattern,
+    no per-plan secondary query."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(
+            "SELECT id, session, goal, status, install_proposal, "
+            "awaits_input, created_at FROM plans "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        plans = [dict(r) for r in cur.fetchall()]
+        if not plans:
+            return []
+        ids = [p["id"] for p in plans]
+        # SQLite parameter substitution does not handle a list directly.
+        placeholders = ",".join("?" * len(ids))
+        cur = conn.execute(
+            f"SELECT plan_id, type, COUNT(*) AS n FROM tasks "
+            f"WHERE plan_id IN ({placeholders}) GROUP BY plan_id, type",
+            ids,
+        )
+        counts: dict[int, dict[str, int]] = {}
+        for row in cur.fetchall():
+            counts.setdefault(row["plan_id"], {})[row["type"]] = row["n"]
+        for p in plans:
+            p["task_counts"] = counts.get(p["id"], {})
+    finally:
+        conn.close()
+    return plans
+
+
+def _fetch_first_user_message(db_path: Path, session: str) -> str:
+    """Return the most recent user message body for a session (or '')."""
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT content FROM messages WHERE session = ? AND role = 'user' "
+            "ORDER BY id DESC LIMIT 1",
+            (session,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else ""
+    finally:
+        conn.close()
+
+
+def check_broker_invariants(ctx: DoctorContext) -> list[CheckResult]:
+    """M1592 broker-model invariant checks.
+
+    Three drift signals against the last 100 plans:
+    1. msg-only plans without any escape flag (validation breach).
+    2. exec plans on capability-style intents (heuristic) — sign of
+       prompt drift toward shell improv.
+    3. `awaits_input=true` plans followed by an exec plan in the same
+       session (silent self-resume bug).
+    """
+    out: list[CheckResult] = []
+    db_path = _broker_db_path(ctx)
+    if not db_path.exists():
+        out.append(CheckResult(
+            category="Broker", name="db_file", status="ok",
+            detail=f"no {db_path.name} yet — broker invariants skipped",
+        ))
+        return out
+    try:
+        plans = _fetch_recent_plans(db_path, limit=100)
+    except sqlite3.Error as exc:
+        out.append(CheckResult(
+            category="Broker", name="db_open", status="warn",
+            detail=f"cannot open {db_path}: {exc}",
+        ))
+        return out
+    if not plans:
+        out.append(CheckResult(
+            category="Broker", name="recent_plans", status="ok",
+            detail="no plans in store yet",
+        ))
+        return out
+    n = len(plans)
+
+    # Check 1 — msg-only without any escape flag.
+    bad_msg_only = 0
+    for p in plans:
+        counts = p.get("task_counts", {})
+        non_msg = sum(v for k, v in counts.items() if k != "msg")
+        if non_msg == 0 and counts:  # msg-only and at least one task
+            has_escape = bool(
+                p.get("install_proposal") or p.get("awaits_input")
+            )
+            if not has_escape:
+                bad_msg_only += 1
+    pct = (bad_msg_only / n) * 100
+    if pct > 20:
+        status: Status = "fail"
+    elif pct > 5:
+        status = "warn"
+    else:
+        status = "ok"
+    out.append(CheckResult(
+        category="Broker", name="msg_only_no_escape", status=status,
+        detail=f"{bad_msg_only}/{n} plans ({pct:.1f}%) msg-only without escape flag",
+        suggestion=(
+            "Validation breaches that retry-passed via planner pivot — "
+            "investigate planner.md drift if status is warn/fail"
+            if status != "ok" else ""
+        ),
+    ))
+
+    # Check 2 — exec on capability-style user message.
+    exec_on_capability = 0
+    for p in plans:
+        counts = p.get("task_counts", {})
+        if not counts.get("exec"):
+            continue
+        msg = _fetch_first_user_message(db_path, p["session"])
+        if _has_capability_intent(msg):
+            exec_on_capability += 1
+    out.append(CheckResult(
+        category="Broker", name="exec_on_capability_intent",
+        status="warn" if exec_on_capability > 0 else "ok",
+        detail=(
+            f"{exec_on_capability}/{n} plans ran exec on a "
+            f"capability-style request"
+        ),
+        suggestion=(
+            "Capability requests should route through MCP or "
+            "ask-first; exec is shell improv (decision 6)"
+            if exec_on_capability > 0 else ""
+        ),
+    ))
+
+    # Check 3 — awaits_input=true plan followed by an exec plan in
+    # the same session (silent self-resume).
+    by_session: dict[str, list[dict]] = {}
+    for p in plans:
+        by_session.setdefault(p["session"], []).append(p)
+    silent_resume = 0
+    for session_plans in by_session.values():
+        # Plans are returned newest-first; iterate session timeline
+        # oldest→newest.
+        ordered = list(reversed(session_plans))
+        for prev, nxt in zip(ordered, ordered[1:]):
+            if prev.get("awaits_input") and (nxt.get("task_counts") or {}).get("exec"):
+                silent_resume += 1
+    out.append(CheckResult(
+        category="Broker", name="awaits_input_self_resume",
+        status="warn" if silent_resume > 0 else "ok",
+        detail=(
+            f"{silent_resume} awaits_input plans followed by exec "
+            f"in the same session"
+        ),
+        suggestion=(
+            "User reply should reclassify; silent exec after a "
+            "broker pause is a bug (decision 1)"
+            if silent_resume > 0 else ""
+        ),
+    ))
     return out
 
 
