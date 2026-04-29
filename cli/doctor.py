@@ -624,6 +624,82 @@ def _has_capability_intent(content: str) -> bool:
     return bool(_CAPABILITY_INTENT_RE.search(content))
 
 
+_CAPABILITY_INTENT_LLM_PROMPT = (
+    "You classify whether a user message asks for a capability that an "
+    "MCP (model-context-protocol server) would normally provide — "
+    "transcription, OCR, web search, summarization, browsing, file "
+    "conversion, scraping, image generation, code formatting, etc. "
+    "Plain shell commands (ls, grep, cat, kill), small ad-hoc scripting, "
+    "or simple Q&A do NOT count.\n"
+    "Reply with exactly one token: yes or no."
+)
+
+_CAPABILITY_INTENT_LLM_MIN_WORDS = 6
+
+
+def _classify_capability_intent_llm(
+    content: str, ctx: "DoctorContext",
+) -> bool | None:
+    """Single-shot LLM fallback for the capability-intent heuristic.
+
+    Returns ``True`` / ``False`` on a yes/no answer, ``None`` when the
+    call cannot be made or the response cannot be parsed (caller treats
+    this as "skip the count" — never crash the doctor).
+    """
+    if not content or not ctx.api_key or ctx.config is None:
+        return None
+    try:
+        import httpx
+    except ImportError:
+        return None
+    base_url = "https://openrouter.ai/api/v1"
+    providers = getattr(ctx.config, "providers", None) or {}
+    prov = providers.get("openrouter") if isinstance(providers, dict) else None
+    if prov is not None and getattr(prov, "base_url", ""):
+        base_url = prov.base_url.rstrip("/")
+    models = getattr(ctx.config, "models", None) or {}
+    model_string = ""
+    if isinstance(models, dict):
+        model_string = models.get("classifier", "") or models.get("planner", "")
+    if not model_string:
+        return None
+    model_name = model_string.split(":", 1)[1] if ":" in model_string else model_string
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": _CAPABILITY_INTENT_LLM_PROMPT},
+            {"role": "user", "content": content},
+        ],
+        "max_tokens": 4,
+        "temperature": 0.0,
+    }
+    try:
+        resp = httpx.post(
+            base_url.rstrip("/") + "/chat/completions",
+            headers={
+                "Authorization": f"Bearer {ctx.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=10.0,
+        )
+    except (httpx.HTTPError, socket.error):
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
+        answer = data["choices"][0]["message"]["content"].strip().lower()
+    except (KeyError, IndexError, ValueError, TypeError):
+        return None
+    answer = answer.strip(" \t\n.,!?\"'")
+    if answer.startswith("yes"):
+        return True
+    if answer.startswith("no"):
+        return False
+    return None
+
+
 def _broker_db_path(ctx: DoctorContext) -> Path:
     """The store DB path used by the broker invariant checks."""
     return ctx.kiso_dir / "store.db"
@@ -674,6 +750,24 @@ def _fetch_first_user_message(db_path: Path, session: str) -> str:
         )
         row = cur.fetchone()
         return row[0] if row else ""
+    finally:
+        conn.close()
+
+
+def _plan_exec_has_output(db_path: Path, plan_id: int) -> bool:
+    """True iff the plan has at least one exec task with non-empty output.
+
+    Used to gate the M1597 LLM fallback — exec tasks that produced no
+    output are typically aborted/no-ops, not capability improvisations.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT 1 FROM tasks WHERE plan_id = ? AND type = 'exec' "
+            "AND output IS NOT NULL AND LENGTH(output) > 0 LIMIT 1",
+            (plan_id,),
+        )
+        return cur.fetchone() is not None
     finally:
         conn.close()
 
@@ -740,8 +834,15 @@ def check_broker_invariants(ctx: DoctorContext) -> list[CheckResult]:
         ),
     ))
 
-    # Check 2 — exec on capability-style user message.
+    # Check 2 — exec on capability-style user message. The static
+    # heuristic catches the common verbs; an LLM fallback (M1597)
+    # handles long-tail capabilities (`diarize`, `sentiment-score`)
+    # but only when the heuristic missed AND the user message is long
+    # enough to disambiguate AND the plan's exec actually produced
+    # output. The fallback returns None on any failure so the check
+    # degrades gracefully rather than crashing the doctor.
     exec_on_capability = 0
+    llm_fallback_hits = 0
     for p in plans:
         counts = p.get("task_counts", {})
         if not counts.get("exec"):
@@ -749,13 +850,25 @@ def check_broker_invariants(ctx: DoctorContext) -> list[CheckResult]:
         msg = _fetch_first_user_message(db_path, p["session"])
         if _has_capability_intent(msg):
             exec_on_capability += 1
+            continue
+        if (
+            len(msg.split()) >= _CAPABILITY_INTENT_LLM_MIN_WORDS
+            and _plan_exec_has_output(db_path, p["id"])
+        ):
+            verdict = _classify_capability_intent_llm(msg, ctx)
+            if verdict is True:
+                exec_on_capability += 1
+                llm_fallback_hits += 1
+    detail = (
+        f"{exec_on_capability}/{n} plans ran exec on a "
+        f"capability-style request"
+    )
+    if llm_fallback_hits:
+        detail += f" ({llm_fallback_hits} via LLM fallback)"
     out.append(CheckResult(
         category="Broker", name="exec_on_capability_intent",
         status="warn" if exec_on_capability > 0 else "ok",
-        detail=(
-            f"{exec_on_capability}/{n} plans ran exec on a "
-            f"capability-style request"
-        ),
+        detail=detail,
         suggestion=(
             "Capability requests should route through MCP or "
             "ask-first; exec is shell improv (decision 6)"

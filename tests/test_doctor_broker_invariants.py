@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from unittest.mock import patch
+
 from cli.doctor import (
     CAPABILITY_INTENT_KEYWORDS,
     DoctorContext,
@@ -46,7 +48,8 @@ def _build_db(tmp_path: Path) -> Path:
         CREATE TABLE tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             plan_id INTEGER NOT NULL,
-            type TEXT NOT NULL
+            type TEXT NOT NULL,
+            output TEXT
         );
         CREATE TABLE messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +71,13 @@ def _seed_plan(
     awaits_input: bool = False,
     install_proposal: bool = False,
     user_msg: str = "",
+    task_outputs: list[str | None] | None = None,
 ) -> int:
+    """Seed one plan row + its tasks + the user message that triggered it.
+
+    *task_outputs* — when provided, parallel to *task_types*, sets the
+    `output` column for each task (used to gate the M1597 LLM fallback).
+    """
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(
@@ -77,10 +86,12 @@ def _seed_plan(
             (session, int(install_proposal), int(awaits_input)),
         )
         plan_id = cur.lastrowid
-        for t in task_types or []:
+        types = task_types or []
+        outputs = task_outputs or [None] * len(types)
+        for t, out in zip(types, outputs):
             conn.execute(
-                "INSERT INTO tasks (plan_id, type) VALUES (?, ?)",
-                (plan_id, t),
+                "INSERT INTO tasks (plan_id, type, output) VALUES (?, ?, ?)",
+                (plan_id, t, out),
             )
         if user_msg:
             conn.execute(
@@ -232,6 +243,145 @@ class TestExecOnCapabilityIntent:
         )
         ctx = _ctx(tmp_path)
         results = check_broker_invariants(ctx)
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "ok"
+
+
+_LONG_MSG_NO_KEYWORD = (
+    "please diarize this audio file into separate speakers right now"
+)
+_SHORT_MSG_NO_KEYWORD = "diarize this audio"
+
+
+class TestExecOnCapabilityLlmFallback:
+    """M1597 — LLM fallback for the capability-intent heuristic.
+
+    The 28-keyword heuristic misses long-tail capabilities (e.g.
+    *diarize*, *sentiment-score*). When the heuristic misses AND the
+    user message is >5 words AND the plan's exec produced output,
+    `check_broker_invariants` calls the LLM fallback to classify the
+    intent. Heuristic hits short-circuit so we don't pay an LLM call
+    on every doctor invocation.
+    """
+
+    def test_heuristic_hit_short_circuits_no_llm_call(self, tmp_path):
+        """Existing heuristic match must NOT trigger the LLM call."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=["some output"],
+            user_msg="please transcribe my audio file thanks",
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm"
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 0, (
+            "heuristic hit must short-circuit; LLM call wastes tokens"
+        )
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "warn"
+
+    def test_heuristic_miss_long_msg_with_output_invokes_llm_yes(self, tmp_path):
+        """Long-tail capability + exec output → LLM fallback runs and counts."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=["transcribed: hello world"],
+            user_msg=_LONG_MSG_NO_KEYWORD,
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm",
+            return_value=True,
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 1
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "warn"
+
+    def test_heuristic_miss_long_msg_no_output_no_llm_call(self, tmp_path):
+        """No exec output → fallback is suppressed; doctor reports ok."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=[None],
+            user_msg=_LONG_MSG_NO_KEYWORD,
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm",
+            return_value=True,
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 0
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "ok"
+
+    def test_short_msg_no_keyword_no_llm_call(self, tmp_path):
+        """≤5 words → fallback is suppressed even with exec output."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=["x"],
+            user_msg=_SHORT_MSG_NO_KEYWORD,
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm",
+            return_value=True,
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 0
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "ok"
+
+    def test_llm_returns_no_does_not_count(self, tmp_path):
+        """LLM says it's not a capability request → don't count, status ok."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=["1234"],
+            user_msg=_LONG_MSG_NO_KEYWORD,
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm",
+            return_value=False,
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 1
+        target = next(
+            r for r in results if r.name == "exec_on_capability_intent"
+        )
+        assert target.status == "ok"
+
+    def test_llm_returns_none_safe_default_skips(self, tmp_path):
+        """LLM error / malformed → safe default: skip the count, don't crash."""
+        _build_db(tmp_path)
+        _seed_plan(
+            tmp_path / "store.db", session="s1",
+            task_types=["exec"], task_outputs=["1234"],
+            user_msg=_LONG_MSG_NO_KEYWORD,
+        )
+        ctx = _ctx(tmp_path)
+        with patch(
+            "cli.doctor._classify_capability_intent_llm",
+            return_value=None,
+        ) as mock_llm:
+            results = check_broker_invariants(ctx)
+        assert mock_llm.call_count == 1
         target = next(
             r for r in results if r.name == "exec_on_capability_intent"
         )
