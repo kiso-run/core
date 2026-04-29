@@ -206,8 +206,8 @@ class TestF22NonexistentTool:
     async def test_nonexistent_tool_request(self, run_message):
         """What: Asks to install 'zzz_test_notreal' — not in registry.
 
-        Why: Validates that the planner uses registry_hints to decide wrapper
-        availability and doesn't blindly attempt installation.
+        Why: Validates that the planner consults the available MCP catalog
+        before attempting installation and doesn't blindly try unknown names.
         Expects: Success, msg explains wrapper is not available, no install exec.
         """
         result = await run_message(

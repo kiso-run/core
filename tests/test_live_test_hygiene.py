@@ -111,6 +111,7 @@ class TestNoParadigmMismatchedStrings:
 
     PATTERNS: tuple[tuple[str, str], ...] = (
         ("registry_url", "registry.json was retired in M1545; field is dead in env-builder fixtures"),
+        ("registry_hints", "registry retired in M1545; build_system_env_section no longer emits it (M1595)"),
         ("moltbook", "moltbook is a retired example skill"),
         ("browser wrapper", "wrapper subsystem retired in M1504-M1566; use 'browser MCP' instead"),
         ("OCR wrapper", "wrapper subsystem retired in M1504-M1566; use 'OCR MCP' instead"),

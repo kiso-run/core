@@ -458,7 +458,6 @@ class TestPlannerSystemPackageLive:
             "max_replan_depth": 3,
             "sys_bin_path": str(KISO_DIR / "sys" / "bin"),
             "reference_docs_path": str(KISO_DIR / "reference"),
-            "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
         }
         return build_system_env_section(fake_env, session="test-sess")
 
@@ -491,7 +490,6 @@ class TestPlannerSystemPackageLive:
                 "max_replan_depth": 3,
                 "sys_bin_path": str(tmp_path / "sys" / "bin"),
                 "reference_docs_path": str(tmp_path / "reference"),
-                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
             }),
         ):
             plan = await asyncio.wait_for(
@@ -557,7 +555,6 @@ class TestPlannerSystemPackageLive:
                 "max_replan_depth": 3,
                 "sys_bin_path": str(tmp_path / "sys" / "bin"),
                 "reference_docs_path": str(tmp_path / "reference"),
-                "registry_hints": "websearch (Web search); aider (Code editing); browser (Browser automation)",
             }),
         ):
             plan = await asyncio.wait_for(
