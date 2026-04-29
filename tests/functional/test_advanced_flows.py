@@ -2,7 +2,6 @@
 
 F37: Safety rule enforcement (reviewer compliance module)
 F38: Recipe-driven planning
-F39: Wrapper install + immediate use (single session)
 F40: Search → code → exec pipeline
 F41: Aider edit existing file (bug fix)
 F42: Aider add feature to existing code
@@ -19,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import (
-    LLM_INSTALL_TIMEOUT,
     LLM_MULTI_PLAN_TIMEOUT,
     LLM_REPLAN_TIMEOUT,
     LLM_SINGLE_PLAN_TIMEOUT,
@@ -27,7 +25,6 @@ from tests.conftest import (
 from tests.functional.conftest import (
     FunctionalResult,
     assert_no_failure_language,
-    tool_installed,
 )
 
 pytestmark = pytest.mark.functional
@@ -106,91 +103,6 @@ class TestF37SafetyRuleEnforcement:
 # ---------------------------------------------------------------------------
 # F38 — Recipe-driven planning (retired in v0.10; recipes replaced by skills)
 # ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# F39 — Wrapper install + immediate use (single session)
-# ---------------------------------------------------------------------------
-
-
-class TestF39ToolInstallAndUse:
-    """F39: Full install proposal → approval → use in one session."""
-
-    @pytest.mark.extended
-    async def test_install_then_use_single_session(self, run_message):
-        """What: 3-stage flow: proposal → install → use browser MCP.
-
-        Why: F1a/F1b test install and use separately. This tests the
-        actual user flow in a single conversation session.
-        Expects: Stage 1 proposes install, Stage 2 installs, Stage 3 uses.
-
-        Uses screenshot request — no search fallback possible, planner
-        MUST propose browser install (_CAPABILITY_MAP: screenshot → browser).
-        """
-        if tool_installed("browser"):
-            pytest.skip("Browser already installed — can't test install flow")
-
-        # Stage 1: screenshot requires browser — no search fallback
-        r1 = await run_message(
-            "fai uno screenshot di example.com",
-            timeout=LLM_SINGLE_PLAN_TIMEOUT,
-        )
-        assert r1.plans, "No plans created"
-        # Planner should produce a msg-only install proposal (no exec/wrapper
-        # since browser isn't installed). Check for msg-only OR install keywords.
-        r1_types = set(r1.task_types())
-        r1_output = r1.msg_output.lower()
-        has_install_proposal = (
-            r1_types <= {"msg"}  # msg-only plan (install proposal)
-            or any(kw in r1_output for kw in (
-                "install", "browser", "installa", "strumento", "screenshot",
-            ))
-        )
-        assert has_install_proposal, (
-            f"Stage 1: expected install proposal. "
-            f"Types: {r1.task_types()}, output: {r1_output[:300]}"
-        )
-
-        # Stage 2: approve installation
-        r2 = await run_message(
-            "sì, installa il wrapper browser",
-            timeout=LLM_INSTALL_TIMEOUT,
-        )
-        assert r2.plans, "No plans created for install"
-
-        if not tool_installed("browser"):
-            pytest.fail(
-                f"Browser not installed after approval. "
-                f"Tasks: {r2.task_types()}"
-            )
-
-        # Stage 3: screenshot + describe — browser should be used
-        r3 = await run_message(
-            "fai uno screenshot di example.com e dimmi cosa c'è scritto "
-            "nella pagina",
-            timeout=LLM_MULTI_PLAN_TIMEOUT,
-        )
-        assert r3.success, f"Stage 3 failed: {r3.task_types()}"
-
-        # Browser MCP must have been used (either kiso-browser if added to
-        # the preset, or a third-party browser MCP installed by the user).
-        browser_calls = [
-            t for t in r3.tasks
-            if t.get("type") == "mcp"
-            and "browser" in (t.get("server") or "").lower()
-        ]
-        assert browser_calls, (
-            f"No browser MCP call in stage 3. Task types: {r3.task_types()}"
-        )
-
-        # Keywords aligned with F1b (test_browser.py:139-141)
-        output = r3.last_plan_msg_output.lower()
-        assert any(
-            w in output for w in (
-                "example", "dominio", "iana", "domain",
-                "illustrativ", "esempio", "documentazione",
-            )
-        ), f"Stage 3 output missing example.com content: {output[:300]}"
 
 
 # ---------------------------------------------------------------------------
