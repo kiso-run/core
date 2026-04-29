@@ -307,11 +307,14 @@ class TestStoreCheck:
         ctx = _ctx(tmp_path)
         results = check_store(ctx)
         assert all(r.status != "fail" for r in results)
+        db_file = next(r for r in results if r.name == "db_file")
+        assert "store.db" in db_file.detail
+        assert "kiso.db" not in db_file.detail
 
     def test_db_in_wal_mode_is_ok(self, tmp_path):
         import sqlite3
 
-        db_path = tmp_path / "kiso.db"
+        db_path = tmp_path / "store.db"
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("CREATE TABLE t(id integer)")
@@ -322,12 +325,13 @@ class TestStoreCheck:
         results = check_store(ctx)
         by_name = {r.name: r for r in results}
         assert by_name["db_file"].status == "ok"
+        assert str(db_path) in by_name["db_file"].detail
         assert by_name["wal_mode"].status == "ok"
 
     def test_db_without_wal_warns(self, tmp_path):
         import sqlite3
 
-        db_path = tmp_path / "kiso.db"
+        db_path = tmp_path / "store.db"
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA journal_mode = DELETE")
         conn.execute("CREATE TABLE t(id integer)")
@@ -338,6 +342,30 @@ class TestStoreCheck:
         results = check_store(ctx)
         wal = next(r for r in results if r.name == "wal_mode")
         assert wal.status in ("warn", "fail")
+
+    async def test_check_store_recognizes_init_db_output(self, tmp_path):
+        """Drift lock: `init_db` writes the same filename `check_store` reads.
+
+        The production callsite (`kiso/main.py`) feeds `KISO_DIR / "store.db"`
+        into `init_db`. If `check_store` ever drifts back to a different
+        filename, this test fails because it would report `db_file` as
+        missing instead of `ok`.
+        """
+        from kiso.store import init_db
+
+        db_path = tmp_path / "store.db"
+        conn = await init_db(db_path)
+        try:
+            assert db_path.exists()
+        finally:
+            await conn.close()
+
+        ctx = _ctx(tmp_path)
+        results = check_store(ctx)
+        by_name = {r.name: r for r in results}
+        assert by_name["db_file"].status == "ok"
+        assert "no " not in by_name["db_file"].detail.lower()
+        assert by_name["wal_mode"].status == "ok"
 
 
 class TestWorkspaceCheck:

@@ -395,7 +395,7 @@ Categories covered:
 - **Sandbox** — when running as root, verify `useradd` is available
   so per-session UID drops work
 - **Trust** — `~/.kiso/trust.json` parses as JSON (when present)
-- **Store** — the SQLite DB at `~/.kiso/kiso.db` opens and is in WAL
+- **Store** — the SQLite DB at `~/.kiso/store.db` opens and is in WAL
   mode (or doesn't exist yet, which is also fine)
 - **Workspace** — `sessions/`, `pub/`, `uploads/` under `KISO_DIR`
   are writable

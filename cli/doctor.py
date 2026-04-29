@@ -556,11 +556,11 @@ def check_trust(ctx: DoctorContext) -> list[CheckResult]:
 
 def check_store(ctx: DoctorContext) -> list[CheckResult]:
     out: list[CheckResult] = []
-    db_path = ctx.kiso_dir / "kiso.db"
+    db_path = ctx.kiso_dir / "store.db"
     if not db_path.exists():
         out.append(CheckResult(
             category="Store", name="db_file", status="ok",
-            detail="no kiso.db yet — will be created on first run",
+            detail="no store.db yet — will be created on first run",
         ))
         return out
     out.append(CheckResult(
@@ -625,12 +625,7 @@ def _has_capability_intent(content: str) -> bool:
 
 
 def _broker_db_path(ctx: DoctorContext) -> Path:
-    """The store DB path used by the broker invariant checks.
-
-    `init_db` (kiso/store/setup.py) writes `store.db`; the legacy
-    `check_store` looks at `kiso.db` instead. M1592 explicitly aligns
-    with the live filename so the check runs against real plan rows.
-    """
+    """The store DB path used by the broker invariant checks."""
     return ctx.kiso_dir / "store.db"
 
 
