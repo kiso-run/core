@@ -1,4 +1,4 @@
-"""M1572 / M1578 — regression locks for live + functional test hygiene.
+"""M1572 / M1578 / M1594 — regression locks for test + production hygiene.
 
 After Phase 4 / Phase 9 / Phase 13 retirements (wrapper subsystem,
 connector plugin subsystem, registry.json), two live test files were
@@ -13,6 +13,10 @@ paradigm-mismatched vocabulary like "browser wrapper" / "OCR wrapper").
 M1578 generalizes the M1572 lock from `tests/live/test_e2e.py` to ALL
 files in `tests/live/*.py` and `tests/functional/*.py`, and adds the
 paradigm-mismatch sweep.
+
+M1594 extends the paradigm-mismatch sweep to production code under
+`kiso/` and `cli/`, so any future regression of the retired wrapper
+vocabulary in shipping code fails CI loudly.
 """
 
 from __future__ import annotations
@@ -24,6 +28,9 @@ from pathlib import Path
 _TESTS_DIR = Path(__file__).resolve().parent
 _LIVE_DIR = _TESTS_DIR / "live"
 _FUNCTIONAL_DIR = _TESTS_DIR / "functional"
+_CORE_DIR = _TESTS_DIR.parent
+_PROD_KISO_DIR = _CORE_DIR / "kiso"
+_PROD_CLI_DIR = _CORE_DIR / "cli"
 
 
 def _live_and_functional_py_files() -> list[Path]:
@@ -129,6 +136,58 @@ class TestNoParadigmMismatchedStrings:
             raise AssertionError(
                 "live + functional tests must not reference "
                 "paradigm-mismatched terms (post-v0.10 cleanup):\n"
+                f"{why_lines}\n"
+                f"Offenders:\n{offender_lines}"
+            )
+
+
+def _production_py_files() -> list[Path]:
+    """Every `*.py` under `kiso/` and `cli/`, excluding caches."""
+    files: list[Path] = []
+    for d in (_PROD_KISO_DIR, _PROD_CLI_DIR):
+        for path in sorted(d.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            files.append(path)
+    return files
+
+
+class TestNoRetiredWrapperVocabInProduction:
+    """M1594 — production-code hygiene lock.
+
+    The wrapper subsystem was retired in M1504-M1566. The live + functional
+    test tier already locks the retired vocabulary (M1578); this lock
+    extends the same patterns to shipping code under `kiso/` and `cli/`,
+    including comments and docstrings — once a phrase is paradigm-retired
+    it should not survive anywhere a future contributor might copy from.
+    """
+
+    PATTERNS: tuple[tuple[str, str], ...] = (
+        ("wrapper browser", "use 'MCP browser' (wrapper subsystem retired in M1504-M1566)"),
+        ("browser wrapper", "use 'browser MCP' (wrapper subsystem retired in M1504-M1566)"),
+        ("OCR wrapper", "use 'OCR MCP' (wrapper subsystem retired in M1504-M1566)"),
+    )
+
+    def test_no_retired_wrapper_vocab_in_kiso_or_cli(self):
+        offenders: list[str] = []
+        for path in _production_py_files():
+            text = path.read_text(encoding="utf-8")
+            for needle, _why in self.PATTERNS:
+                start = 0
+                while True:
+                    idx = text.find(needle, start)
+                    if idx < 0:
+                        break
+                    line_no = text[:idx].count("\n") + 1
+                    rel = path.relative_to(_CORE_DIR)
+                    offenders.append(f"{rel}:{line_no} `{needle}`")
+                    start = idx + len(needle)
+        if offenders:
+            why_lines = "\n".join(f"  - `{n}`: {w}" for n, w in self.PATTERNS)
+            offender_lines = "\n".join(f"  - {o}" for o in offenders)
+            raise AssertionError(
+                "production code under kiso/ and cli/ must not reference "
+                "retired wrapper vocabulary (post-v0.10 cleanup):\n"
                 f"{why_lines}\n"
                 f"Offenders:\n{offender_lines}"
             )

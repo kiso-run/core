@@ -325,7 +325,7 @@ def build_recent_context(
     Formats messages as::
 
         [user] root: vai su guidance.studio
-        [kiso] Per navigare serve il wrapper browser. Vuoi che lo installi?
+        [kiso] Per navigare serve l'MCP browser. Vuoi che lo installi?
         [user] root: oh yeah
 
     User messages use ``[user] {username}``. Assistant/system messages use
