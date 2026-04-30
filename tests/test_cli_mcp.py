@@ -204,6 +204,152 @@ class TestInstallDryRun:
         assert "dry run" in captured.out
 
 
+class TestInstallChatApprovalRecordsTrust:
+    """M1604 — chat-approved untrusted install must auto-record the source
+    in `~/.kiso/trust.json` so subsequent installs of the same source
+    resolve to `tier=custom` instead of re-prompting.
+
+    Each test patches `kiso.trust_store.TRUST_PATH` to an isolated tmp
+    file, replaces `resolve_from_url` with a minimal `ResolvedServer`
+    (empty `pre_install` so no subprocess fires), and stubs
+    `_persist_server_entry` so the install side-effects don't touch the
+    test config. The behaviour under test is purely:
+    *did `add_prefix` fire (and exactly once) on the right branch?*
+    """
+
+    UNTRUSTED_URL = "https://github.com/random-org/cool-mcp"
+    UNTRUSTED_KEY = "github.com/random-org/cool-mcp"
+    TIER1_URL = "npm:@modelcontextprotocol/server-foo"
+    TIER1_KEY = "npm:@modelcontextprotocol/server-foo"
+
+    @staticmethod
+    def _patch_trust_path(monkeypatch, tmp_path):
+        from kiso import trust_store
+        path = tmp_path / "trust.json"
+        monkeypatch.setattr(trust_store, "TRUST_PATH", path)
+        return path
+
+    @staticmethod
+    def _patch_install_side_effects(monkeypatch):
+        from kiso.mcp.install import ResolvedServer
+
+        def _fake_resolve(from_url, name_hint=None):
+            return ResolvedServer(
+                name="fake-mcp",
+                transport="stdio",
+                command="echo",
+                args=["fake"],
+            )
+
+        monkeypatch.setattr(cli_mcp, "resolve_from_url", _fake_resolve)
+        monkeypatch.setattr(cli_mcp, "_persist_server_entry", lambda *a, **k: 0)
+        monkeypatch.setattr(cli_mcp, "check_runtime_dependencies", lambda: [])
+
+    def _trust_store_mcp(self):
+        from kiso.trust_store import load_trust_store
+        return list(load_trust_store().mcp)
+
+    def test_untrusted_with_yes_flag_records_prefix(
+        self, cfg_path, monkeypatch, capsys,
+    ):
+        trust_path = self._patch_trust_path(monkeypatch, cfg_path.parent)
+        self._patch_install_side_effects(monkeypatch)
+
+        rc = cli_mcp._cmd_install(
+            _ns(
+                from_url=self.UNTRUSTED_URL,
+                name=None,
+                dry_run=False,
+                yes=True,
+            )
+        )
+        assert rc == 0
+        assert trust_path.exists(), "trust.json must be written after approval"
+        assert self.UNTRUSTED_KEY in self._trust_store_mcp(), (
+            f"--yes approval did not record {self.UNTRUSTED_KEY!r}"
+        )
+
+    def test_untrusted_interactive_yes_records_prefix(
+        self, cfg_path, monkeypatch, capsys,
+    ):
+        trust_path = self._patch_trust_path(monkeypatch, cfg_path.parent)
+        self._patch_install_side_effects(monkeypatch)
+        monkeypatch.setattr("builtins.input", lambda *_a, **_k: "y")
+
+        rc = cli_mcp._cmd_install(
+            _ns(
+                from_url=self.UNTRUSTED_URL,
+                name=None,
+                dry_run=False,
+                yes=False,
+            )
+        )
+        assert rc == 0
+        assert self.UNTRUSTED_KEY in self._trust_store_mcp()
+
+    def test_untrusted_interactive_no_does_not_record_prefix(
+        self, cfg_path, monkeypatch, capsys,
+    ):
+        trust_path = self._patch_trust_path(monkeypatch, cfg_path.parent)
+        self._patch_install_side_effects(monkeypatch)
+        monkeypatch.setattr("builtins.input", lambda *_a, **_k: "n")
+
+        rc = cli_mcp._cmd_install(
+            _ns(
+                from_url=self.UNTRUSTED_URL,
+                name=None,
+                dry_run=False,
+                yes=False,
+            )
+        )
+        assert rc != 0, "rejection must abort install with non-zero exit"
+        assert not trust_path.exists() or self.UNTRUSTED_KEY not in self._trust_store_mcp(), (
+            "rejection must NOT record the prefix"
+        )
+
+    def test_tier1_install_does_not_touch_trust_store(
+        self, cfg_path, monkeypatch, capsys,
+    ):
+        trust_path = self._patch_trust_path(monkeypatch, cfg_path.parent)
+        self._patch_install_side_effects(monkeypatch)
+
+        rc = cli_mcp._cmd_install(
+            _ns(
+                from_url=self.TIER1_URL,
+                name=None,
+                dry_run=False,
+                yes=True,
+            )
+        )
+        assert rc == 0
+        assert not trust_path.exists() or self._trust_store_mcp() == [], (
+            "tier1 install must not write to the user trust store"
+        )
+
+    def test_custom_install_does_not_double_add(
+        self, cfg_path, monkeypatch, capsys,
+    ):
+        # Pre-seed the trust store so the source resolves as tier=custom.
+        from kiso.trust_store import save_trust_store, TrustStore
+        trust_path = self._patch_trust_path(monkeypatch, cfg_path.parent)
+        save_trust_store(TrustStore(mcp=[self.UNTRUSTED_KEY], skill=[]))
+        self._patch_install_side_effects(monkeypatch)
+
+        rc = cli_mcp._cmd_install(
+            _ns(
+                from_url=self.UNTRUSTED_URL,
+                name=None,
+                dry_run=False,
+                yes=False,  # no prompt expected — already trusted
+            )
+        )
+        assert rc == 0
+        prefixes = self._trust_store_mcp()
+        assert prefixes.count(self.UNTRUSTED_KEY) == 1, (
+            f"already-custom source must not be added twice; got {prefixes}"
+        )
+
+
 class TestEnv:
     def test_env_set_creates_file_with_600_perms(self, cfg_path, tmp_path):
         rc = cli_mcp._cmd_env(

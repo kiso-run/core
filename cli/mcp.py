@@ -313,17 +313,25 @@ def _cmd_install(args: argparse.Namespace) -> int:
 
     source_key = mcp_trust.source_key_for_url(args.from_url)
     tier = mcp_trust.is_trusted(source_key)
-    if tier == "untrusted" and not getattr(args, "yes", False):
-        print(f"\n⚠  untrusted source: {source_key}")
-        print(
-            "   Tier 1 prefixes are hardcoded (modelcontextprotocol /"
-            " playwright / github / kiso-run); add your own via"
-            " `kiso mcp trust add`."
-        )
-        confirm = input("Install anyway? [y/N] ").strip().lower()
-        if confirm != "y":
-            print("aborted")
-            return 1
+    if tier == "untrusted":
+        if not getattr(args, "yes", False):
+            print(f"\n⚠  untrusted source: {source_key}")
+            print(
+                "   Tier 1 prefixes are hardcoded (modelcontextprotocol /"
+                " playwright / github / kiso-run); add your own via"
+                " `kiso mcp trust add`."
+            )
+            confirm = input("Install anyway? [y/N] ").strip().lower()
+            if confirm != "y":
+                print("aborted")
+                return 1
+        # M1604: approval (interactive `y` or `--yes`) records the source
+        # so the next install of the same URL resolves to tier=custom
+        # instead of re-prompting. Tier1/custom paths skip this block
+        # entirely, so there is no risk of duplicate or spurious adds.
+        from kiso.trust_store import add_prefix
+        add_prefix("mcp", source_key)
+        print(f"  trust: recorded '{source_key}' in ~/.kiso/trust.json")
 
     # Execute pre-install steps (git clone, uv venv, uv pip install)
     import subprocess as _sp

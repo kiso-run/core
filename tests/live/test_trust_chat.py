@@ -194,10 +194,12 @@ class TestFlowGTrustPersistence:
                 f"turn 2 must emit an install exec after approval: {plan_2!r}"
             )
 
-            # Model the trust-record write that the install path is
-            # contracted to perform after a chat approval. If the
-            # production install flow drops this write (current state at
-            # M1602 time), the assertion below is the canary.
+            # Stand in for the worker exec that this live test never
+            # actually runs: the planner emits the install command in
+            # Turn 2, but only `cli/mcp.py::_cmd_install` writes the
+            # prefix when the install really fires (M1604). Calling
+            # `add_prefix` here mirrors what M1604's auto-record
+            # behaviour would do once the planned exec executes.
             add_prefix("mcp", _PERSISTENCE_SOURCE_KEY)
             assert mcp_trust.is_trusted(_PERSISTENCE_SOURCE_KEY) == "custom"
 
