@@ -2476,8 +2476,9 @@ class TestRunCurator:
     def test_curator_no_artificial_max_tokens(self):
         """curator has no artificial max_tokens cap (removed)."""
         # MAX_TOKENS_DEFAULTS removed — only classifier gets a cap.
+        # M1579b (2026-04-29) bumped the cap from 10 to 15.
         from kiso.config import CLASSIFIER_MAX_TOKENS
-        assert CLASSIFIER_MAX_TOKENS == 10  # sanity: classifier still capped
+        assert CLASSIFIER_MAX_TOKENS == 15  # sanity: classifier still capped
 
 
 # --- M9: build_summarizer_messages ---
@@ -7670,8 +7671,9 @@ class TestMaxTokensRemoved:
 
     def test_only_classifier_has_default_max_tokens(self):
         """CLASSIFIER_MAX_TOKENS exists; MAX_TOKENS_DEFAULTS is gone."""
+        # M1579b (2026-04-29) bumped the cap from 10 to 15.
         from kiso.config import CLASSIFIER_MAX_TOKENS
-        assert CLASSIFIER_MAX_TOKENS == 10
+        assert CLASSIFIER_MAX_TOKENS == 15
         # Verify MAX_TOKENS_DEFAULTS no longer exists
         import kiso.config as cfg_mod
         assert not hasattr(cfg_mod, "MAX_TOKENS_DEFAULTS")
