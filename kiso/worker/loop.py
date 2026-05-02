@@ -222,6 +222,7 @@ async def _chat_kb_preflight_fallback(
     content: str,
     user_lang: str,
     slog: SessionLogger | None = None,
+    username: str | None = None,
 ) -> bool:
     """Pre-flight chat_kb facts check with transparent investigate fallback.
 
@@ -238,6 +239,13 @@ async def _chat_kb_preflight_fallback(
     - The pre-flight returns at least one fact.
     - The pre-flight raises (treat as "safe to proceed with chat_kb"; we
       reserve the fallback for *empty result*, not *failed query*).
+
+    Visibility (``username`` and the bound ``session_project_id`` together):
+    pass-through to ``search_facts_scored``. Membership-based visibility
+    (the project rules encoded in ``_fact_session_filter``) requires the
+    caller's username — without it, project-scoped facts are filtered out
+    even when the user is a member, producing a false-positive empty-KB
+    fallback for sessions that simply happen to be unbound.
 
     Trade-off: the pre-flight uses raw keywords from ``content``
     (``content.lower().split()[:10]``), the same pattern
@@ -259,6 +267,7 @@ async def _chat_kb_preflight_fallback(
             keywords=keywords,
             session=session,
             is_admin=False,
+            username=username,
             project_id=session_project_id,
         )
     except Exception as e:  # noqa: BLE001 — see docstring: errors don't trigger fallback
@@ -2351,7 +2360,8 @@ async def _process_message(
         # off. This refines the classifier; it does not override it.
         if msg_class == "chat_kb":
             if await _chat_kb_preflight_fallback(
-                db, config, session, plan_id, content, user_lang, slog=slog,
+                db, config, session, plan_id, content, user_lang,
+                slog=slog, username=username,
             ):
                 clear_llm_budget()
                 _notify_phase(set_phase, WORKER_PHASE_IDLE)

@@ -15,6 +15,8 @@ from kiso.brain import (
 )
 from kiso.config import Config, Provider
 from kiso.store import (
+    add_project_member,
+    create_project,
     create_session,
     find_or_create_entity,
     init_db,
@@ -268,6 +270,77 @@ class TestChatKBPreflightFallback:
         assert _CHAT_KB_FALLBACK_MSGS["English"] in output
         # M1579d: broker-model graceful wording invites a user reply.
         assert "search" in output.lower() or "url" in output.lower() or "fact" in output.lower()
+
+    async def test_preflight_sees_project_fact_via_membership(self, db):
+        """M1607: project-bound fact must be visible to a session whose
+        user is a member of that project, even when the session itself is
+        not bound to the project. The visibility is membership-based —
+        the same rule that ``_fact_session_filter`` already encodes for
+        the ``username`` argument. The preflight must propagate the
+        caller-provided username so non-bound sessions of project members
+        do not falsely trip the empty-KB fallback.
+        """
+        config = _config()
+        plan_id = db._test_plan_id
+
+        pid = await create_project(db, "proj-alpha", "alice")
+        await add_project_member(db, pid, "alice", role="member")
+        await save_fact(
+            db,
+            "Alpha team uses the Borealis migration runner",
+            source="curator", category="general",
+            project_id=pid,
+        )
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="which migration runner does Alpha use?",
+                user_lang="English",
+                username="alice",
+            )
+
+        assert triggered is False, (
+            "preflight must surface project facts of projects the user is a "
+            "member of; got fallback (membership lookup not consulted)"
+        )
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert msg_tasks == []
+
+    async def test_preflight_isolates_non_member_from_project_fact(self, db):
+        """M1607 negative invariant: project-bound fact MUST NOT be
+        visible to a session whose user is not a member of that project.
+        This is the load-bearing isolation guarantee — granting
+        membership-based visibility must not collapse cross-project
+        isolation.
+        """
+        config = _config()
+        plan_id = db._test_plan_id
+
+        pid = await create_project(db, "proj-secret", "bob")
+        await add_project_member(db, pid, "bob", role="member")
+        # alice is NOT added as member
+        await save_fact(
+            db,
+            "Secret team uses the Xenon vault provider",
+            source="curator", category="general",
+            project_id=pid,
+        )
+
+        with patch("kiso.worker.loop._deliver_webhook_if_configured", return_value=None):
+            triggered = await _chat_kb_preflight_fallback(
+                db, config, "sess1", plan_id,
+                content="which vault provider does Secret use?",
+                user_lang="English",
+                username="alice",
+            )
+
+        assert triggered is True, (
+            "preflight must NOT surface project facts to non-members; "
+            "isolation has been broken"
+        )
+        msg_tasks = await self._list_msg_tasks(db, plan_id)
+        assert len(msg_tasks) == 1
 
 
 class TestClassifierIsAuthoritative:
