@@ -176,7 +176,21 @@ def _validate_plan_tasks(
     """Check per-task rules: type, detail, expect, args validation."""
     errors: list[str] = []
     replan_count = 0
+    # M1608 structural backstop: plan-level fields must not appear on
+    # tasks. The worker reads these flags off the plan; a task-level
+    # value is silently ignored, so the LLM thinks it has paused or
+    # proposed install but the actual plan is still an action plan.
+    # The only safe response is to reject the misplacement with a clear
+    # error so the LLM corrects it on the next attempt.
+    _PLAN_ONLY_FIELDS = ("awaits_input", "kb_answer", "needs_install", "knowledge")
     for i, task in enumerate(tasks, 1):
+        for field in _PLAN_ONLY_FIELDS:
+            if field in task:
+                errors.append(
+                    f"Task {i}: '{field}' is a plan-level field, not a task "
+                    f"field — move it to the plan level (the worker reads "
+                    f"the plan flag, not task-level values)."
+                )
         t = task.get("type")
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")

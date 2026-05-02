@@ -98,3 +98,104 @@ def test_validate_plan_accepts_arbitrary_mcp_names(server, method):
         f"validator surfaced name-related errors for {server!r}:{method!r}: "
         f"{name_related}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1608 — structural backstop: plan-level fields must not appear on tasks
+# ---------------------------------------------------------------------------
+
+
+def test_validate_plan_rejects_task_level_awaits_input():
+    """M1608 invariant 1: ``awaits_input`` is a plan-level field. Putting
+    it on a task is invalid — the worker reads the plan-level flag, so
+    a task-level value is silently ignored, leaving the plan as a normal
+    action plan instead of a broker pause. The validator must reject the
+    misplacement with a clear error message so the LLM learns the right
+    schema on the next attempt.
+
+    Plan shape: action plan that would otherwise validate (exec + msg
+    with substantive content, plan-level awaits_input=False). The single
+    invalid thing is the ``awaits_input`` field on a task. Without the
+    backstop the validator returns no errors; with the backstop it
+    returns at least one error mentioning "task" + "awaits_input".
+    """
+    plan = _make_msg_only_plan(
+        awaits_input=False,
+        tasks=[
+            {
+                "type": "exec",
+                "detail": "list files in /tmp",
+                "args": None, "expect": "directory listing",
+            },
+            {
+                "type": "msg",
+                "detail": "Answer in English. Files listed successfully.",
+                "args": None, "expect": None,
+                "awaits_input": True,  # invalid — plan-level only
+            },
+        ],
+    )
+    errors = validate_plan(plan, installed_skills=[])
+    task_level_errors = [
+        e for e in errors
+        if "awaits_input" in e.lower() and "task" in e.lower()
+        and ("plan-level" in e.lower() or "plan level" in e.lower()
+             or "not a task" in e.lower())
+    ]
+    assert task_level_errors, (
+        f"validator must reject task-level awaits_input with a message "
+        f"that names the misplacement; got errors {errors!r}"
+    )
+
+
+def test_validate_plan_accepts_plan_level_awaits_input_msg_only():
+    """M1608 baseline: a msg-only plan with plan-level ``awaits_input``
+    is the correct shape and the validator accepts it. This guards
+    against the previous test's fix accidentally breaking the canonical
+    ask-first plan shape.
+    """
+    plan = _make_msg_only_plan(awaits_input=True)
+    errors = validate_plan(plan, installed_skills=[])
+    awaits_errors = [e for e in errors if "awaits_input" in e.lower()]
+    assert awaits_errors == [], (
+        f"plan-level awaits_input on a msg-only plan is the canonical "
+        f"shape and must validate; got {errors!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# M1608 — prompt invariants present (abstract — no specific names)
+# ---------------------------------------------------------------------------
+
+
+def test_planner_prompt_states_awaits_input_is_plan_level():
+    """The planner prompt must explicitly state that ``awaits_input`` is
+    a plan-level field, not a task-level field. The wording is what
+    teaches the LLM the schema; the validator backstop only catches
+    after-the-fact mistakes.
+    """
+    text = _PLANNER_MD.read_text().lower()
+    assert "awaits_input" in text and "plan-level" in text, (
+        "planner.md must state that awaits_input is plan-level — the "
+        "broker pause invariant relies on this distinction"
+    )
+
+
+def test_planner_prompt_states_install_proposal_first_for_unknown_sources():
+    """The planner prompt must state that an install request from an
+    unknown / non-tier1 source is a ``needs_install`` msg-only proposal,
+    NOT a direct exec install. This is the invariant that protects
+    against the planner inventing fallback install commands or skipping
+    the trust gate.
+    """
+    text = _PLANNER_MD.read_text().lower()
+    assert "needs_install" in text, (
+        "planner.md must reference needs_install as the proposal field"
+    )
+    # The phrase that teaches the rule must appear — abstract wording,
+    # no specific source name. We require the presence of a sentence
+    # that pairs "before approval" with a forbidden behavior; the exact
+    # phrasing is left to prompt-craft, but the lemma must be there.
+    assert "before approval" in text or "before the user approves" in text, (
+        "planner.md must forbid exec installs before user approval"
+    )

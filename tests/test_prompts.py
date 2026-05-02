@@ -96,7 +96,14 @@ class TestPromptBudgetSmoke:
         # M1579c (2026-04-28): bumped from 18000 → 20500 to accommodate
         # the new "Capability missing — ask-first flow" block + the
         # FORBIDDEN behaviors block (broker model anti-overfitting).
-        ("planner.md", 20500),
+        # M1608 (2026-05-03): bumped from 20500 → 21800 to accommodate
+        # the "HARD INVARIANTS" block at the top of planning_rules
+        # (plan-level awaits_input + install-proposal-first), the two
+        # corresponding FORBIDDEN entries, the install-routing
+        # clarification (URLs/repos are not OS package names), and the
+        # trust-default rule (untrusted is the default tier for any
+        # source not on a tier1 allowlist).
+        ("planner.md", 21800),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])
