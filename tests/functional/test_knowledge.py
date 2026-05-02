@@ -416,12 +416,20 @@ class TestMessengerQuality:
         not claim actions it did not perform (e.g. "ho esaminato", "ho verificato").
         Without this, users receive unprofessional or misleading responses.
         Expects: Italian response with no emoji characters and no false action verbs.
+
+        The plan may complete naturally or pause for user input (e.g. when
+        classified as chat_kb and the KB has nothing relevant — the broker
+        legitimately admits-and-asks). Both outcomes are valid for this
+        quality check; what matters is that the messenger emitted a
+        textual response and that the response respects the rules.
         """
         result = await run_message(
             "dimmi cosa sai fare",
             timeout=LLM_SINGLE_PLAN_TIMEOUT,
         )
-        assert result.success
+        assert result.msg_output, (
+            f"messenger emitted no output (plans={result.plans})"
+        )
         assert_italian(result.last_plan_msg_output)
         # No emoji
         assert not _EMOJI_RE.search(result.msg_output), (
