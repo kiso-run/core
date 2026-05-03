@@ -676,15 +676,17 @@ async def run_message(func_config, func_db, func_session, mock_mcp_catalog):
 
 
 # ---------------------------------------------------------------------------
-# Wrapper install helpers — retired
+# Wrapper install helpers — retired (M1611 cleanup completed)
 # ---------------------------------------------------------------------------
 #
-# The ``preset_tools_installed`` session fixture and the
-# ``discover_wrappers``/``invalidate_wrappers_cache`` glue it relied on
-# have been removed together with the wrapper subsystem. Any functional
-# test that still requests that fixture will fail to collect, which is
-# the intended signal that the test needs to be rewritten against the
-# skill/MCP replacement.
+# The ``preset_tools_installed`` session fixture and its
+# ``discover_wrappers``/``invalidate_wrappers_cache`` glue retired with
+# the wrapper subsystem. M1611 deleted the six extended-tier consumers
+# (F27/F28/F29/F30 in the now-removed test_preset_workflows.py;
+# F41/F42 in test_advanced_flows.py) so the extended tier collects
+# without fixture-error noise. Aider/preset workflows now live at the
+# skills/MCP layer; if a future test needs them end-to-end, register
+# the relevant capability via ``mock_mcp_catalog`` (M1581).
 
 
 # ---------------------------------------------------------------------------

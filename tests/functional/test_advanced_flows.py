@@ -169,104 +169,16 @@ class TestF40SearchCodeExec:
 
 
 # ---------------------------------------------------------------------------
-# F41 — Aider edit existing file (bug fix)
+# F41/F42 — Aider edit/add (DELETED in M1611)
 # ---------------------------------------------------------------------------
-
-
-class TestF41AiderEditFile:
-    """F41: Aider fixes a bug in an existing file."""
-
-    @pytest.mark.extended
-    async def test_aider_fixes_bug(self, preset_tools_installed, run_message, _func_kiso_dir, func_session):
-        """What: Pre-create buggy file → aider fixes → exec verifies.
-
-        Why: All existing aider tests create files from scratch. This tests
-        aider's primary use case: editing existing code. The fixture uses
-        an operation-agnostic function name (`compute`) so the planner's
-        natural-language instructions to aider cannot be misinterpreted
-        as a rename request — the only plausible fix is flipping the
-        operator, which is what we want to measure.
-        Expects: aider wrapper task present, exec output contains '7' (3+4).
-        """
-        # create file in session workspace so both aider (git) and
-        # exec (cwd) can access it with relative or absolute paths.
-        workspace = _func_kiso_dir / "sessions" / func_session
-        workspace.mkdir(parents=True, exist_ok=True)
-        target = workspace / "kiso_test_f41.py"
-        target.write_text(
-            "def compute(a, b):\n"
-            "    return a * b\n"
-            "\n"
-            "print(compute(3, 4))\n"
-        )
-
-        result = await run_message(
-            f"il file {target} contiene la funzione `compute` che "
-            "moltiplica i due argomenti, ma dovrebbe sommarli. "
-            "usa aider per correggere l'operatore da `*` a `+`, poi "
-            f"esegui `python3 {target}` e dimmi il risultato.",
-            timeout=LLM_MULTI_PLAN_TIMEOUT,
-        )
-        assert result.success, f"Plan failed: {result.task_types()}"
-
-        _assert_tool_used(result, "aider")
-
-        exec_outputs = "\n".join(
-            t.get("output") or "" for t in result.tasks
-            if t.get("type") == "exec"
-        )
-        assert re.search(r"\b7\b", exec_outputs), (
-            f"Expected '7' in exec output (3+4 after fix), "
-            f"got: {exec_outputs[:500]}"
-        )
-        assert_no_failure_language(result.last_plan_msg_output)
-
-
-# ---------------------------------------------------------------------------
-# F42 — Aider add feature to existing code
-# ---------------------------------------------------------------------------
-
-
-class TestF42AiderAddFeature:
-    """F42: Aider adds a method to an existing class."""
-
-    @pytest.mark.extended
-    async def test_aider_adds_method(self, preset_tools_installed, run_message, _func_kiso_dir, func_session):
-        """What: Pre-create Calculator class → aider adds multiply → exec verifies.
-
-        Why: Tests aider's ability to understand existing code structure and
-        extend it — the most common real-world aider use case.
-        Expects: aider wrapper task present, exec output contains '30' (5*6).
-        """
-        # create file in session workspace so both aider (git) and
-        # exec (cwd) can access it with relative or absolute paths.
-        workspace = _func_kiso_dir / "sessions" / func_session
-        workspace.mkdir(parents=True, exist_ok=True)
-        target = workspace / "kiso_test_f42.py"
-        target.write_text(
-            "class Calculator:\n"
-            "    def add(self, a, b):\n"
-            "        return a + b\n"
-        )
-
-        result = await run_message(
-            f"il file {target} contiene una classe Calculator "
-            "con solo il metodo add. usa aider per aggiungere un metodo "
-            "multiply(self, a, b) che ritorna a * b, poi testa "
-            "Calculator().multiply(5, 6) e dimmi il risultato",
-            timeout=LLM_MULTI_PLAN_TIMEOUT,
-        )
-        assert result.success, f"Plan failed: {result.task_types()}"
-
-        _assert_tool_used(result, "aider")
-
-        all_output = "\n".join(
-            t.get("output") or "" for t in result.tasks
-        )
-        assert re.search(r"\b30\b", all_output), (
-            f"Expected '30' in output (5*6 via multiply), got: {all_output[:500]}"
-        )
-        assert_no_failure_language(result.last_plan_msg_output)
+#
+# F41 (`test_aider_fixes_bug`) and F42 (`test_aider_adds_method`) tested
+# Aider workflows that depended on the v0.10-retired `preset_tools_installed`
+# session fixture. The wrapper subsystem they exercised is gone, and Aider
+# integration in v0.11+ flows through skills/MCPs rather than wrappers; the
+# replacement coverage is at the skill-runtime layer, not at this end-to-end
+# tier. Removing the orphaned tests so the extended tier reports zero
+# fixture-error collection failures.
 
 
 # ---------------------------------------------------------------------------
