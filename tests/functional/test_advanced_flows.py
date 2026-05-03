@@ -135,12 +135,18 @@ class TestF40SearchCodeExec:
         )
 
         types = result.task_types()
+        # M1609: the requires_mcp marker registers the stub under
+        # "search-mcp"; older test wording asserted "kiso-search" which
+        # was the legacy server name pre-Phase 4. Either name is the
+        # right answer — the M1609 invariant is "use the installed
+        # search MCP, do not reimplement search via inline exec".
         search_calls = [
             t for t in result.tasks
-            if t.get("type") == "mcp" and t.get("server") == "kiso-search"
+            if t.get("type") == "mcp"
+            and t.get("server") in ("kiso-search", "search-mcp")
         ]
         assert search_calls, (
-            f"No kiso-search MCP call in pipeline: types={types}"
+            f"No search MCP call in pipeline: types={types}"
         )
         assert "exec" in types, f"No exec task in pipeline: {types}"
 

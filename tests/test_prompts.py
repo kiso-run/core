@@ -106,7 +106,11 @@ class TestPromptBudgetSmoke:
         # the "installs are immediate" rule into the precise
         # `install_approved` conditional that no longer contradicts
         # Decision Tree branch 1.
-        ("planner.md", 23000),
+        # M1609 (2026-05-03): bumped to 23700 to accommodate the
+        # MCP-vs-exec capability rule (prefer installed MCP over
+        # inline-exec reimplementation when MCP declares matching
+        # capability) + abstract examples + unhealthy-fallback clause.
+        ("planner.md", 23700),
         ("messenger.md", 2500),
         ("reviewer.md", 3400),
     ])

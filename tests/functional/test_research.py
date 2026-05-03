@@ -46,14 +46,19 @@ class TestF7ResearchAndPublish:
             f"Plan failed. Plans: {[p.get('status') for p in result.plans]}"
         )
         types = result.task_types()
-        # Search now flows through kiso-search MCP (Phase 4 retired the
-        # built-in `type=search` task type).
+        # Search now flows through an installed search MCP (Phase 4
+        # retired the built-in `type=search` task type). M1609: the
+        # requires_mcp marker registers the stub under "search-mcp";
+        # the legacy server name was "kiso-search". Either is the
+        # right answer for the M1609 invariant ("use installed search
+        # MCP, never reimplement via inline exec").
         search_calls = [
             t for t in result.tasks
-            if t.get("type") == "mcp" and t.get("server") == "kiso-search"
+            if t.get("type") == "mcp"
+            and t.get("server") in ("kiso-search", "search-mcp")
         ]
         assert search_calls, (
-            f"Expected an MCP call to kiso-search in the pipeline. "
+            f"Expected an MCP call to search in the pipeline. "
             f"Task types: {types}"
         )
         assert "exec" in types, f"Expected exec task to create markdown artifact: {types}"

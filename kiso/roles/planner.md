@@ -71,7 +71,8 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 **MCP servers** (Model Context Protocol, `## MCP Methods` + `## MCP Resources`):
 - Structured calls to any capability server (filesystem, browser, search, codegen, transcription, ...). Use `type="mcp"` with `server`, `method`, and `args` conforming to the method's `inputSchema`.
 - Never invent server/method names — use only what is listed in `## MCP Methods`.
-- Prefer MCP for remote APIs or structured capability calls. Prefer exec for raw shell one-shots and local file surgery.
+- **MCP-vs-exec capability rule (M1609).** When the briefer's `## MCP Methods` lists a method whose declared capability covers what the user is asking for, the plan MUST call that MCP rather than reimplement the same capability via inline `exec` (Python script, curl pipeline, shell heredoc). This applies whenever an MCP exists for the intent — search, fetch, OCR, transcription, codegen, headless-browser, etc. — regardless of whether you "could" do it in shell. Exec fallback for that same capability is allowed ONLY when the MCP has already failed in this session or the briefer surfaces it as broken; otherwise scripting the same query in `exec` is a forbidden bypass.
+- Prefer MCP for remote APIs or structured capability calls. Prefer exec for raw shell one-shots and local file surgery (when no MCP covers the intent).
 
 **MCP Resources** — servers may also expose data objects (logs, DB rows, doc pages) under `## MCP Resources` as `server:uri` entries. To read one, emit an `mcp` task with the synthetic method name `__resource_read` and `args: {"uri": "<the uri>"}`. The server field is the server that owns the resource. Do not invent URIs — use only the ones listed in `## MCP Resources`. `__resource_read` accepts exactly one arg (`uri`); any other arg is rejected.
 

@@ -199,3 +199,61 @@ def test_planner_prompt_states_install_proposal_first_for_unknown_sources():
     assert "before approval" in text or "before the user approves" in text, (
         "planner.md must forbid exec installs before user approval"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1609 — MCP-preference invariant (abstract — no server names)
+# ---------------------------------------------------------------------------
+
+
+def test_planner_prompt_prefers_installed_mcp_over_inline_exec():
+    """When the briefer lists an MCP method whose declared capability
+    covers the user's intent, the planner must use the MCP rather than
+    reimplement the capability via inline ``exec``. The rule must be
+    present in the prompt as a directive sentence that explicitly
+    pairs "MCP" with "rather than" / "not" / "instead of" + "exec" —
+    a generic "Prefer MCP for remote APIs" sentence elsewhere in the
+    prompt is NOT enough, because V4-Flash skips it when the user's
+    intent feels scriptable.
+
+    No specific server / method / capability name (`kiso-search`,
+    `web search`, etc.) may appear in the new directive.
+    """
+    text = _PLANNER_MD.read_text().lower()
+    # Look for the directive in compact form: a window of ~200 chars
+    # that contains BOTH "mcp" and "exec" AND one of the rejection
+    # phrases ("rather than" / "instead of" / "not reimplement" / "not
+    # via exec"). This is what teaches the LLM "use the MCP, don't
+    # script the same thing in exec".
+    import re as _re
+    _RE = _re.compile(
+        r"mcp[^\n]{0,200}(rather than|instead of|not reimplement|not via exec|never reimplement)[^\n]{0,200}exec"
+        r"|"
+        r"exec[^\n]{0,200}(rather than|instead of)[^\n]{0,200}mcp",
+        _re.DOTALL,
+    )
+    assert _RE.search(text), (
+        "planner.md must contain a directive that pairs 'MCP' with a "
+        "rejection of inline exec ('rather than', 'instead of', 'never "
+        "reimplement') for the same capability — generic 'Prefer MCP' "
+        "wording is not directive enough"
+    )
+
+
+def test_planner_prompt_allows_exec_fallback_when_mcp_unavailable():
+    """The MCP-preference rule must explicitly allow ``exec`` fallback
+    when the MCP has failed or is broken in this session — otherwise
+    M1585's recovery flow regresses (the planner would refuse to fall
+    back even after the MCP demonstrably can't serve the request).
+    The fallback wording is constrained: the always-loaded
+    `skills_and_mcp` module must NOT use the word "unhealthy" — that
+    term belongs to the opt-in `mcp_recovery` module (cf.
+    `tests/test_briefer.py::TestBrieferScenarios`).
+    """
+    text = _PLANNER_MD.read_text().lower()
+    assert "fail" in text or "broken" in text, (
+        "planner.md must keep the exec-fallback escape hatch for the "
+        "MCP-recovery / failed-server case (M1585 invariant) using "
+        "wording that does not collide with the opt-in mcp_recovery "
+        "module ('unhealthy')"
+    )
