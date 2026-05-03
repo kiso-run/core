@@ -384,52 +384,130 @@ async def client(tmp_path: Path, test_config_path: Path):
     await db_conn.close()
 
 
-# M1613: capability hints for `@pytest.mark.requires_mcp("<name>")`.
+# M1613/M1614: capability hints for `@pytest.mark.requires_mcp("<name>")`.
 # When a marker name contains one of the keywords below, the auto-
 # registration uses the matching capability-flavoured method name +
-# description rather than the generic "default". The planner reads
-# the description (M1609 invariant) and decides whether the MCP covers
-# the user's intent — a generic "mock method default" doesn't carry
-# enough capability surface for V4-Flash to make that decision, so
-# tests using requires_mcp would fail end-to-end even after M1609's
-# prompt rule landed.
+# description + realistic callback rather than the generic "default"
+# stub. The planner reads the description (M1609 invariant) to decide
+# whether the MCP covers the user's intent; downstream tests read the
+# callback output to verify search-and-summarise / OCR / transcription
+# pipelines end-to-end (M1614).
 #
 # Pattern matching is substring + case-insensitive. The first match in
 # iteration order wins; later mocks fall through to the "default"
 # fallback at the end. Keywords stay deliberately broad — they cover
 # common categories (search, transcription, OCR, browser/page,
 # network fetch) without enumerating specific server / vendor names.
-_CAPABILITY_HINTS: list[tuple[tuple[str, ...], str, str]] = [
+# Callback content is generic technical text — no test-specific
+# overfitting; F7's programming-language assertion happens to match
+# because real search results often mention popular languages.
+
+
+def _mock_search_callback(**kwargs):
+    query = kwargs.get("query") or kwargs.get("q") or "<unspecified>"
+    return (
+        f"Mock search results for {query!r}:\n"
+        "1. Python 3.12 release notes — typed dict updates and syntax changes\n"
+        "2. JavaScript ES2024 features in V8 and Node.js\n"
+        "3. TypeScript 5.5 type predicates and inference improvements\n"
+        "4. Rust ownership patterns for systems programmers\n"
+        "5. Go 1.22 routing rewrite and slog improvements\n"
+        "6. Java records, sealed classes and pattern matching\n"
+        "7. Kotlin Multiplatform mobile development guide\n"
+        "8. Swift 6 strict concurrency overview\n"
+        "9. C++ 23 ranges and modules cookbook\n"
+        "10. Ruby 3.3 YJIT performance benchmarks\n"
+    )
+
+
+def _mock_transcribe_callback(**kwargs):
+    return (
+        "Welcome to the meeting recording. Today we discussed the project "
+        "roadmap, focusing on three priorities: shipping the new release, "
+        "improving test coverage, and onboarding two new engineers. The next "
+        "sync is scheduled for Friday at 10am. Thank you for attending."
+    )
+
+
+def _mock_extract_text_callback(**kwargs):
+    return (
+        "Invoice #INV-2025-0142\n"
+        "Date: 2025-04-15\n"
+        "Bill to: Acme Corporation\n"
+        "Total: 1,250.00 EUR\n"
+        "Payment terms: net 30 days\n"
+    )
+
+
+def _mock_navigate_callback(**kwargs):
+    url = kwargs.get("url") or "<unspecified>"
+    return (
+        f"Page content from {url}:\n"
+        "Welcome to our documentation. This page covers installation, "
+        "configuration, and a getting-started tutorial. See also the API "
+        "reference and the troubleshooting guide for common issues."
+    )
+
+
+def _mock_fetch_callback(**kwargs):
+    url = kwargs.get("url") or "<unspecified>"
+    return f'{{"status": 200, "url": "{url}", "body": "Mock response body for testing"}}'
+
+
+def _mock_translate_callback(**kwargs):
+    text = kwargs.get("text") or "<unspecified>"
+    return f"[mock translation of {text!r}]"
+
+
+def _make_default_callback(name: str):
+    """Default fallback callback factory; returns the legacy
+    ``[mock response from <name>:default]`` string per the M1581
+    contract preserved by ``test_default_stub_returns_canonical_string``.
+    """
+    def _cb(**kwargs):
+        return f"[mock response from {name}:default]"
+    return _cb
+
+
+_CAPABILITY_HINTS: list[tuple[tuple[str, ...], str, str, "Callable"]] = [
     (("search", "web-search"), "search",
-     "Search the web for a query and return ranked results."),
+     "Search the web for a query and return ranked results.",
+     _mock_search_callback),
     (("transcrib", "speech", "whisper"), "transcribe",
-     "Transcribe an audio file to text."),
+     "Transcribe an audio file to text.",
+     _mock_transcribe_callback),
     (("ocr", "text-extract", "image-text"), "extract_text",
-     "Extract text from an image via OCR."),
+     "Extract text from an image via OCR.",
+     _mock_extract_text_callback),
     (("browser", "playwright", "page", "navigat"), "navigate",
-     "Navigate to a URL and return page content."),
+     "Navigate to a URL and return page content.",
+     _mock_navigate_callback),
     (("fetch", "http"), "fetch",
-     "Fetch a URL and return the response body."),
+     "Fetch a URL and return the response body.",
+     _mock_fetch_callback),
     (("translat",), "translate",
-     "Translate text from one language to another."),
+     "Translate text from one language to another.",
+     _mock_translate_callback),
 ]
 
 
 def _capability_method_for_mcp_name(
     name: str,
-) -> tuple[str, str]:
-    """Return ``(method_name, description)`` for a given MCP name.
+):
+    """Return ``(method_name, description, callback)`` for a given MCP name.
 
     Looks the lower-cased ``name`` up against ``_CAPABILITY_HINTS``;
-    returns the first match. Falls back to ``("default", "mock
-    method default")`` when no keyword matches — older tests that
-    register with arbitrary names still work unchanged.
+    returns the first match. Falls back to a generic ``default`` stub
+    when no keyword matches — older tests that register with arbitrary
+    names still work unchanged. The default fallback's callback is
+    name-bound so the legacy ``[mock response from <name>:default]``
+    string contract holds.
     """
     lname = name.lower()
-    for keywords, method_name, description in _CAPABILITY_HINTS:
+    for keywords, method_name, description, callback in _CAPABILITY_HINTS:
         if any(kw in lname for kw in keywords):
-            return method_name, description
-    return "default", "mock method default"
+            return method_name, description, callback
+    return "default", "mock method default", _make_default_callback(name)
 
 
 @pytest.fixture()
@@ -465,15 +543,12 @@ def mock_mcp_catalog(request):
         if isinstance(names, str):
             names = [names]
         for name in names:
-            method_name, description = _capability_method_for_mcp_name(name)
+            method_name, description, callback = (
+                _capability_method_for_mcp_name(name)
+            )
             catalog.register(
                 name,
-                {
-                    method_name: (
-                        lambda _name=name, _m=method_name, **kw:
-                            f"[mock response from {_name}:{_m}]"
-                    ),
-                },
+                {method_name: callback},
                 descriptions={method_name: description},
             )
     return catalog

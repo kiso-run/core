@@ -95,3 +95,43 @@ def test_unknown_marker_falls_back_to_default(mock_mcp_catalog):
     desc = srv.descriptions.get("default", "")
     # Legacy description ("mock method default") is acceptable here.
     assert "mock" in desc.lower() or "default" in desc.lower()
+
+
+# ---------------------------------------------------------------------------
+# M1614 — capability callbacks return realistic content
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_mcp("search-mcp")
+def test_search_callback_returns_realistic_results(mock_mcp_catalog):
+    """M1614: the auto-registered ``search`` callback must return a
+    plausible search-result payload — not just the canonical
+    ``[mock response from <name>:<method>]`` string. Tests that pipe
+    the search output into a downstream artifact (markdown table,
+    summary, etc.) need real content to assert on.
+
+    Specifically, the callback's stringified output must contain at
+    least three distinct topic keywords that are common in technical
+    search results (programming languages, frameworks, etc.) so that
+    downstream tests can find evidence the search did surface
+    information. The exact keyword set is generic — no test-specific
+    overfitting.
+    """
+    srv = mock_mcp_catalog.servers["search-mcp"]
+    callback = srv.methods["search"]
+    result = callback(query="anything")
+
+    text = str(result).lower()
+    # Generic technical keywords that should plausibly appear in any
+    # mock search result; the test asserts at least three are present
+    # so the mock is "rich enough" without overfitting on F7's
+    # programming-language keyword set.
+    keywords = (
+        "python", "javascript", "typescript", "rust", "go", "java",
+        "swift", "kotlin", "ruby", "release", "version", "feature",
+    )
+    found = [k for k in keywords if k in text]
+    assert len(found) >= 3, (
+        f"search callback must return realistic content with at least "
+        f"three technical keywords; found {found} in:\n{text[:500]}"
+    )
