@@ -98,10 +98,20 @@ def _task_type_label(task: dict) -> str:
 
 
 def _format_task_list(tasks: list[dict], label: str) -> str:
-    """Format a task list with label and count."""
+    """Format a task list with label and count.
+
+    Tolerates task rows whose ``detail`` is missing or ``None`` —
+    surfaces an empty placeholder rather than raising ``KeyError``.
+    Raw ``task['detail']`` access masks asyncio.TimeoutError into a
+    noisy ``KeyError`` when a remaining row is partial under a
+    timeout / cancel race (M1617).
+    """
     if not tasks:
         return ""
-    items = [f"- [{_task_type_label(task)}] {task['detail']}" for task in tasks]
+    items = [
+        f"- [{_task_type_label(task)}] {task.get('detail') or ''}"
+        for task in tasks
+    ]
     return f"{label} ({len(tasks)}):\n" + "\n".join(items)
 
 
@@ -255,7 +265,13 @@ def _format_replan_tasks(completed: list[dict], remaining: list[dict]) -> list[s
             total_chars += len(item)
         parts.append("## Completed Tasks\n" + "\n".join(items))
     if remaining:
-        items = [f"- [{_task_type_label(task)}] {task['detail']}" for task in remaining]
+        # Tolerate partial-construction races (M1617): a remaining
+        # row missing `detail` must not crash replan-context
+        # rendering with KeyError.
+        items = [
+            f"- [{_task_type_label(task)}] {task.get('detail') or ''}"
+            for task in remaining
+        ]
         parts.append("## Remaining Tasks (not executed)\n" + "\n".join(items))
     return parts
 
