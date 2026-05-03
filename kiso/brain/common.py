@@ -921,7 +921,13 @@ BRIEFER_SCHEMA: dict = _build_strict_schema("briefing", {
     "output_indices": {"type": "array", "items": {"type": "integer"}},
     "relevant_tags": {"type": "array", "items": {"type": "string"}},
     "relevant_entities": {"type": "array", "items": {"type": "string"}},
-}, ["modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts", "context", "output_indices", "relevant_tags", "relevant_entities"])
+    # M1618 (v0.12 Phase A): the briefer detects the dominant language
+    # of the user message and emits it here. Downstream consumers
+    # (planner via response_lang, messenger via "Answer in {lang}.")
+    # rely on this field. M1620 retires the classifier; this field is
+    # the only source of language going forward.
+    "lang": {"type": "string"},
+}, ["modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts", "context", "output_indices", "relevant_tags", "relevant_entities", "lang"])
 
 # Available prompt modules for reviewer (heuristic selection, no briefer).
 # core is always included; these are optional additions.
@@ -1632,6 +1638,14 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
         errors.append("relevant_tags must be an array")
     if not isinstance(briefing.get("relevant_entities"), list):
         errors.append("relevant_entities must be an array")
+    # M1618: lang is a free-form English label of the user's language
+    # ("Italian", "English", "Spanish", …). Coerce missing / empty /
+    # non-string to "English" rather than emit a retry — reasoning-
+    # native models occasionally omit unused-looking string fields,
+    # and the safe default for our message templates is English.
+    lang = briefing.get("lang")
+    if not isinstance(lang, str) or not lang.strip():
+        briefing["lang"] = "English"
     return errors
 
 

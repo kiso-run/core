@@ -2443,6 +2443,15 @@ async def _process_message(
                                  plan_id=plan_id)
         return
 
+    # M1618 (v0.12 Phase A): the briefer now emits the user message's
+    # language; prefer it over the classifier's lang output when
+    # present. When the briefer fallback path was taken (LLM failure)
+    # `_briefer_lang` is empty and the classifier value (or "" if
+    # fast_path_enabled is off) remains in effect.
+    _briefer_lang = (plan.pop("_briefer_lang", "") or "").strip()
+    if _briefer_lang:
+        user_lang = _briefer_lang
+
     # Extract ephemeral secrets from plan
     session_secrets: dict[str, str] = {}
     if plan.get("secrets"):

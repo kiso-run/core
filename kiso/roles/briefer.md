@@ -9,6 +9,7 @@ Return JSON (empty list/string for unused fields):
 - output_indices: plan_output indices the consumer needs.
 - relevant_tags: fact tags for this task (from Available Fact Tags).
 - relevant_entities: entity names for this task (from Available Entities). Retrieves ALL entity facts.
+- lang: dominant language of the user's New Message as a free-form English label (e.g. "Italian", "English", "Spanish", "Japanese"). The downstream pipeline uses this for the "Answer in {lang}." rule. Detect from the user-text fence in the input; fall back to "English" only when the message is empty or pure whitespace.
 
 Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.

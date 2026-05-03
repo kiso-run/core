@@ -1089,6 +1089,10 @@ async def build_planner_messages(
         selected_skills = installed_skills
     if out_state is not None:
         out_state["selected_skills"] = list(selected_skills)
+        # M1618 (v0.12 Phase A): expose the briefer's detected language
+        # so the worker can prefer it over the classifier output for
+        # `response_lang`. Empty when briefer fallback path is taken.
+        out_state["briefer_lang"] = (briefing or {}).get("lang", "") if briefing else ""
     if selected_skills:
         skill_blocks = []
         for skill in selected_skills:
@@ -1269,6 +1273,11 @@ async def run_planner(
     )
     plan["install_proposal"] = bool(plan.get("needs_install"))
     plan["_selected_skills"] = planner_out_state.get("selected_skills", [])
+    # M1618 (v0.12 Phase A): expose the briefer's detected language
+    # (via planner_out_state) so the worker can prefer it over the
+    # classifier output for `response_lang`. Empty when briefer
+    # fallback path is taken.
+    plan["_briefer_lang"] = planner_out_state.get("briefer_lang", "")
 
     log.info("Plan: goal=%r, %d tasks, install_proposal=%s",
              plan["goal"], len(plan["tasks"]), plan["install_proposal"])

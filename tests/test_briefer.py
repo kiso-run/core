@@ -53,6 +53,7 @@ def _briefing(
     mcp_prompts=None,
     context="", output_indices=None,
     relevant_tags=None, relevant_entities=None,
+    lang="English",
 ) -> dict:
     return {
         "modules": modules or [],
@@ -64,6 +65,9 @@ def _briefing(
         "output_indices": output_indices or [],
         "relevant_tags": relevant_tags or [],
         "relevant_entities": relevant_entities or [],
+        # M1618: required field; tests default to English unless they
+        # need to exercise lang-specific behaviour.
+        "lang": lang,
     }
 
 
@@ -389,15 +393,62 @@ class TestBrieferPromptBudget:
         assert total_chars < 10000, f"Briefer input is {total_chars} chars (max 10000)"
 
     def test_schema_required_fields_match_validate(self):
-        """BRIEFER_SCHEMA required fields match what validate_briefing checks."""
+        """BRIEFER_SCHEMA required fields match what validate_briefing checks.
+
+        M1618: ``lang`` is a required field — the briefer detects the
+        dominant language of the user message and emits it so the
+        downstream pipeline (planner / messenger) can honour the
+        "Answer in {lang}." rule. This is the field that absorbs
+        language-detection responsibility from the soon-to-be-retired
+        classifier.
+        """
         schema_required = set(
             BRIEFER_SCHEMA["json_schema"]["schema"]["required"]
         )
         expected = {
             "modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts",
             "context", "output_indices", "relevant_tags", "relevant_entities",
+            "lang",
         }
         assert schema_required == expected
+
+    def test_schema_lang_is_string(self):
+        """M1618: ``lang`` must be typed as a string in the briefer
+        output schema. The downstream consumers (planner, messenger)
+        expect a free-form language label like "Italian" / "English",
+        not a list or enum.
+        """
+        schema = BRIEFER_SCHEMA["json_schema"]["schema"]["properties"]
+        assert "lang" in schema, "lang must be declared in BRIEFER_SCHEMA"
+        assert schema["lang"] == {"type": "string"}, (
+            f"lang must be {{'type': 'string'}}; got {schema['lang']!r}"
+        )
+
+    def test_briefer_prompt_mentions_language_detection(self):
+        """M1618: the briefer.md prompt must instruct the model to
+        detect the user message's language and emit it in the
+        briefing. Without this instruction the LLM has no reason to
+        populate the new ``lang`` field correctly.
+
+        Abstract: the test asserts presence of the lang/language
+        keyword in the briefer prompt — exact phrasing left to
+        prompt-craft.
+        """
+        from pathlib import Path
+        briefer_md = (
+            Path(__file__).resolve().parent.parent
+            / "kiso" / "roles" / "briefer.md"
+        ).read_text().lower()
+        assert "lang" in briefer_md, (
+            "briefer.md must instruct the model to detect / emit lang"
+        )
+        # Also guard against vague wording — the prompt should mention
+        # "language" (the human term) so the model understands the
+        # intent, not just a bare field name.
+        assert "language" in briefer_md, (
+            "briefer.md must use the word 'language' (not just 'lang') "
+            "so the LLM understands what to detect"
+        )
 
 
 # ---------------------------------------------------------------------------

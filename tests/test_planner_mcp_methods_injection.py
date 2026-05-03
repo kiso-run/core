@@ -53,6 +53,8 @@ def _briefing(**overrides) -> dict:
         "output_indices": [],
         "relevant_tags": [],
         "relevant_entities": [],
+        # M1618: required field; default to English for tests.
+        "lang": "English",
     }
     base.update(overrides)
     return base

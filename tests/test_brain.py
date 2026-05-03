@@ -5916,6 +5916,7 @@ class TestBrieferSchema:
             "output_indices": [0, 1, 2],
             "relevant_tags": ["browser", "tech-stack"],
             "relevant_entities": [],
+            "lang": "English",  # M1618: required field
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -5925,7 +5926,7 @@ class TestBrieferSchema:
             "skills": [],
             "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             "context": "",
-            # missing output_indices and relevant_tags
+            # missing output_indices, relevant_tags, lang
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
@@ -5939,6 +5940,7 @@ class TestBrieferSchema:
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
+            "lang": "English",
         }
         with pytest.raises(_jsonschema.ValidationError):
             _jsonschema.validate(invalid, BRIEFER_SCHEMA["json_schema"]["schema"])
@@ -5953,6 +5955,7 @@ class TestBrieferSchema:
             "output_indices": [],
             "relevant_tags": [],
             "relevant_entities": [],
+            "lang": "English",  # M1618: required field
         }
         _jsonschema.validate(valid, BRIEFER_SCHEMA["json_schema"]["schema"])
 
@@ -9183,6 +9186,7 @@ class TestBuildStrictSchema:
         assert set(schema["required"]) == {
             "modules", "skills", "mcp_methods", "mcp_resources", "mcp_prompts",
             "context", "output_indices", "relevant_tags", "relevant_entities",
+            "lang",  # M1618: required field
         }
 
     def test_curator_schema_unchanged(self):
