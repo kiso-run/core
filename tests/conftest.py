@@ -384,6 +384,54 @@ async def client(tmp_path: Path, test_config_path: Path):
     await db_conn.close()
 
 
+# M1613: capability hints for `@pytest.mark.requires_mcp("<name>")`.
+# When a marker name contains one of the keywords below, the auto-
+# registration uses the matching capability-flavoured method name +
+# description rather than the generic "default". The planner reads
+# the description (M1609 invariant) and decides whether the MCP covers
+# the user's intent — a generic "mock method default" doesn't carry
+# enough capability surface for V4-Flash to make that decision, so
+# tests using requires_mcp would fail end-to-end even after M1609's
+# prompt rule landed.
+#
+# Pattern matching is substring + case-insensitive. The first match in
+# iteration order wins; later mocks fall through to the "default"
+# fallback at the end. Keywords stay deliberately broad — they cover
+# common categories (search, transcription, OCR, browser/page,
+# network fetch) without enumerating specific server / vendor names.
+_CAPABILITY_HINTS: list[tuple[tuple[str, ...], str, str]] = [
+    (("search", "web-search"), "search",
+     "Search the web for a query and return ranked results."),
+    (("transcrib", "speech", "whisper"), "transcribe",
+     "Transcribe an audio file to text."),
+    (("ocr", "text-extract", "image-text"), "extract_text",
+     "Extract text from an image via OCR."),
+    (("browser", "playwright", "page", "navigat"), "navigate",
+     "Navigate to a URL and return page content."),
+    (("fetch", "http"), "fetch",
+     "Fetch a URL and return the response body."),
+    (("translat",), "translate",
+     "Translate text from one language to another."),
+]
+
+
+def _capability_method_for_mcp_name(
+    name: str,
+) -> tuple[str, str]:
+    """Return ``(method_name, description)`` for a given MCP name.
+
+    Looks the lower-cased ``name`` up against ``_CAPABILITY_HINTS``;
+    returns the first match. Falls back to ``("default", "mock
+    method default")`` when no keyword matches — older tests that
+    register with arbitrary names still work unchanged.
+    """
+    lname = name.lower()
+    for keywords, method_name, description in _CAPABILITY_HINTS:
+        if any(kw in lname for kw in keywords):
+            return method_name, description
+    return "default", "mock method default"
+
+
 @pytest.fixture()
 def mock_mcp_catalog(request):
     """M1580: per-test handle for the in-process Mock MCP framework.
@@ -397,11 +445,17 @@ def mock_mcp_catalog(request):
     M1581: when a test is decorated with
     `@pytest.mark.requires_mcp("name")` (or
     `@pytest.mark.requires_mcp(["a", "b"])`) the catalog is
-    auto-populated with a default stub for each named MCP. The stub
-    exposes a single `default` method that returns
-    `[mock response from <name>:default]`. Tests that need a richer
-    response can register the same name again — `register` overwrites
-    the prior entry — or add additional methods.
+    auto-populated with a stub for each named MCP.
+
+    M1613: the auto-registered stub now uses a capability-flavoured
+    method name + description (e.g. ``search-mcp`` → method
+    ``search`` with description "Search the web for a query and
+    return ranked results.") so the planner / briefer can match the
+    declared capability against the user's intent (M1609 invariant).
+    Names that don't match any capability keyword fall through to the
+    generic ``default`` method, preserving back-compat. Tests that
+    need richer or alternate methods can call ``register`` again —
+    later registrations overwrite earlier ones.
     """
     from tests._mcp_mock import MockMCPCatalog
     catalog = MockMCPCatalog()
@@ -411,10 +465,15 @@ def mock_mcp_catalog(request):
         if isinstance(names, str):
             names = [names]
         for name in names:
-            catalog.register(name, {
-                "default": (
-                    lambda _name=name, **kw:
-                        f"[mock response from {_name}:default]"
-                ),
-            })
+            method_name, description = _capability_method_for_mcp_name(name)
+            catalog.register(
+                name,
+                {
+                    method_name: (
+                        lambda _name=name, _m=method_name, **kw:
+                            f"[mock response from {_name}:{_m}]"
+                    ),
+                },
+                descriptions={method_name: description},
+            )
     return catalog

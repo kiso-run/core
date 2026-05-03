@@ -37,10 +37,18 @@ from kiso.mcp.schemas import MCPCallResult, MCPMethod, MCPServerInfo
 
 @dataclass
 class MockMCPServer:
-    """A single fake MCP server definition + its call log."""
+    """A single fake MCP server definition + its call log.
+
+    M1613: ``descriptions`` lets a registration carry capability-flavoured
+    text per method so the briefer surfaces "Search the web for a query"
+    rather than the generic "mock method search". The planner uses the
+    description to decide whether the MCP covers the user's intent
+    (M1609 invariant).
+    """
 
     name: str
     methods: dict[str, Callable[..., Any]]
+    descriptions: dict[str, str] = field(default_factory=dict)
     calls: list[tuple[str, dict]] = field(default_factory=list)
 
     def to_server(self) -> MCPServer:
@@ -67,7 +75,9 @@ class _MockClient:
         return [
             MCPMethod(
                 server=self._mock.name, name=method_name, title=None,
-                description=f"mock method {method_name}",
+                description=self._mock.descriptions.get(
+                    method_name, f"mock method {method_name}",
+                ),
                 input_schema={"type": "object"},
                 output_schema=None, annotations=None,
             )
@@ -119,9 +129,16 @@ class MockMCPCatalog:
         self.servers: dict[str, MockMCPServer] = {}
 
     def register(
-        self, name: str, methods: dict[str, Callable[..., Any]],
+        self,
+        name: str,
+        methods: dict[str, Callable[..., Any]],
+        descriptions: dict[str, str] | None = None,
     ) -> MockMCPServer:
-        srv = MockMCPServer(name=name, methods=dict(methods))
+        srv = MockMCPServer(
+            name=name,
+            methods=dict(methods),
+            descriptions=dict(descriptions or {}),
+        )
         self.servers[name] = srv
         return srv
 

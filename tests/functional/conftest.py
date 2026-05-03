@@ -535,7 +535,7 @@ async def func_app_client(func_config, func_db):
 
 
 @pytest_asyncio.fixture()
-async def run_message(func_config, func_db, func_session):
+async def run_message(func_config, func_db, func_session, mock_mcp_catalog):
     """Factory fixture: send a message through the full pipeline.
 
     Usage::
@@ -543,9 +543,31 @@ async def run_message(func_config, func_db, func_session):
         result = await run_message("vai su guidance.studio e dimmi cosa fa")
         assert result.success
         assert_italian(result.msg_output)
+
+    M1613: ``mock_mcp_catalog`` is wired through to the worker so tests
+    using ``@pytest.mark.requires_mcp("<name>")`` see the auto-registered
+    mock as a real installed MCP — both the briefer (catalog visibility)
+    and the worker (mcp task execution) get the same manager instance.
+    Tests without the marker get an empty catalog and the manager is
+    never actually called (no MCP-task plans are emitted).
     """
     # Inject boot facts (SSH key, hostname, version) — mirrors FastAPI lifespan
     await _collect_boot_facts(func_db)
+
+    # Build the MCP manager once per test from the mock catalog. When
+    # the catalog is empty (no `requires_mcp` marker), the manager is
+    # still constructed but exposes zero servers — the planner sees an
+    # empty `## MCP Methods` section and the worker never calls it.
+    mcp_manager = mock_mcp_catalog.build_manager() if mock_mcp_catalog.servers else None
+    # Warm the manager's method/resource/prompt cache so the briefer's
+    # `list_methods_cached_only` path returns the mock methods rather
+    # than an empty list. Without warm-up the planner doesn't see the
+    # mock catalog at all (M1581 contract).
+    if mcp_manager is not None:
+        for _name in mock_mcp_catalog.servers:
+            await mcp_manager.list_methods(_name)
+            await mcp_manager.list_resources(_name)
+            await mcp_manager.list_prompts(_name)
 
     async def _run(
         content: str,
@@ -590,6 +612,7 @@ async def run_message(func_config, func_db, func_session):
                 cancel_event,
                 llm_timeout=func_config.settings["llm_timeout"],
                 max_replan_depth=func_config.settings["max_replan_depth"],
+                mcp_manager=mcp_manager,
                 messenger_timeout=func_config.settings["llm_timeout"],
             ),
             timeout=timeout,

@@ -39,3 +39,47 @@ the project ran at `0.7.0` for the entire v0.8 cycle.
   NOT move work into it until the user explicitly says so
 - Per the global rule "Respect version boundaries in devplans": never
   close a version or create a new version file unless the user says so
+
+## Prompt-first debugging — kiso runs on prompts, not on luck
+
+When an LLM-driven test (live or functional) fails reproducibly, the
+**first** thing to check is the prompt that arrives at the model. We
+use modern top-tier models — if one of them gets it wrong consistently,
+the prompt that reached it is broken: incomplete, contradictory, or
+overweight on a competing rule. "Model variance" / "LLM bias" is the
+last resort, not the first explanation.
+
+Workflow:
+
+1. Dump the assembled prompt for the failing turn (system + user
+   context). Add a temporary
+   `if os.environ.get("KISO_DUMP_PLANNER_PROMPT"): write to disk`
+   hook in `kiso/brain/planner.py:build_planner_messages` (or the
+   role-specific equivalent) and re-run the failing test with the
+   env var set.
+2. Read the dumped prompt end-to-end as a single document. Look for:
+   - Pairs of rules whose plain reading produces opposite outputs for
+     the same input (e.g. "msg-only plans are rejected" vs Decision
+     Tree branch 1 "msg-only plan with `needs_install`").
+   - Authoritative context-injected sections (e.g. `## Install
+     Routing: Mode: system_pkg`) that override the static prompt
+     when the routing decision was actually wrong.
+   - Generic rules (e.g. "natural-language WHAT, not HOW") that
+     conflict with specific rules ("install `exec` detail must be
+     the literal `kiso mcp install --from-url <url>`").
+3. Fix the contradiction at the source. If a context-injection layer
+   is producing wrong text (e.g. `_classify_install_mode` falling
+   back to `system_pkg` for any "install <X>" without an explicit
+   hint), fix the injector. If a static rule is too categorical,
+   rephrase it.
+4. Only after the prompt audit is clean — and the test still fails
+   deterministically — consider higher-cost interventions
+   (validator backstop, model upgrade, splitting the role into two
+   specialized prompts).
+
+This rule was learned the hard way during M1608 (planner trust-
+persistence flake): five real prompt contradictions were buried in
+a 22 KB prompt; each manual fix nudged the flake rate but only the
+ones that surfaced via prompt-dump truly closed the regression.
+"Modello top, prompt male" — Kiso runs on prompts; if a prompt
+fails, debug the prompt, not the model.
