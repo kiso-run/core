@@ -6,7 +6,6 @@ import pytest
 
 from kiso.brain import (
     build_briefer_messages,
-    build_classifier_messages,
     validate_plan,
 )
 from kiso.store import (
@@ -28,25 +27,9 @@ class TestSelfInspection:
         yield conn
         await conn.close()
 
-    # ── 1. Classifier routes self-inspection to "plan" ──
+    # ── M1620: classifier retired; routing handled by planner ──
 
-    def test_classifier_messages_include_self_inspection_query(self):
-        """Self-inspection queries are passed through unchanged to the classifier."""
-        msgs = build_classifier_messages("mostrami la tua chiave SSH pubblica")
-        assert msgs[1]["content"] == "mostrami la tua chiave SSH pubblica"
-
-    def test_classifier_messages_include_hostname_query(self):
-        msgs = build_classifier_messages("what is your hostname?")
-        assert msgs[1]["content"] == "what is your hostname?"
-
-    def test_classifier_knowledge_question_not_special(self):
-        """'What is SSH?' is a knowledge question — no self-inspection trigger."""
-        msgs = build_classifier_messages("what is SSH?")
-        # The user text goes in user message, not system
-        user_text = msgs[1]["content"]
-        assert "what is SSH?" in user_text
-
-    # ── 2. Briefer selects entity "self" for system queries ──
+    # ── 1. Briefer selects entity "self" for system queries ──
 
     def test_briefer_prompt_mentions_self_entity(self):
         """Briefer prompt includes self-entity context when provided."""

@@ -18,7 +18,6 @@ import kiso.worker as worker
 
 _BRAIN_PUBLIC_NAMES = {
     "BrieferError",
-    "ClassifierError",
     "CuratorError",
     "ExecTranslatorError",
     "MessengerError",
@@ -26,7 +25,6 @@ _BRAIN_PUBLIC_NAMES = {
     "PlanError",
     "ReviewError",
     "SummarizerError",
-    "build_classifier_messages",
     "build_exec_translator_messages",
     "build_messenger_messages",
     "build_planner_messages",
@@ -36,7 +34,6 @@ _BRAIN_PUBLIC_NAMES = {
     "invalidate_prompt_cache",
     "is_stop_message",
     "run_briefer",
-    "run_classifier",
     "run_curator",
     "run_inflight_classifier",
     "run_messenger",

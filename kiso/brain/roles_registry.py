@@ -55,15 +55,9 @@ _ROLES: tuple[RoleMeta, ...] = (
         prompt_filename="briefer.md",
         python_entry="kiso.brain.common.run_briefer",
     ),
-    RoleMeta(
-        name="classifier",
-        description=(
-            "Routes user messages into plan, investigate, chat_kb, or chat."
-        ),
-        model_key="classifier",
-        prompt_filename="classifier.md",
-        python_entry="kiso.brain.common.run_classifier",
-    ),
+    # M1620: classifier role retired in v0.12 — every message routes
+    # through briefer → planner → execute, with the planner Decision
+    # Tree as the single source of routing.
     RoleMeta(
         name="consolidator",
         description=(

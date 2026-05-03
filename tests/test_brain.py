@@ -14,7 +14,6 @@ from kiso.brain import (
     BRIEFER_MODULES,
     BRIEFER_SCHEMA,
     BrieferError,
-    ClassifierError,
     CURATOR_SCHEMA,
     CuratorError,
     PLAN_SCHEMA,
@@ -34,7 +33,6 @@ from kiso.brain import (
     _repair_json,
     _extract_json_object,
     build_briefer_messages,
-    build_classifier_messages,
     build_curator_messages,
     build_exec_translator_messages,
     build_messenger_messages,
@@ -42,10 +40,8 @@ from kiso.brain import (
     build_planner_messages,
     build_reviewer_messages,
     build_summarizer_messages,
-    run_classifier,
     run_inflight_classifier,
     build_inflight_classifier_messages,
-    CLASSIFIER_CATEGORIES,
     INFLIGHT_CATEGORIES,
     is_stop_message,
     _sanitize_messenger_output,
@@ -715,7 +711,7 @@ class TestLoadSystemPrompt:
             p.start()
         try:
             # First load triggers self-heal for every requested role
-            for role in ("classifier", "planner", "briefer", "messenger"):
+            for role in ("planner", "briefer", "messenger"):
                 prompt = _load_system_prompt(role)
                 assert prompt and len(prompt) > 100
                 assert (tmp_path / "roles" / f"{role}.md").exists()
@@ -1621,11 +1617,13 @@ class TestRunPlannerInvestigateMode:
             raw={},
         )
 
-    async def test_default_planner_does_not_include_investigate_module(
+    async def test_default_planner_does_not_include_legacy_investigate_module(
         self, db, config,
     ):
-        """Without investigate=True, the planner system prompt does
-        NOT contain the Investigate mode section."""
+        """M1620: the legacy ``<!-- MODULE: investigate -->`` block is
+        retired; the planner Decision Tree (branch 6) owns the
+        diagnostic-intent contract instead. The legacy section heading
+        must not appear in any planner prompt."""
         captured: dict = {}
 
         async def fake_call_llm(cfg, role, messages, **kwargs):
@@ -1638,32 +1636,13 @@ class TestRunPlannerInvestigateMode:
             await run_planner(db, config, "sess1", "admin", "hello")
 
         assert "system" in captured
+        # Legacy module heading is gone.
         assert "Investigate mode" not in captured["system"]
-
-    async def test_investigate_true_injects_investigate_module(
-        self, db, config,
-    ):
-        """With investigate=True, the planner system prompt contains
-        the 'Investigate mode' section text."""
-        captured: dict = {}
-
-        async def fake_call_llm(cfg, role, messages, **kwargs):
-            if role == "planner":
-                captured["system"] = messages[0]["content"]
-            return VALID_PLAN
-
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock,
-                   side_effect=fake_call_llm):
-            await run_planner(
-                db, config, "sess1", "admin", "why is X failing?",
-                investigate=True,
-            )
-
-        assert "system" in captured
-        assert "Investigate mode" in captured["system"]
-        # Key contract phrases from the (compressed) module
-        assert "read-only" in captured["system"].lower()
-        assert "do not change state" in captured["system"].lower()
+        # Decision Tree diagnostic branch (M1619) is present in the
+        # always-loaded planning_rules module — exposed via lower-case
+        # diagnostic vocabulary.
+        sys_lower = captured["system"].lower()
+        assert "diagnose" in sys_lower or "diagnostic" in sys_lower
 
     async def test_invalid_json_retries_before_raising(self, db, config):
         """M84b: JSON parse error should retry, not raise immediately."""
@@ -3743,248 +3722,6 @@ def _make_config_for_classifier():
         settings=full_settings(),
         raw={},
     )
-
-
-class TestBuildClassifierMessages:
-    def test_basic_structure(self):
-        """build_classifier_messages returns system + user messages."""
-        msgs = build_classifier_messages("hello there")
-        assert len(msgs) == 2
-        assert msgs[0]["role"] == "system"
-        assert msgs[1]["role"] == "user"
-        assert msgs[1]["content"] == "hello there"
-
-    def test_system_prompt_loaded(self):
-        """System prompt should come from classifier.md."""
-        msgs = build_classifier_messages("test")
-        assert "plan" in msgs[0]["content"]
-        assert "chat" in msgs[0]["content"]
-
-    def test_manage_knowledge_in_plan_category(self):
-        """'manage knowledge' listed in plan category actions."""
-        msgs = build_classifier_messages("test")
-        assert "manage knowledge" in msgs[0]["content"]
-
-    def test_entity_names_included(self):
-        """entity names appear in classifier messages when provided."""
-        msgs = build_classifier_messages("what about flask?", entity_names="flask, python, self")
-        assert "Known Entities" in msgs[1]["content"]
-        assert "flask, python, self" in msgs[1]["content"]
-
-    def test_entity_names_omitted_when_empty(self):
-        """no entity section when no entities available."""
-        msgs = build_classifier_messages("hello")
-        assert "Known Entities" not in msgs[1]["content"]
-
-
-class TestClassifyMessage:
-    @pytest.mark.parametrize("llm_return,message,expected_cat,expected_lang", [
-        ("chat:English", "hello", "chat", "English"),
-        ("chat_kb:Italian", "cosa sai su te stesso?", "chat_kb", "Italian"),
-        ("plan:English", "list files", "plan", "English"),
-        # investigate is the 4th category
-        ("investigate:English", "why is nginx returning 502?", "investigate", "English"),
-        ("investigate:Italian", "perché il server è down?", "investigate", "Italian"),
-        ("INVESTIGATE:English", "show me the config", "investigate", "English"),
-        ("investigate", "is the db running", "investigate", ""),
-        ("chat", "hello", "chat", ""),  # LLM fallback: no lang → messenger detects
-        ("  chat:French\n", "merci", "chat", "French"),  # strips whitespace
-        ("CHAT:ENGLISH", "thanks", "chat", "English"),  # case insensitive → title case
-        ("I think this is a chat", "hello", "plan", ""),  # unexpected → plan, no forced lang
-        ("", "hello", "plan", ""),  # empty → plan, no forced lang
-        ("chat:Russian", "привет", "chat", "Russian"),  # full language name
-        ("plan:Chinese", "列出文件", "plan", "Chinese"),  # full language name
-        ("category:Italian", "dimmi qualcosa", "plan", "Italian"),  # literal category
-        ("category:Italian:plan", "vai su google", "plan", "Italian"),  # category:lang:cat
-        ("category:French:chat", "merci", "chat", "French"),  # category:lang:chat
-    ], ids=[
-        "chat-English", "chat_kb-Italian", "plan-English",
-        "investigate-en-bug", "investigate-it-bug",
-        "investigate-case-insensitive", "investigate-no-lang",
-        "plain-category-fallback",
-        "whitespace", "case-insensitive", "unexpected-fallback",
-        "empty-fallback", "Russian", "Chinese",
-        "category-Italian", "category-Italian-plan",
-        "category-French-chat",
-    ])
-    async def test_run_classifier_parsing(self, llm_return, message, expected_cat, expected_lang):
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, return_value=llm_return):
-            cat, lang = await run_classifier(config, message)
-        assert cat == expected_cat
-        assert lang == expected_lang
-
-    async def test_llm_error_falls_back_to_plan(self):
-        """run_classifier returns ('plan', '') when LLM call fails."""
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMError("timeout")):
-            cat, lang = await run_classifier(config, "hello")
-        assert cat == "plan"
-        assert lang == ""
-
-    async def test_budget_exceeded_falls_back_to_plan(self):
-        """run_classifier returns ('plan', '') when LLM budget is exhausted."""
-        from kiso.llm import LLMBudgetExceeded
-        config = _make_config_for_classifier()
-        with patch("kiso.brain.call_llm", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("over")):
-            cat, lang = await run_classifier(config, "hello")
-        assert cat == "plan"
-        assert lang == ""
-
-    async def test_uses_classifier_model(self):
-        """run_classifier should call LLM with 'classifier' role."""
-        config = _make_config_for_classifier()
-        mock_llm = AsyncMock(return_value="chat:en")
-        with patch("kiso.brain.call_llm", mock_llm):
-            await run_classifier(config, "hello", session="s1")
-        mock_llm.assert_called_once()
-        assert mock_llm.call_args[0][1] == "classifier"  # role argument
-        assert mock_llm.call_args[1].get("session") == "s1"
-
-
-class TestClassifierPromptContent:
-    def test_classifier_prompt_exists(self):
-        """classifier.md role file should exist."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert len(prompt) > 0
-
-    def test_classifier_prompt_mentions_categories(self):
-        """Classifier prompt should define plan, chat_kb, and chat categories."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "plan" in prompt
-        assert "chat_kb" in prompt
-        assert "chat" in prompt
-
-    def test_classifier_prompt_safe_fallback(self):
-        """Classifier prompt should instruct to default to plan when in doubt."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "doubt" in prompt.lower()
-        assert "plan" in prompt
-
-    def test_classifier_prompt_covers_urls(self):
-        """Classifier prompt should explicitly mention URLs/websites as 'plan'."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "url" in prompt or "website" in prompt
-        assert "domain" in prompt
-
-    def test_classifier_prompt_covers_any_language(self):
-        """Classifier prompt should handle actions in any language."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "any language" in prompt
-
-    def test_classifier_prompt_has_knowledge_question_example(self):
-        """classifier anchors conceptual questions as chat."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "what is recursion" in prompt or "explain with" in prompt
-
-    def test_classifier_model_is_not_lite(self):
-        """classifier uses gemini-2.5-flash (not lite) for nuanced classification."""
-        from kiso.config import MODEL_DEFAULTS
-        assert "lite" not in MODEL_DEFAULTS["classifier"]
-
-    def test_classifier_prompt_has_recent_context_rule(self):
-        """classifier prompt accepts Recent Conversation for follow-up detection."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "Recent Conversation" in prompt
-        assert "follow-up" in prompt.lower() or "follow up" in prompt.lower()
-
-    def test_classifier_prompt_covers_system_state(self):
-        """system state → plan, unless in Known Entities → chat_kb."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "system state" in prompt
-        assert "real-time" in prompt or "changes over time" in prompt
-        assert "known entities" in prompt
-        assert "chat_kb" in prompt
-
-    def test_classifier_prompt_defines_chat_kb(self):
-        """classifier prompt defines chat_kb category."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "chat_kb" in prompt
-
-    def test_classifier_prompt_chat_kb_self_referential(self):
-        """chat_kb covers self-referential knowledge queries."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "what do you know" in prompt
-        assert "cosa sai" in prompt
-
-    def test_classifier_prompt_chat_kb_entities(self):
-        """chat_kb covers questions about known entities."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "entities" in prompt
-
-    def test_classifier_categories_constant(self):
-        """CLASSIFIER_CATEGORIES includes plan, chat, and chat_kb."""
-        assert "plan" in CLASSIFIER_CATEGORIES
-        assert "chat" in CLASSIFIER_CATEGORIES
-        assert "chat_kb" in CLASSIFIER_CATEGORIES
-
-    def test_classifier_prompt_covers_ecosystem_management(self):
-        """plan category includes skill/MCP/connector management."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text().lower()
-        assert "skill" in prompt or "mcp" in prompt
-        assert "connector" in prompt
-
-    def test_classifier_prompt_supports_non_latin_languages(self):
-        """classifier prompt includes non-Latin language examples."""
-        prompt = (_ROLES_DIR / "classifier.md").read_text()
-        assert "Russian" in prompt
-        assert "Chinese" in prompt
-        assert "ALWAYS include the language name" in prompt
-
-
-class TestClassifierContext:
-    """classifier receives conversation context for follow-up detection."""
-
-    def test_build_messages_without_context(self):
-        msgs = build_classifier_messages("hello")
-        assert "Recent Conversation" not in msgs[1]["content"]
-
-    def test_build_messages_with_context(self):
-        msgs = build_classifier_messages("e la pagina?", recent_context="Last plan goal: Navigate to example.com")
-        assert "Recent Conversation" in msgs[1]["content"]
-        assert "Navigate to example.com" in msgs[1]["content"]
-
-    def test_build_messages_context_appended_after_content(self):
-        msgs = build_classifier_messages("test msg", recent_context="Last plan goal: X")
-        user_content = msgs[1]["content"]
-        # Content comes first, context after
-        assert user_content.index("test msg") < user_content.index("Recent Conversation")
-
-    async def test_classify_passes_context_to_llm(self):
-        config = _make_config_for_classifier()
-        mock_llm = AsyncMock(return_value="plan")
-        with patch("kiso.brain.call_llm", mock_llm):
-            await run_classifier(config, "e la pagina?", recent_context="Last plan goal: Nav")
-        # Check the user message includes context
-        messages = mock_llm.call_args[0][2]
-        assert "Recent Conversation" in messages[1]["content"]
-
-    async def test_classify_empty_context_no_section(self):
-        config = _make_config_for_classifier()
-        mock_llm = AsyncMock(return_value="chat")
-        with patch("kiso.brain.call_llm", mock_llm):
-            await run_classifier(config, "hello", recent_context="")
-        messages = mock_llm.call_args[0][2]
-        assert "Recent Conversation" not in messages[1]["content"]
-
-    def test_classifier_sees_kiso_response(self):
-        """classifier receives kiso's response in conversation context."""
-        from kiso.brain import build_recent_context
-        context = build_recent_context([
-            {"role": "user", "user": "root", "content": "fai screenshot di guidance.studio"},
-            {"role": "assistant", "content": "Serve il browser wrapper. Vuoi che lo installi?"},
-        ])
-        msgs = build_classifier_messages("oh yeah", recent_context=context)
-        user_content = msgs[1]["content"]
-        assert "[kiso]" in user_content
-        assert "Vuoi che lo installi?" in user_content
-        assert "oh yeah" in user_content
-
-    def test_classifier_prompt_has_affirmative_rule(self):
-        """classifier prompt mentions yes/no confirmation pattern."""
-        from pathlib import Path
-        prompt = (Path(__file__).parent.parent / "kiso" / "roles" / "classifier.md").read_text()
-        assert "affirmative" in prompt.lower() or "yes/no" in prompt.lower()
 
 
 # --- Planner — don't decompose atomic CLI operations ---

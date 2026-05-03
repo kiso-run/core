@@ -787,7 +787,6 @@ async def build_planner_messages(
     paraphrased_context: str | None = None,
     is_replan: bool = False,
     install_approved: bool = False,
-    investigate: bool = False,
     mcp_catalog_text: str | None = None,
     mcp_resources_text: str | None = None,
     mcp_prompts_text: str | None = None,
@@ -934,8 +933,6 @@ async def build_planner_messages(
             modules.append("session_files")
         if "planning_rules" not in modules:
             modules.append("planning_rules")
-        if investigate and "investigate" not in modules:
-            modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", modules)
     else:
         fallback_modules: list[str] = list(BRIEFER_MODULES - {
@@ -955,8 +952,6 @@ async def build_planner_messages(
             fallback_modules.append("plugin_install")
         if _has_session_files:
             fallback_modules.append("session_files")
-        if investigate:
-            fallback_modules.append("investigate")
         system_prompt = _load_modular_prompt("planner", fallback_modules)
 
     is_admin = user_role == "admin"
@@ -1195,7 +1190,6 @@ async def run_planner(
     is_replan: bool = False,
     install_approved: bool = False,
     max_tasks_override: int | None = None,
-    investigate: bool = False,
     mcp_manager: "Any | None" = None,
 ) -> dict:
     """Run the planner: build context, call LLM, validate, retry if needed.
@@ -1230,7 +1224,7 @@ async def run_planner(
         db, config, session, user_role, new_message,
         user_mcp=user_mcp, user_skills=user_skills,
         paraphrased_context=paraphrased_context, is_replan=is_replan,
-        install_approved=install_approved, investigate=investigate,
+        install_approved=install_approved,
         mcp_catalog_text=_mcp_catalog_text,
         mcp_resources_text=_mcp_resources_text,
         mcp_prompts_text=_mcp_prompts_text,

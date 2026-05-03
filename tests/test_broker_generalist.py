@@ -30,9 +30,6 @@ from kiso.brain.planner import validate_plan
 
 
 _PLANNER_MD = Path(__file__).resolve().parent.parent / "kiso" / "roles" / "planner.md"
-_CLASSIFIER_MD = (
-    Path(__file__).resolve().parent.parent / "kiso" / "roles" / "classifier.md"
-)
 
 
 _PROMPT_FORBIDDEN = (
@@ -47,14 +44,6 @@ def test_planner_prompt_no_hardcoded_capability_names(forbidden):
     assert forbidden.lower() not in text, (
         f"planner.md leaked a hardcoded MCP name {forbidden!r} — broker "
         f"model must stay capability-agnostic (decision 6)"
-    )
-
-
-@pytest.mark.parametrize("forbidden", _PROMPT_FORBIDDEN)
-def test_classifier_prompt_no_hardcoded_capability_names(forbidden):
-    text = _CLASSIFIER_MD.read_text().lower()
-    assert forbidden.lower() not in text, (
-        f"classifier.md leaked a hardcoded MCP name {forbidden!r}"
     )
 
 

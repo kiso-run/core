@@ -256,7 +256,7 @@ class TestInitKisoDirs:
             _init_kiso_dirs()
         roles_dir = tmp_path / "roles"
         # At least the canonical roles must be copied
-        for role in ("planner", "reviewer", "messenger", "classifier",
+        for role in ("planner", "reviewer", "messenger",
                      "briefer", "curator", "paraphraser"):
             target = roles_dir / f"{role}.md"
             assert target.is_file(), f"role {role}.md not copied"

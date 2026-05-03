@@ -4,8 +4,8 @@ Two changes verified here:
 
 1. Python function renames in ``kiso.brain``:
    - ``run_exec_translator`` → ``run_worker``
-   - ``classify_message`` → ``run_classifier``
    - ``classify_inflight`` → ``run_inflight_classifier``
+   - (M1620: the message-level classifier is retired entirely.)
 
 2. Bundled role file rename: ``summarizer-session.md`` → ``summarizer.md``,
    with an idempotent in-place migration for any existing user override.
@@ -30,10 +30,6 @@ class TestPythonFunctionRenames:
         from kiso import brain
         assert callable(brain.run_worker)
 
-    def test_run_classifier_exists_in_brain(self):
-        from kiso import brain
-        assert callable(brain.run_classifier)
-
     def test_run_inflight_classifier_exists_in_brain(self):
         from kiso import brain
         assert callable(brain.run_inflight_classifier)
@@ -48,9 +44,14 @@ class TestPythonFunctionRenames:
     def test_old_classify_message_is_gone(self):
         from kiso import brain
         assert not hasattr(brain, "classify_message"), (
-            "classify_message should be renamed to run_classifier; "
-            "no shim is allowed (M1293)"
+            "classify_message must not be re-introduced (M1293 + M1620)"
         )
+
+    def test_run_classifier_is_gone(self):
+        """M1620: the message-level classifier is retired; the planner
+        Decision Tree handles routing now."""
+        from kiso import brain
+        assert not hasattr(brain, "run_classifier")
 
     def test_old_classify_inflight_is_gone(self):
         from kiso import brain
@@ -82,10 +83,10 @@ class TestRegistryAlignment:
         assert r is not None
         assert r.python_entry.endswith("run_worker")
 
-    def test_classifier_python_entry_uses_run_classifier(self):
+    def test_classifier_role_is_retired_in_registry(self):
+        """M1620: the classifier role no longer appears in the registry."""
         from kiso.brain.roles_registry import get_role
-        r = get_role("classifier")
-        assert r.python_entry.endswith("run_classifier")
+        assert get_role("classifier") is None
 
     def test_inflight_classifier_python_entry_uses_run_inflight_classifier(self):
         from kiso.brain.roles_registry import get_role
@@ -196,10 +197,21 @@ class TestGrepGuard:
     def test_no_classify_message_in_kiso_source(self):
         for f in self._kiso_py_files():
             text = f.read_text(encoding="utf-8")
-            # `classify_message` is the old name; the new one is `run_classifier`.
-            # Still allowed in docstrings? No — we want a hard rename.
+            # M1620: classify_message and run_classifier are both gone.
             assert "classify_message" not in text, (
                 f"{f}: still references classify_message"
+            )
+
+    def test_no_run_classifier_in_kiso_source(self):
+        """M1620: run_classifier is fully retired; no source file may
+        reference it (apart from inflight-classifier which is a
+        distinct symbol — call it ``run_inflight_classifier``)."""
+        import re
+        pattern = re.compile(r"\brun_classifier\b")
+        for f in self._kiso_py_files():
+            text = f.read_text(encoding="utf-8")
+            assert not pattern.search(text), (
+                f"{f}: still references run_classifier (M1620 retired)"
             )
 
     def test_no_classify_inflight_in_kiso_source(self):

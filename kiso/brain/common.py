@@ -1756,87 +1756,11 @@ async def run_briefer(
     return briefing
 
 
-# ---------------------------------------------------------------------------
-# Classifier (fast path)
-# ---------------------------------------------------------------------------
-
-
-class ClassifierError(Exception):
-    """Classifier generation failure."""
-
-
-def build_classifier_messages(
-    content: str, recent_context: str = "",
-    entity_names: str = "",
-) -> list[dict]:
-    """Build the message list for the classifier LLM call."""
-    user_text = content
-    if recent_context:
-        user_text = f"{content}\n\n## Recent Conversation\n{recent_context}"
-    if entity_names:
-        user_text = f"{user_text}\n\n## Known Entities\n{entity_names}"
-    return _build_messages(_load_system_prompt("classifier"), user_text)
-
-
-CLASSIFIER_CATEGORIES: frozenset[str] = frozenset({
-    "plan", "chat", "chat_kb", "investigate",
-})
-
-
-async def run_classifier(
-    config: Config, content: str, session: str = "",
-    recent_context: str = "",
-    entity_names: str = "",
-) -> tuple[str, str]:
-    """Classify a user message and detect its language.
-
-    Returns ``(category, lang)`` where *category* is one of
-    :data:`CLASSIFIER_CATEGORIES` and *lang* is a full English
-    language name (e.g. ``"English"``, ``"Italian"``).  On any error
-    or ambiguous output, returns ``("plan", "")`` as safe fallback.
-    """
-    messages = build_classifier_messages(
-        content, recent_context=recent_context, entity_names=entity_names,
-    )
-    try:
-        raw = await call_llm(config, "classifier", messages, session=session)
-    except LLMError as e:
-        log.warning("Classifier LLM failed, falling back to plan: %s", e)
-        return "plan", ""
-
-    log.info("Classifier raw LLM output: %r", raw.strip())
-    result = raw.strip()
-
-    # Expected format: "cat:Language" (e.g. "chat:Italian", "plan:English")
-    if ":" in result:
-        cat, lang = result.split(":", 1)
-        cat = cat.strip().lower()
-        lang = lang.strip().title()  # "russian" → "Russian"
-        if cat in CLASSIFIER_CATEGORIES and lang:
-            log.info("Classifier: %s (lang=%s)", cat, lang)
-            return cat, lang
-        # Defensive: LLM returned literal "category:Language" or
-        # "category:Language:cat"
-        if cat == "category" and ":" in lang:
-            lang_part, cat_part = lang.split(":", 1)
-            lang_part = lang_part.strip().title()
-            cat_part = cat_part.strip().lower()
-            if cat_part in CLASSIFIER_CATEGORIES and lang_part:
-                log.info("Classifier: %s (literal 'category', lang=%s)", cat_part, lang_part)
-                return cat_part, lang_part
-        if cat == "category" and lang:
-            log.info("Classifier: plan (literal 'category', lang=%s)", lang)
-            return "plan", lang
-
-    # LLM fallback: plain category without lang — don't force a language,
-    # let the messenger detect language from the user message.
-    if result.lower() in CLASSIFIER_CATEGORIES:
-        log.info("Classifier: %s (no lang — messenger will detect)", result.lower())
-        return result.lower(), ""
-
-    # Ambiguous output — safe fallback (plan, no forced language)
-    log.warning("Classifier returned unexpected value %r, falling back to plan", raw.strip())
-    return "plan", ""
+# M1620 (v0.12 Phase C): the message-level classifier is retired.
+# Every message now routes through briefer → planner → execute, with
+# the planner's Decision Tree as the single source of routing truth.
+# Lang detection moves into the briefer (M1618); investigate-mode
+# trigger moves into Decision Tree branch 6 (M1619).
 
 
 # --- Stop pattern fast-path ---
@@ -1913,13 +1837,11 @@ __brain_exports__ = [
     "BRIEFER_MODULES",
     "BRIEFER_SCHEMA",
     "BrieferError",
-    "CLASSIFIER_CATEGORIES",
     "CURATOR_VERDICTS",
     "CURATOR_VERDICT_ASK",
     "CURATOR_VERDICT_DISCARD",
     "CURATOR_VERDICT_PROMOTE",
     "CURATOR_MODULES",
-    "ClassifierError",
     "INFLIGHT_CATEGORIES",
     "INFLIGHT_SCHEMA",
     "MemoryPack",
@@ -1975,13 +1897,11 @@ __brain_exports__ = [
     "_retry_llm_with_validation",
     "_strip_fences",
     "build_briefer_messages",
-    "build_classifier_messages",
     "build_inflight_classifier_messages",
     "build_recent_context",
     "check_safety_rules",
     "classify_failure_class",
     "run_inflight_classifier",
-    "run_classifier",
     "FAILURE_CLASS_BLOCKED_POLICY",
     "FAILURE_CLASS_DELIVERY_SPLIT",
     "FAILURE_CLASS_PLAN_SHAPE",

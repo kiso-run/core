@@ -17,7 +17,7 @@ _ROLES_DIR = Path(__file__).resolve().parent.parent / "kiso" / "roles"
 
 _EXPECTED_ROLES = [
     "planner.md", "reviewer.md", "messenger.md", "worker.md",
-    "classifier.md", "briefer.md", "curator.md",
+    "briefer.md", "curator.md",
     "summarizer.md", "paraphraser.md",
     "inflight-classifier.md",
 ]
@@ -29,7 +29,6 @@ _ROLE_CORE_TERMS: list[tuple[str, list[str]]] = [
     ("reviewer.md", ["ok", "replan", "stuck", "expect", "summary", "deterministic"]),
     ("messenger.md", ["language", "verbatim", "fabricat", "published files", "digits"]),
     ("worker.md", ["cannot_translate", "sudo"]),
-    ("classifier.md", ["plan", "chat"]),
     ("briefer.md", ["context", "modules"]),
     ("curator.md", ["promote", "discard", "entity"]),
     ("summarizer.md", ["english"]),
@@ -200,7 +199,7 @@ class TestPlannerModules:
         "core", "planning_rules", "skills_and_mcp",
         "data_flow", "web", "replan",
         "kiso_commands", "user_mgmt", "plugin_install",
-        "mcp_recovery", "session_files", "investigate",
+        "mcp_recovery", "session_files",
     ]
 
     @pytest.mark.parametrize("module", [m for m in _ALL_MODULES if m != "core"])

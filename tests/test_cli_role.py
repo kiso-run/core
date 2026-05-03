@@ -48,7 +48,7 @@ class TestRoleReset:
             args = argparse.Namespace(name=None, all=True, yes=True)
             role_reset(args)
         roles_dest = role_dir / "roles"
-        for role in ("planner", "reviewer", "messenger", "classifier",
+        for role in ("planner", "reviewer", "messenger",
                      "briefer", "curator", "paraphraser"):
             target = roles_dest / f"{role}.md"
             assert target.is_file(), f"{role}.md missing after reset --all"

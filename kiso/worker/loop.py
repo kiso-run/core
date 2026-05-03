@@ -36,13 +36,11 @@ from kiso.brain import (
     WORKER_PHASE_PLANNING,
     build_recent_context,
     BrieferError,
-    ClassifierError,
     ExecTranslatorError,
     MessengerError,
     ParaphraserError,
     PlanError,
     ReviewError,
-    run_classifier,
     apply_consolidation_result,
     run_briefer,
     run_curator,
@@ -196,115 +194,10 @@ async def _deliver_webhook_if_configured(
     )
 
 
-#: Fixed deterministic transition messages emitted when chat_kb pre-flight
-#: returns no facts and the worker re-routes the message to the investigate
-#: planner. Keyed by the language string returned by ``run_classifier``
-#: (e.g. ``"Italian"``, ``"English"``). Any unknown or empty value falls
-#: back to the English string. Adding a language is a one-line change.
-_CHAT_KB_FALLBACK_MSGS: dict[str, str] = {
-    "English": (
-        "I don't have this in my knowledge base. "
-        "Want me to search for it? Reply 'search' to look it up, "
-        "or paste a fact or source URL to teach me."
-    ),
-    "Italian": (
-        "Non ho questa informazione nella mia knowledge base. "
-        "Vuoi che la cerchi? Rispondi 'cerca' per cercare, "
-        "oppure incollami un fatto o una URL come fonte."
-    ),
-}
-
-async def _chat_kb_preflight_fallback(
-    db: aiosqlite.Connection,
-    config: Config,
-    session: str,
-    plan_id: int,
-    content: str,
-    user_lang: str,
-    slog: SessionLogger | None = None,
-    username: str | None = None,
-) -> bool:
-    """Pre-flight chat_kb facts check with transparent investigate fallback.
-
-    When the classifier routes a message to ``chat_kb``, do a cheap keyword
-    search against the facts store *before* committing to the chat_kb path.
-    If the search returns no facts, persist a deterministic transition msg
-    task on ``plan_id`` (so the user sees the mode switch via the existing
-    task/webhook delivery path) and return ``True`` so the caller can
-    re-route the same user message through ``run_planner(investigate=True)``.
-
-    Returns ``False`` (do NOT fall back) when:
-
-    - The user message has no extractable keywords.
-    - The pre-flight returns at least one fact.
-    - The pre-flight raises (treat as "safe to proceed with chat_kb"; we
-      reserve the fallback for *empty result*, not *failed query*).
-
-    Visibility (``username`` and the bound ``session_project_id`` together):
-    pass-through to ``search_facts_scored``. Membership-based visibility
-    (the project rules encoded in ``_fact_session_filter``) requires the
-    caller's username — without it, project-scoped facts are filtered out
-    even when the user is a member, producing a false-positive empty-KB
-    fallback for sessions that simply happen to be unbound.
-
-    Trade-off: the pre-flight uses raw keywords from ``content``
-    (``content.lower().split()[:10]``), the same pattern
-    ``_msg_task_impl`` uses on its own facts query. The full chat_kb
-    path adds ``entity_id`` + ``relevant_tags`` from the briefer, so
-    the pre-flight is strictly less precise. False negatives are
-    accepted as "investigate plan instead of chat response" — verbose
-    but never wrong.
-    """
-    keywords = [w for w in content.lower().split()[:10] if w] if content else []
-    if not keywords:
-        return False
-    try:
-        session_project_id = await get_session_project_id(db, session)
-        preflight_facts = await search_facts_scored(
-            db,
-            entity_id=None,
-            tags=None,
-            keywords=keywords,
-            session=session,
-            is_admin=False,
-            username=username,
-            project_id=session_project_id,
-        )
-    except Exception as e:  # noqa: BLE001 — see docstring: errors don't trigger fallback
-        log.warning("chat_kb pre-flight failed (%s) — staying on chat_kb path", e)
-        if slog:
-            slog.info("chat_kb pre-flight failed: %s — staying on chat_kb path", e)
-        return False
-    if preflight_facts:
-        return False
-
-    transition_msg = _CHAT_KB_FALLBACK_MSGS.get(user_lang) or _CHAT_KB_FALLBACK_MSGS["English"]
-    deploy_secrets = collect_deploy_secrets()
-    # M1579d: broker-model graceful degradation. Mark the plan as
-    # paused for user input (awaits_input=true) and persist the
-    # graceful msg directly. The caller skips the fast-path; the
-    # next turn will be the user's reply ("search", a URL, a fact).
-    await update_plan_goal(db, plan_id, "KB lookup → admit")
-    await update_plan_awaits_input(db, plan_id, True)
-    transition_task_id = await create_task(
-        db, plan_id, session, TASK_TYPE_MSG, transition_msg,
-    )
-    await update_task(
-        db, transition_task_id, "done", output=transition_msg, duration_ms=0,
-    )
-    await save_message(
-        db, session, None, "assistant", transition_msg,
-        trusted=True, processed=True,
-    )
-    await _deliver_webhook_if_configured(
-        db, config, session, transition_task_id, transition_msg, False,
-        deploy_secrets=deploy_secrets,
-    )
-    log.info("chat_kb pre-flight empty → graceful broker pause (awaits_input)")
-    if slog:
-        slog.info("chat_kb pre-flight empty → graceful broker pause (awaits_input)")
-    return True
-
+# M1620: _CHAT_KB_FALLBACK_MSGS, _chat_kb_preflight_fallback retired.
+# The classifier they served is gone; the planner's Decision Tree
+# branches 2/5 produce equivalent msg-only plans (awaits_input /
+# kb_answer) when the user asks for knowledge that isn't in the KB.
 
 def _is_briefer_budget_ok(config: Config) -> bool:
     """Check if the briefer should run based on config and LLM budget."""
@@ -414,128 +307,10 @@ async def _post_plan_knowledge(
     )
 
 
-async def _fast_path_chat(
-    db: aiosqlite.Connection,
-    config: Config,
-    session: str,
-    msg_id: int,
-    content: str,
-    messenger_timeout: int = 120,
-    slog: SessionLogger | None = None,
-    plan_id: int | None = None,
-    user_lang: str = "en",
-) -> int:
-    """Fast path for chat messages: skip planner, go straight to messenger.
-
-    Reuses an existing plan (if *plan_id* given) or creates a new one so the
-    CLI renders normally and ``/status`` works.  Delivers webhook if configured.
-
-    Returns the plan_id (used by caller for post-plan usage tracking).
-
-    .. note::
-
-       Post-plan knowledge processing (curator, summarizer, fact
-       consolidation) is handled by the caller after this returns,
-       so chat-heavy sessions still trigger summarization.
-    """
-    deploy_secrets = collect_deploy_secrets()
-    if plan_id is None:
-        plan_id = await create_plan(db, session, msg_id, "Chat response")
-    else:
-        await update_plan_goal(db, plan_id, "Chat response")
-    task_id = await create_task(db, plan_id, session, TASK_TYPE_MSG, content)
-    await update_task(db, task_id, "running")
-    await update_task_substatus(db, task_id, _SUBSTATUS_COMPOSING)
-
-    # Store classifier usage on the plan header
-    classifier_usage = get_usage_since(0)
-    if classifier_usage["input_tokens"] or classifier_usage["output_tokens"]:
-        await update_plan_usage(
-            db, plan_id,
-            classifier_usage["input_tokens"], classifier_usage["output_tokens"],
-            classifier_usage["model"],
-            llm_calls=classifier_usage.get("calls"),
-        )
-
-    usage_idx_before = get_usage_index()
-    idx_after_briefer = [usage_idx_before]  # mutated by callback
-
-    async def _flush_briefer():
-        """Flush briefer calls so CLI renders panels before messenger runs."""
-        await _append_calls(db, task_id, usage_idx_before)
-        idx_after_briefer[0] = get_usage_index()
-
-    t0 = time.perf_counter()
-    try:
-        try:
-            # Budget: briefer + messenger + headroom for DB/scoring queries.
-            # messenger_timeout alone equals a single call_llm budget,
-            # leaving no room for the briefer or retries.
-            chat_timeout = messenger_timeout + _BRIEFER_MSG_TIMEOUT + 30
-            text = await asyncio.wait_for(
-                _msg_task(config, db, session, content, goal=content,
-                          include_recent=True,
-                          user_message=content,
-                          on_briefer_done=_flush_briefer,
-                          response_lang=user_lang),
-                timeout=chat_timeout,
-            )
-        except asyncio.TimeoutError:
-            raise MessengerError(f"Messenger timed out after {messenger_timeout}s")
-    except (LLMError, MessengerError) as e:
-        task_duration_ms = int((time.perf_counter() - t0) * 1000)
-        log.error("Fast path messenger failed: %s", e)
-        if slog:
-            slog.info("Fast path failed: %s", e)
-        error_text = f"Chat response failed: {e}"
-        # Persist any partial LLM calls collected before the failure so verbose
-        # panels still show the attempted messenger call.
-        await _append_calls(db, task_id, idx_after_briefer[0])
-        await update_task(db, task_id, "failed", output=error_text, duration_ms=task_duration_ms)
-        await update_plan_status(db, plan_id, "failed")
-        audit.log_task(
-            session, task_id, TASK_TYPE_MSG, content, "failed", task_duration_ms, 0,
-            deploy_secrets=deploy_secrets,
-        )
-        await save_message(
-            db, session, None, "system", error_text,
-            trusted=True, processed=True,
-        )
-        return plan_id
-
-    task_duration_ms = int((time.perf_counter() - t0) * 1000)
-    await update_task(db, task_id, "done", output=text, duration_ms=task_duration_ms)
-    await update_plan_status(db, plan_id, "done")
-
-    audit.log_task(
-        session, task_id, TASK_TYPE_MSG, content, "done", task_duration_ms,
-        len(text), deploy_secrets=deploy_secrets,
-    )
-
-    # Append messenger call immediately (incremental rendering)
-    await _append_calls(db, task_id, idx_after_briefer[0])
-
-    # Store messenger token totals
-    step_usage = get_usage_since(usage_idx_before)
-    await update_task_usage(
-        db, task_id,
-        step_usage["input_tokens"], step_usage["output_tokens"],
-    )
-
-    # Save assistant response to conversation history
-    await save_message(
-        db, session, None, "assistant", text,
-        trusted=True, processed=True,
-    )
-
-    # Webhook delivery
-    await _deliver_webhook_if_configured(
-        db, config, session, task_id, text, True,
-        deploy_secrets=deploy_secrets,
-    )
-
-    if slog:
-        slog.info("Fast path done: chat response delivered (%dms)", task_duration_ms)
+# M1620: _fast_path_chat retired. Every message routes through
+# briefer → planner → execute. The planner emits msg-only plans
+# (Decision Tree branches 1-5) for conversational / knowledge intents;
+# the messenger is invoked as a regular `msg` task within the plan.
 
     return plan_id
 
@@ -1609,7 +1384,6 @@ async def run_worker(
 ):
     """Worker loop for a session. Drains queue, plans, executes tasks."""
     idle_timeout = setting_float(config.settings, "worker_idle_timeout", lo=0.01)
-    classifier_timeout = setting_int(config.settings, "classifier_timeout", lo=1)
     llm_timeout = setting_int(config.settings, "llm_timeout", lo=1)
     messenger_timeout = llm_timeout  # unified
     max_replan_depth = setting_int(config.settings, "max_replan_depth", lo=0)
@@ -1683,7 +1457,7 @@ async def run_worker(
                 _pending_knowledge_task = await _process_message(
                     db, config, session, msg, cancel_event,
                     llm_timeout,
-                    max_replan_depth, classifier_timeout=classifier_timeout,
+                    max_replan_depth,
                     messenger_timeout=messenger_timeout,
                     slog=slog, set_phase=set_phase,
                     update_hints=update_hints,
@@ -2292,7 +2066,6 @@ async def _process_message(
     cancel_event: asyncio.Event | None,
     llm_timeout: int,
     max_replan_depth: int,
-    classifier_timeout: int = 30,
     messenger_timeout: int = 120,
     slog: SessionLogger | None = None,
     set_phase: Callable[[str], None] | None = None,
@@ -2319,79 +2092,22 @@ async def _process_message(
     await mark_message_processed(db, msg_id)
 
     # --- Fast path: skip planner for conversational messages ---
-    # Paraphraser is intentionally skipped here — the messenger only sees
-    # session summary + facts + the current user message (all trusted).
-    # Untrusted messages feed into planner context, not messenger context.
-    # fetch recent conversation (user + kiso) for classifier context
-    _recent_for_classifier = await get_recent_messages(db, session, limit=3)
-    _classifier_ctx = build_recent_context(_recent_for_classifier, max_chars=500)
+    # M1620: classifier retired — no recent-context / entity-names
+    # gathering needed pre-planning. The briefer handles context
+    # selection from the full pool when invoked by run_planner.
 
-    # Compact entity names for classifier — helps distinguish chat_kb vs plan
-    _all_entities = await get_all_entities(db)
-    _entity_names = ", ".join(e["name"] for e in _all_entities) if _all_entities else ""
-
-    # Create plan record before classifier so the CLI can render it immediately.
+    # Create plan record before planning so the CLI can render it immediately.
     # This ensures the plan header appears before inflight indicators.
     plan_id = await create_plan(db, session, msg_id, "Thinking...")
 
-    fast_path_enabled = setting_bool(config.settings, "fast_path_enabled")
-    user_lang = ""  # empty = messenger detects from user message
-    msg_class = "plan"  # tracked so run_planner gets the investigate flag below
-    if fast_path_enabled:
-        _notify_phase(set_phase, WORKER_PHASE_CLASSIFYING)
-        try:
-            msg_class, user_lang = await asyncio.wait_for(
-                run_classifier(
-                    config, content, session=session,
-                    recent_context=_classifier_ctx,
-                    entity_names=_entity_names,
-                ),
-                timeout=classifier_timeout,
-            )
-        except asyncio.TimeoutError:
-            log.warning("Classifier timed out after %ds, falling back to chat",
-                        classifier_timeout)
-            msg_class = "chat"
-        # chat_kb safety net (M1291 + M1579d): if the classifier routed
-        # to chat_kb but the KB has no facts matching the user message,
-        # the fallback persists a graceful msg-only plan with
-        # awaits_input=true and we skip the fast-path entirely. The next
-        # turn (user's reply) will pick up where the broker pause left
-        # off. This refines the classifier; it does not override it.
-        if msg_class == "chat_kb":
-            if await _chat_kb_preflight_fallback(
-                db, config, session, plan_id, content, user_lang,
-                slog=slog, username=username,
-            ):
-                clear_llm_budget()
-                _notify_phase(set_phase, WORKER_PHASE_IDLE)
-                return _spawn_knowledge_task(db, config, session, plan_id, llm_timeout)
-        if msg_class in ("chat", "chat_kb"):
-            log.info("Fast path: %s message, skipping planner", msg_class)
-            if slog:
-                slog.info("Fast path: classified as %s, skipping planner", msg_class)
-            _notify_phase(set_phase, WORKER_PHASE_EXECUTING)
-            fast_plan_id = await _fast_path_chat(
-                db, config, session, msg_id, content,
-                messenger_timeout=messenger_timeout, slog=slog,
-                plan_id=plan_id, user_lang=user_lang,
-            )
-            # Bump fact usage for fast path (facts contributed to chat response)
-            await _bump_fact_usage(db, content, session, user_role)
-            # Spawn post-plan knowledge processing in background
-            clear_llm_budget()
-            _notify_phase(set_phase, WORKER_PHASE_IDLE)
-            return _spawn_knowledge_task(db, config, session, fast_plan_id, llm_timeout)
-
-    # Store classifier usage immediately so verbose panels can render
-    classifier_usage = get_usage_since(0)
-    if classifier_usage["input_tokens"] or classifier_usage["output_tokens"]:
-        await update_plan_usage(
-            db, plan_id,
-            classifier_usage["input_tokens"], classifier_usage["output_tokens"],
-            classifier_usage["model"],
-            llm_calls=classifier_usage.get("calls"),
-        )
+    # M1620 (v0.12 Phase C): the classifier is retired. Every message
+    # follows briefer → planner → execute. The planner's Decision Tree
+    # is the single source of routing — branches 1-5 produce msg-only
+    # plans (needs_install / awaits_input / kb_answer / knowledge),
+    # branch 6 produces read-only diagnostic plans, branch 7 produces
+    # full action plans. Lang is surfaced by the briefer (M1618) and
+    # propagated as `plan["_briefer_lang"]`.
+    user_lang = ""  # populated below from briefing
 
     # Paraphraser — fetch untrusted messages, paraphrase if any
     paraphrased_context: str | None = None
@@ -2432,9 +2148,6 @@ async def _process_message(
             on_context_ready=_flush_pre_planner_usage,
             on_retry=_on_planner_retry,
             install_approved=_install_approved,
-            # investigate mode → planner gets the read-only
-            # diagnose-first contract injected as a modular section.
-            investigate=(msg_class == "investigate"),
             mcp_manager=mcp_manager,
         )
     except PlanError as e:

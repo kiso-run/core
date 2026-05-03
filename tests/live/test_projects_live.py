@@ -2,20 +2,22 @@
 
 A fact taught in session A (bound to project X) must be retrievable
 from session B when B is also bound to project X. The unit + DB tier
-already verifies the storage path; this live test confirms the LLM
-mediation: classifier routes B's question to chat_kb, briefer
-surfaces the project-scoped fact, the messenger answers with the
-stored value.
+already verifies the storage path; this live test confirms the
+project-scoped visibility invariant under live conditions.
+
+(M1620: the classifier-routing assertion was removed when the
+classifier was retired. The planner's Decision Tree branch 5
+handles the kb_answer routing now and is exercised by the
+broker-generalist live tests; the storage / cross-session
+visibility invariant pinned here remains independent of routing.)
 """
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
 
-from kiso.brain import run_classifier, build_recent_context
 from kiso.store import (
     create_project,
     create_session,
@@ -27,8 +29,6 @@ from kiso.store import (
 )
 
 pytestmark = pytest.mark.llm_live
-
-from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
 
 
 class TestFlowPCrossSessionProject:
@@ -75,24 +75,11 @@ class TestFlowPCrossSessionProject:
             f"deploy fact not surfaced in session B: {hits!r}"
         )
 
-        # Live mediation: with B asking about the deploy script, the
-        # classifier should route to chat_kb (the fact is in stored
-        # knowledge).
+        # Persist a user message in session B for completeness — the
+        # planner Decision Tree (branch 5: kb_answer) is exercised by
+        # the broker-generalist live tier; this test pins only the
+        # storage / cross-session visibility invariant.
         await save_message(
             live_db, session_b, "testadmin", "user",
             "where's our deploy script?",
-        )
-        category, _ = await asyncio.wait_for(
-            run_classifier(
-                live_config, "where's our deploy script?",
-                recent_context="",
-            ),
-            timeout=TIMEOUT,
-        )
-        # The classifier may return chat_kb (fact lookup) or
-        # investigate (live system query). chat is wrong — we have
-        # stored knowledge for it.
-        assert category in ("chat_kb", "investigate"), (
-            f"classifier returned {category!r}; expected chat_kb or "
-            f"investigate (project fact stored)"
         )

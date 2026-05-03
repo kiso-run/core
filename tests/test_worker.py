@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiso.brain import ClassifierError, CuratorError, ExecTranslatorError, MessengerError, ParaphraserError, PlanError, ReviewError, SummarizerError
+from kiso.brain import CuratorError, ExecTranslatorError, MessengerError, ParaphraserError, PlanError, ReviewError, SummarizerError
 from kiso.config import Config, ConfigError, Provider, User, KISO_DIR
 from kiso.llm import LLMBudgetExceeded, LLMError
 from kiso.store import (
@@ -36,7 +36,6 @@ from kiso.worker.exec import _exec_task
 from kiso.worker.loop import (
     _apply_curator_result,
     _execute_plan,
-    _fast_path_chat,
     _get_unresolved_failed_outputs,
     _is_unresolved_failed_output,
     _PlanCtx,
@@ -6099,361 +6098,6 @@ class TestSessionWorkspacePubDir:
             assert pub_dir.is_dir()
 
 
-# --- Fast path (_fast_path_chat) ---
-
-
-class TestFastPathChat:
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_creates_plan_and_task(self, db, tmp_path):
-        """_fast_path_chat creates a plan with a single msg task."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hello!"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        tasks = await get_tasks_for_session(db, "sess1")
-        assert len(tasks) == 1
-        assert tasks[0]["type"] == "msg"
-        assert tasks[0]["status"] == "done"
-        assert tasks[0]["output"] == "Hello!"
-
-    async def test_plan_status_done(self, db, tmp_path):
-        """_fast_path_chat sets plan status to done."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "done"
-        assert plan["goal"] == "Chat response"
-
-    async def test_saves_assistant_message(self, db, tmp_path):
-        """_fast_path_chat saves the response as an assistant message."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Reply"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        msgs = await get_recent_messages(db, "sess1", limit=10)
-        assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
-        assert any("Reply" in m["content"] for m in assistant_msgs)
-
-    async def test_messenger_failure_marks_plan_failed(self, db, tmp_path):
-        """_fast_path_chat marks plan as failed when messenger errors."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
-        tasks = await get_tasks_for_session(db, "sess1")
-        assert tasks[0]["status"] == "failed"
-
-    async def test_webhook_delivered(self, db, tmp_path):
-        """_fast_path_chat delivers webhook with final=True."""
-        config = make_config()
-        mock_wh = AsyncMock()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
-             patch("kiso.worker.loop._deliver_webhook_if_configured", mock_wh), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        mock_wh.assert_called_once()
-        # final argument should be True
-        assert mock_wh.call_args[1].get("final", mock_wh.call_args[0][5]) is True
-
-    async def test_passes_content_as_goal(self, db, tmp_path):
-        """_fast_path_chat passes the user message as both detail and goal."""
-        config = make_config()
-        mock_messenger = AsyncMock(return_value="response")
-        with patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "thanks!")
-
-        # run_messenger receives goal=content
-        call_kwargs = mock_messenger.call_args
-        assert call_kwargs[1].get("goal", call_kwargs[0][4] if len(call_kwargs[0]) > 4 else "") == "thanks!"
-
-
-# --- Fast path integration in _process_message ---
-
-
-CHAT_PLAN = {
-    "goal": "Chat",
-    "secrets": None,
-    "tasks": [{"type": "msg", "detail": "hi", "args": None, "expect": None}],
-}
-
-
-class TestFastPathIntegration:
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        msg_id = await save_message(conn, "sess1", "u1", "user", "hello", trusted=True, processed=False)
-        yield conn, msg_id
-        await conn.close()
-
-    def _make_msg(self, msg_id):
-        return {"id": msg_id, "content": "hello", "user_role": "admin", "user_mcp": None, "user_skills": None, "username": "u1"}
-
-    async def test_chat_message_skips_planner(self, db, tmp_path):
-        """When classifier returns 'chat', planner should not be called."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
-        msg = self._make_msg(msg_id)
-        mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value=("chat", "en"))
-        mock_messenger = AsyncMock(return_value="Hi there!")
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_planner", mock_planner), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-
-        mock_classifier.assert_called_once()
-        mock_planner.assert_not_called()
-        mock_messenger.assert_called_once()
-
-    async def test_plan_message_goes_to_planner(self, db, tmp_path):
-        """When classifier returns 'plan', normal planner flow is used."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
-        msg = self._make_msg(msg_id)
-        mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value=("plan", "en"))
-        mock_messenger = AsyncMock(return_value="Done")
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_planner", mock_planner), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-
-        mock_classifier.assert_called_once()
-        mock_planner.assert_called_once()
-
-    async def test_plan_message_accepts_structured_tool_args(self, db, tmp_path):
-        """Planner output with dict args should persist without crashing the worker."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
-        msg = self._make_msg(msg_id)
-        plan = {
-            "goal": "Browse example.com",
-            "secrets": None,
-            "tasks": [
-                {
-                    "type": "exec",
-                    "detail": "Open the page",
-                    "args": {"action": "navigate", "url": "https://example.com"},
-                    "expect": "Page loaded",
-                },
-                {"type": "msg", "detail": "Answer in English. Done.", "args": None, "expect": None},
-            ],
-        }
-        mock_planner = AsyncMock(return_value=plan)
-        mock_classifier = AsyncMock(return_value=("plan", "en"))
-        mock_loop = AsyncMock(return_value=1)
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_planner", mock_planner), \
-             patch("kiso.worker.loop._run_planning_loop", mock_loop), \
-             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-
-        plan_row = await get_plan_for_session(conn, "sess1")
-        tasks = await get_tasks_for_plan(conn, plan_row["id"])
-        assert tasks[0]["args"] == '{"action": "navigate", "url": "https://example.com"}'
-        mock_loop.assert_called_once()
-
-    async def test_fast_path_disabled_skips_classifier(self, db, tmp_path):
-        """When fast_path_enabled=False, classifier is not called."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": False})
-        msg = self._make_msg(msg_id)
-        mock_planner = AsyncMock(return_value=CHAT_PLAN)
-        mock_classifier = AsyncMock(return_value=("chat", "en"))
-        mock_messenger = AsyncMock(return_value="Hi")
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_planner", mock_planner), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-
-        mock_classifier.assert_not_called()
-        mock_planner.assert_called_once()
-
-    async def test_fast_path_runs_post_plan_knowledge(self, db, tmp_path):
-        """Fast path should spawn background knowledge task (summarizer, etc.)."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
-        msg = self._make_msg(msg_id)
-        mock_classifier = AsyncMock(return_value=("chat", "en"))
-        mock_messenger = AsyncMock(return_value="Hi")
-        mock_post = AsyncMock()
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            bg_task = await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-            # Background task must be returned
-            assert bg_task is not None
-            await bg_task  # let it run
-
-        mock_post.assert_called_once()
-
-    async def test_fast_path_skips_paraphraser(self, db, tmp_path):
-        """Fast path must NOT call the paraphraser — context is already trusted."""
-        conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
-        msg = self._make_msg(msg_id)
-        mock_classifier = AsyncMock(return_value=("chat", "en"))
-        mock_messenger = AsyncMock(return_value="Hi")
-        mock_paraphraser = AsyncMock(return_value="paraphrased")
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop.run_paraphraser", mock_paraphraser), \
-             _patch_kiso_dir(tmp_path):
-            from kiso.worker.loop import _process_message
-            await _process_message(
-                conn, config, "sess1", msg, None, 5, 60, 3,
-            )
-
-        mock_paraphraser.assert_not_called()
-
-
-# --- _fast_path_chat edge cases ---
-
-
-class TestFastPathEdgeCases:
-    @pytest.fixture()
-    async def db(self, tmp_path):
-        conn = await init_db(tmp_path / "test.db")
-        await create_session(conn, "sess1")
-        yield conn
-        await conn.close()
-
-    async def test_audit_log_on_success(self, db, tmp_path):
-        """_fast_path_chat calls audit.log_task on success."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
-             patch("kiso.worker.loop.audit.log_task") as mock_audit, \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        mock_audit.assert_called_once()
-        # Verify it logged as "done"
-        assert mock_audit.call_args[0][4] == "done"  # status arg
-
-    async def test_audit_log_on_failure(self, db, tmp_path):
-        """_fast_path_chat calls audit.log_task on messenger failure."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             patch("kiso.worker.loop.audit.log_task") as mock_audit, \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        mock_audit.assert_called_once()
-        assert mock_audit.call_args[0][4] == "failed"  # status arg
-
-    async def test_slog_on_failure(self, db, tmp_path):
-        """_fast_path_chat logs to slog on messenger failure."""
-        config = make_config()
-        mock_slog = type("MockSlog", (), {"info": lambda self, *a, **kw: None})()
-        mock_slog.info = AsyncMock() if asyncio.iscoroutinefunction(getattr(mock_slog, "info", None)) else lambda *a, **kw: None
-
-        # Use a real mock for slog
-        from unittest.mock import MagicMock
-        slog = MagicMock()
-
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello", slog=slog)
-
-        # slog.info should have been called with error info
-        assert slog.info.called
-        logged_msg = slog.info.call_args[0][0]
-        assert "Fast path failed" in logged_msg
-
-    async def test_returns_plan_id(self, db, tmp_path):
-        """_fast_path_chat returns the plan_id for post-plan processing."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
-             _patch_kiso_dir(tmp_path):
-            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        assert isinstance(plan_id, int)
-        assert plan_id > 0
-
-    async def test_returns_plan_id_on_failure(self, db, tmp_path):
-        """_fast_path_chat returns plan_id even on failure."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        assert isinstance(plan_id, int)
-        assert plan_id > 0
-
-    async def test_budget_exceeded_in_messenger(self, db, tmp_path):
-        """LLMBudgetExceeded during messenger is caught (subclass of LLMError)."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=LLMBudgetExceeded("budget")), \
-             _patch_kiso_dir(tmp_path):
-            plan_id = await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        # Should not crash — plan marked failed
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "failed"
-
-    async def test_error_message_saved_as_system(self, db, tmp_path):
-        """On failure, error message is saved as system role (not assistant)."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        msgs = await get_recent_messages(db, "sess1", limit=10)
-        system_msgs = [m for m in msgs if m["role"] == "system"]
-        assert any("Chat response failed" in m["content"] for m in system_msgs)
-
-    async def test_substatus_set_to_composing(self, db, tmp_path):
-        """_fast_path_chat sets task substatus to composing."""
-        config = make_config()
-        with patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        tasks = await get_tasks_for_session(db, "sess1")
-        # substatus was set during execution (may be cleared after done)
-        assert tasks[0]["status"] == "done"
-
-
 # --- Worker Retry ---
 
 
@@ -6689,18 +6333,6 @@ class TestIncrementalLLMCalls:
         assert success is True
         assert mock_append.call_count == 2
 
-    async def test_fast_path_appends_calls_after_messenger(self, db, tmp_path):
-        """fast path: _append_calls called twice — briefer flush + messenger."""
-        config = make_config()
-
-        mock_append = AsyncMock()
-        with patch("kiso.worker.loop._append_calls", mock_append), \
-             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Reply"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        assert mock_append.call_count == 2
-
     async def test_update_task_usage_not_passed_llm_calls(self, db, tmp_path):
         """M44e: update_task_usage is called WITHOUT llm_calls (sentinel path)."""
         config = make_config()
@@ -6751,78 +6383,6 @@ class TestAppendCallsRobustness:
             # Must not raise
             await _append_calls(db, task_id_val, 0)
 
-    async def test_fast_path_failure_calls_append_calls(self, db, tmp_path):
-        """_fast_path_chat calls _append_calls even when messenger fails."""
-        config = make_config()
-        mock_append = AsyncMock()
-
-        with patch("kiso.worker.loop._append_calls", mock_append), \
-             patch("kiso.worker.loop.run_messenger",
-                   new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        # _append_calls must be called in the failure branch
-        assert mock_append.call_count >= 1
-
-    async def test_fast_path_success_and_failure_append_same_count(self, db, tmp_path):
-        """Both success and failure paths call _append_calls the same number of times."""
-        config = make_config()
-
-        # Success path
-        mock_append_ok = AsyncMock()
-        with patch("kiso.worker.loop._append_calls", mock_append_ok), \
-             patch("kiso.worker.loop.run_messenger",
-                   new_callable=AsyncMock, return_value="Hi"), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-        success_calls = mock_append_ok.call_count
-
-        # Failure path (new session)
-        await create_session(db, "sess2")
-        mock_append_fail = AsyncMock()
-        with patch("kiso.worker.loop._append_calls", mock_append_fail), \
-             patch("kiso.worker.loop.run_messenger",
-                   new_callable=AsyncMock, side_effect=MessengerError("boom")), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess2", 2, "hello")
-        failure_calls = mock_append_fail.call_count
-
-        # 2 calls each: briefer flush + messenger flush
-        assert success_calls == failure_calls == 2
-
-    async def test_fast_path_flushes_briefer_before_messenger(self, db, tmp_path):
-        """Fast path flushes briefer calls before messenger runs (panel ordering)."""
-        config = make_config(settings={"briefer_enabled": True})
-        call_order: list[str] = []
-        real_append = AsyncMock(side_effect=lambda *a, **kw: call_order.append("append"))
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                call_order.append("briefer")
-                return json.dumps({
-                    "modules": [], "skills": [], "context": "",
-                    "output_indices": [], "relevant_tags": [],
-                })
-            call_order.append("messenger")
-            return "Hi"
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             patch("kiso.worker.loop._append_calls", real_append), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", 1, "hello")
-
-        # Briefer flush (append) must happen before messenger
-        assert "briefer" in call_order
-        assert "messenger" in call_order
-        briefer_idx = call_order.index("briefer")
-        messenger_idx = call_order.index("messenger")
-        # There must be an append between briefer and messenger
-        appends_between = [
-            i for i, c in enumerate(call_order)
-            if c == "append" and briefer_idx < i < messenger_idx
-        ]
-        assert len(appends_between) >= 1, f"No briefer flush before messenger: {call_order}"
 
 
 @pytest.mark.asyncio
@@ -8679,25 +8239,6 @@ class TestMessengerTimeout:
         yield conn
         await conn.close()
 
-    async def test_fast_path_uses_messenger_timeout(self, db, tmp_path):
-        """_fast_path_chat records the timeout duration (1s) in the failed task output."""
-        from kiso.worker.loop import _fast_path_chat
-        msg_id = await save_message(db, "sess1", "alice", "user", "hi", processed=False)
-
-        config = make_config()
-
-        # Simulate the timeout by making _msg_task raise asyncio.TimeoutError,
-        # which _fast_path_chat's inner try converts to MessengerError("timed out after Xs").
-        with patch("kiso.worker.loop._msg_task", side_effect=asyncio.TimeoutError), \
-             _patch_kiso_dir(tmp_path):
-            await _fast_path_chat(db, config, "sess1", msg_id, "hi", messenger_timeout=1)
-
-        # _fast_path_chat catches MessengerError internally and records it in the task output
-        cur = await db.execute("SELECT output FROM tasks WHERE status = 'failed'")
-        row = await cur.fetchone()
-        assert row is not None
-        assert "1s" in (row["output"] or "")
-
     async def test_handle_msg_task_uses_ctx_messenger_timeout(self, db, plan_id, tmp_path):
         """_handle_msg_task times out according to ctx.messenger_timeout.
         when is_final=True, timeout falls back to raw detail."""
@@ -8802,18 +8343,26 @@ class TestProcessMessagePhaseCallback:
 
     @pytest.mark.asyncio
     async def test_phase_transitions_for_chat(self, db, tmp_path):
-        """Chat fast path should set classifying → executing → idle phases."""
+        """M1620: every message goes briefer → planner → execute. Phases
+        should be planning → executing → idle (the classifying phase is
+        retired with the classifier itself)."""
         conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
+        config = make_config()
         msg = self._make_msg(msg_id)
         phases = []
 
-        mock_classifier = AsyncMock(return_value=("chat", "en"))
-        mock_messenger = AsyncMock(return_value="Hi!")
-        mock_post = AsyncMock()
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_messenger", mock_messenger), \
-             patch("kiso.worker.loop._post_plan_knowledge", mock_post), \
+        chat_plan = {
+            "goal": "Reply",
+            "secrets": None,
+            "tasks": [{"type": "msg", "detail": "Say hi", "args": None, "expect": None}],
+        }
+
+        async def _planner(db, config, session, role, content, **kwargs):
+            return chat_plan
+
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+             patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="Hi!"), \
+             patch("kiso.worker.loop._post_plan_knowledge", new_callable=AsyncMock), \
              patch("kiso.worker.loop.get_untrusted_messages", new_callable=AsyncMock, return_value=[]), \
              _patch_kiso_dir(tmp_path):
             from kiso.worker.loop import _process_message
@@ -8824,7 +8373,7 @@ class TestProcessMessagePhaseCallback:
             if bg_task:
                 await bg_task
 
-        assert "classifying" in phases
+        assert "planning" in phases
         assert "executing" in phases
         assert "idle" in phases
 
@@ -8833,7 +8382,7 @@ class TestProcessMessagePhaseCallback:
         """During a replan, set_phase should emit 'planning' before replanning
         and 'executing' after the new plan is created."""
         conn, msg_id = db
-        config = make_config(settings={**make_config().settings, "fast_path_enabled": True})
+        config = make_config()
         # Use username=None to bypass runtime permission re-validation
         # (test config has no users defined)
         msg = {"id": msg_id, "content": "hello", "user_role": "admin", "user_mcp": None, "user_skills": None, "username": None}
@@ -8861,11 +8410,9 @@ class TestProcessMessagePhaseCallback:
             call_count.append(1)
             return fail_plan if len(call_count) == 1 else success_plan
 
-        mock_classifier = AsyncMock(return_value=("plan", "en"))
         mock_post = AsyncMock()
 
-        with patch("kiso.worker.loop.run_classifier", mock_classifier), \
-             patch("kiso.worker.loop.run_planner", side_effect=_planner), \
+        with patch("kiso.worker.loop.run_planner", side_effect=_planner), \
              patch("kiso.worker.loop.run_messenger", new_callable=AsyncMock, return_value="ok"), \
              patch("kiso.worker.loop.run_reviewer", new_callable=AsyncMock, return_value=REVIEW_REPLAN), \
              _patch_translator(), \
@@ -8881,8 +8428,8 @@ class TestProcessMessagePhaseCallback:
                 await bg_task
 
         # Verify the replan emitted planning → executing sequence
-        # The full sequence should include: classifying → planning → executing →
-        # (replan) planning → executing → idle
+        # M1620: every message starts with planning (briefer + planner) →
+        # executing → (replan) planning → executing → idle
         assert phases.count("planning") >= 2, f"Expected >=2 planning phases, got {phases}"
         assert phases.count("executing") >= 2, f"Expected >=2 executing phases, got {phases}"
         # Verify planning comes before executing in the replan segment
@@ -9648,28 +9195,6 @@ class TestMsgTaskEntityEnrichment:
 
         user_content = messenger_msgs[0][1]["content"]
         assert "Relevant Facts" not in user_content
-
-    async def test_chat_kb_uses_fast_path(self, db, tmp_path):
-        """chat_kb classification routes through _fast_path_chat like chat."""
-        config = make_config(settings={"briefer_enabled": True})
-
-        async def _fake_llm(cfg, role, messages, **kw):
-            if role == "briefer":
-                return json.dumps({
-                    "modules": [], "skills": [], "context": "",
-                    "output_indices": [], "relevant_tags": [],
-                })
-            return "Response"
-
-        with patch("kiso.brain.call_llm", side_effect=_fake_llm), \
-             _patch_kiso_dir(tmp_path):
-            plan_id = await _fast_path_chat(
-                db, config, "sess1", 1, "cosa sai su te stesso?",
-            )
-
-        assert plan_id is not None
-        plan = await get_plan_for_session(db, "sess1")
-        assert plan["status"] == "done"
 
     async def test_entities_in_briefer_context_pool(self, db):
         """available_entities injected into briefer context pool."""
