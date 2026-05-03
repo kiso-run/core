@@ -45,6 +45,75 @@ def test_role_file_exists_and_nonempty(filename):
     assert len(path.read_text().strip()) > 20, f"Role file too short: {filename}"
 
 
+# ---------------------------------------------------------------------------
+# M1610 — reviewer prompt invariants (abstract — no specific commands)
+# ---------------------------------------------------------------------------
+
+
+def test_reviewer_treats_exit_code_as_primary_signal():
+    """The reviewer prompt must mark the exit code as the PRIMARY
+    success signal for action tasks. The wording must explicitly
+    state that exit=0 (with no error in stderr) is success even
+    when stdout is empty / silent — many commands (installers,
+    system tools, side-effecting scripts) print nothing on success.
+
+    Without this, the reviewer over-replans on `exit=0 stdout=""`
+    cases (M1610 motivation: F17 Playwright/Chromium pipeline tripped
+    the circular-replan detector after the reviewer kept asking to
+    replan a successful `playwright install chromium`).
+
+    No specific command name (Playwright, Chromium, etc.) may appear
+    in the new wording — the rule is general.
+    """
+    text = (_ROLES_DIR / "reviewer.md").read_text().lower()
+    # The directive must pair "exit" + "primary" / "primary signal"
+    # AND explicitly accept silent / empty stdout as compatible with
+    # success on exit=0.
+    has_primary = (
+        ("exit code" in text or "exit=0" in text or "exit 0" in text)
+        and ("primary" in text)
+    )
+    has_silent_ok = (
+        "silent" in text
+        or "empty stdout" in text
+        or "no output" in text
+        or "stdout is empty" in text
+    )
+    assert has_primary and has_silent_ok, (
+        "reviewer.md must (a) name the exit code as the primary signal "
+        "of action-task success and (b) explicitly accept exit=0 with "
+        "silent/empty stdout — without this the reviewer over-replans "
+        "on commands that succeed quietly"
+    )
+
+
+def test_reviewer_replan_requires_concrete_failure_signal():
+    """The reviewer prompt must state that ``replan`` requires a
+    concrete failure signal — exit≠0, explicit stderr error, or
+    output that *contradicts* the expect — and that "stdout doesn't
+    mention the command name" alone is NOT a failure signal.
+
+    Abstract: no specific command / tool name appears in the new
+    wording.
+    """
+    text = (_ROLES_DIR / "reviewer.md").read_text().lower()
+    # Must contain "contradict" (output contradicts expect — the
+    # narrow valid replan trigger) AND a phrase that rejects the
+    # over-zealous case (stdout doesn't mention the command name
+    # is not a failure).
+    has_contradict = "contradict" in text
+    has_silence_not_failure = (
+        "not a failure" in text
+        or "is acceptable" in text
+        or "is fine" in text
+    )
+    assert has_contradict and has_silence_not_failure, (
+        "reviewer.md must keep `replan` narrow: only on concrete "
+        "failure (exit non-zero, stderr error, output contradicting "
+        "expect) — silence-on-success is not a failure signal"
+    )
+
+
 @pytest.mark.parametrize(
     "filename,terms", _ROLE_CORE_TERMS,
     ids=[t[0].replace(".md", "") for t in _ROLE_CORE_TERMS],
@@ -112,7 +181,12 @@ class TestPromptBudgetSmoke:
         # capability) + abstract examples + unhealthy-fallback clause.
         ("planner.md", 23700),
         ("messenger.md", 2500),
-        ("reviewer.md", 3400),
+        # M1610 (2026-05-03): bumped from 3400 → 3900 to accommodate
+        # the "exit code is the primary signal" rule (exit=0 + silent
+        # stdout = ok, replan requires concrete failure signal —
+        # contradiction, exit≠0, or stderr error). Replaces the
+        # over-zealous "Empty output → replan" generic rule.
+        ("reviewer.md", 3900),
     ])
     def test_prompt_size(self, filename, max_chars):
         size = len((_ROLES_DIR / filename).read_text())

@@ -7,11 +7,12 @@ Return JSON: {status, reason, learn, retry_hint, summary}. Null where not applic
 <!-- MODULE: rules -->
 Rules:
 - Sole criterion is `expect`. Plan Context is background only.
-- Exit codes: action tasks — non-zero = failure (never `ok`). Verification ("check if X") — exit 1 + empty = "nothing found" = valid `ok` with learn. Only replan on real errors (syntax, permission, binary not found). Cleanup exit 0 + "nothing to do" satisfies expects about resolving issues.
-- Empty output: `expect` asks to find/list/get content but output empty → replan. Empty is `ok` only when `expect` allows absence ("check if exists", "verify no errors").
+- **Exit code is the PRIMARY signal of action-task success** (M1610). For an action task: `exit=0` AND no error text in stderr → `ok`, even if stdout is empty / silent / does not echo the command's name. Many commands (installers, package managers, side-effecting scripts) print nothing on success — that is acceptable, not a failure. `exit ≠ 0` OR explicit error text in stderr → action failure (never `ok`). Verification tasks ("check if X") — `exit 1` + empty = "nothing found" = valid `ok` with learn.
+- **`replan` requires a concrete failure signal.** Issuing `replan` is only valid when one of: (a) exit code non-zero, (b) explicit error text in stderr, (c) the output *contradicts* the `expect` (says the opposite). "Output doesn't mention the command name" or "stdout is silent" is NOT a failure signal — silence-on-success is fine. Cleanup exit 0 + "nothing to do" satisfies expects about resolving issues.
+- Empty output: when `expect` asks to find/list/get content (search results, file listing, retrieved data) but output is empty → replan. When `expect` describes a side-effect ("install X", "create Y", "configure Z") and exit=0 with empty stdout, that is success — silence is not a failure signal here.
 - No-warning expects: `expect` contains "no warning/error", "without warning/error", "cleanly" → ANY warning/error line in output = replan. Overrides "substance over format" and "partial success".
 - Substance over format: output demonstrates condition met → `ok` regardless of format.
-- Be strict: output doesn't satisfy `expect` → replan.
+- Be strict on `expect` mismatch: output that *contradicts* `expect` → replan. Output that simply doesn't echo `expect`'s phrasing is acceptable when the underlying condition (exit code + stderr) shows success.
 - Before replan: is there a realistic alternative? If failure requires human action → stuck.
 - Anti-loop: retry with same output → structural failure. `ok` with learn, or `replan` with `retry_hint: null`.
 - retry_hint scope: provide ONLY when a different command could plausibly succeed on this same task (wrong flag, wrong path format, missing argument). Never for deterministic resource errors — file not found, connection refused, binary not installed, service down. Set retry_hint to null so the planner can replan with a different strategy.
