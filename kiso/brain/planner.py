@@ -20,6 +20,7 @@ from kiso.skill_runtime import (
     metadata_for_briefer,
 )
 from kiso.security import fence_content
+from kiso.trust_store import load_trust_store
 from kiso.store import (
     _normalize_entity_name,
     get_all_entities,
@@ -1141,6 +1142,32 @@ async def build_planner_messages(
             "Do NOT set needs_install — the user has already approved. "
             "Plan exec tasks to install directly, then replan as the last task."
         )
+
+    # M1612 Phase B: surface previously approved sources so the planner
+    # doesn't default to `tier=untrusted` when the user re-requests an
+    # install of an already-approved source. Without this section, the
+    # trust-persistence flow loses memory between sessions / turns —
+    # the planner has no way to learn from `kiso.trust_store` without
+    # explicit context injection.
+    try:
+        _trust_store = load_trust_store()
+    except Exception:  # noqa: BLE001 — never let a corrupt trust file kill planning
+        _trust_store = None
+    if _trust_store is not None:
+        _trusted_lines: list[str] = []
+        for _prefix in _trust_store.mcp:
+            _trusted_lines.append(f"- {_prefix} (mcp): tier=custom (previously approved)")
+        for _prefix in _trust_store.skill:
+            _trusted_lines.append(f"- {_prefix} (skill): tier=custom (previously approved)")
+        if _trusted_lines:
+            context_parts.append(
+                "## Trusted Sources Status\n"
+                "Sources the user has previously approved. When the user requests "
+                "to install one of these sources, the trust tier is `custom` "
+                "(not `untrusted`) — surface it as such in the proposal msg "
+                "(Decision Tree branch 1).\n"
+                + "\n".join(_trusted_lines)
+            )
 
     context_parts.append(f"## Caller Role\n{user_role}")
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")

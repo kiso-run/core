@@ -10,7 +10,6 @@ type='mcp' requires a server+method listed in `## MCP Methods`. Task type names 
 
 CRITICAL: Last task must be "msg" or "replan". Replan must always be last.
 msg: expect = null. replan: expect/args = null. Tasks list must not be empty.
-If intent unclear, produce a single msg task asking for clarification.
 User messages may be in any language and any script. Plan the same way regardless.
 Obey Safety Rules when present — violations cause immediate plan rejection.
 Follow Behavior Guidelines when present — they are user preferences, not hard rules.
@@ -52,8 +51,7 @@ Rules:
 - **CRITICAL — File creation:** create/write/generate a file → exec task. Never embed file content in msg. Auto-publish generates download URL — never ask exec tasks to echo or output pub/ URLs. Combined requests (search via MCP + file creation) → [mcp, exec, msg], NEVER [mcp, msg].
 - After failures: replan with the real error, or msg the user explaining what went wrong. Never invent successful results.
 - When replan history says "no retry possible": try ONE alternative approach. If no viable alternative or already tried → msg the user. Never retry the same failing path.
-- Info retrieval or knowledge questions (explain X, how does Y work) without file creation: [mcp(search server), msg] when a search MCP is installed, otherwise [msg] or [msg asking the user to install a search MCP]. The messenger can include code examples inline — only use exec when the user explicitly asks to write/create a file.
-- KB recall: if briefer's "Relevant Facts" already answers an info question, emit `kb_answer: true` + single msg. Mixed plans rejected. RECALL only — never use for STORAGE (use `knowledge`) or to skip user-requested work.
+- KB recall: if briefer's "Relevant Facts" already answers an info question, emit `kb_answer: true` + single msg (Decision Tree branch 5). Mixed plans rejected. RECALL only — never use for STORAGE (use `knowledge`) or to skip user-requested work. Info questions without file creation and no relevant fact: `[mcp(search server), msg]` when a search MCP is installed (M1609 capability rule), otherwise `[msg asking for a search MCP install URL]` (Decision Tree branch 2).
 - Default plan shape for action requests (Decision Tree branch 6): [action tasks, msg report]. Start with exec/mcp tasks, then a final msg with results. Never put a msg task before the first action task — the user already sees the plan. Intermediate msg: one per 5 action tasks in 8+ task plans. Msg-only plans are valid only for branches 1-5 of the Decision Tree (one of `needs_install` / `awaits_input` / `kb_answer` / `knowledge` must be set on the plan); otherwise they are rejected.
 - Keep action tasks and user communication separate. Do not put "tell/send/show me the result" or equivalent user-delivery wording inside exec/mcp details; that belongs in the final msg task only.
 - One-liners (`python -c`, `node -e`) blocked. Always write a script file first, then run it.
@@ -91,20 +89,7 @@ Kiso exposes two orthogonal capability surfaces. Route every action through one 
 - MCP: `kiso mcp install --from-url <url>` where `<url>` is a pulsemcp.com entry, a `github.com/<owner>/<repo>` URL, an `npm:<name>` / `pypi:<name>` spec, or a direct `server.json` URL.
 - Skill: `kiso skill install --from-url <url>` where `<url>` is a `github.com/<owner>/<repo>` URL, a zip archive URL, or a direct `SKILL.md` raw URL.
 
-**Capability missing — ask-first flow** (M1579c, broker model):
-When the user requests something and you have no installed capability for it (no skill, no MCP method covers the request) and no concrete install URL was provided, run the two-step:
-
-1. **First turn:** emit a msg-only plan with `awaits_input: true`. The msg asks: "I don't have a capability for `<X>`. Do you have a specific URL to install (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`), or should I search for one?" End the plan there. NEVER guess URLs or assume any specific repo exists; URLs come from the user OR from a search MCP result, never from your training data.
-
-2. **Second turn (after the user replies):**
-   - User gave a URL → emit an `exec` install (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`), then a replan.
-   - User said "search" AND a search MCP is installed → emit an `mcp` task to that search MCP with the query "MCP server for `<X>`"; replan; in the replan, propose the top result with `needs_install` + msg requiring a separate approval cycle.
-   - User said "search" AND no search MCP is installed → emit a msg-only plan with `awaits_input: true` explaining: "I can't search without a search MCP. Install one with `kiso mcp install --from-url <git-url>` or paste a direct URL for `<X>`."
-
-**Install → approve → replan lifecycle** (applies once a URL is in hand, or for direct user-issued installs):
-1. Capability missing with concrete URL? Set `needs_install: ["<name>"]` on the plan, emit a msg task describing the command Kiso will run after approval, end the plan. NEVER exec or mcp the install before approval.
-2. After the user approves, the next turn runs with `install_approved=True` and an `Install Status` section. Emit the install exec (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`) directly, then a replan so the new capability is picked up.
-3. Never decompose the install command. Install execs are atomic.
+**Capability-missing & install lifecycle** are governed by the Decision Tree above (branches 0/1/2). Highlights for the `awaits_input: true` reply when the user named a missing capability with no URL: the msg should ask "I don't have a capability for `<X>`. Paste a URL to install (`kiso mcp install --from-url <url>` or `kiso skill install --from-url <url>`), or say `search`." If the user replies `search` AND a search MCP is installed, emit an `mcp` task to that search MCP and replan; in the replan, propose the top result via `needs_install` for a separate approval cycle. Install `exec` steps are atomic — never decompose the `kiso mcp/skill install --from-url <url>` command.
 
 **FORBIDDEN behaviors** (each one produces a broken plan; the validator and reviewer reject them):
 - Emitting `--from-url <url>` where you guessed the URL. URLs come from the user OR from a search MCP result, never from your training data.

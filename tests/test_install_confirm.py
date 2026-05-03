@@ -28,8 +28,17 @@ class TestPlannerPromptInstallRules:
         )
 
     def test_skills_and_mcp_never_install_without_approval(self):
-        assert "NEVER exec or mcp the install before approval" in self.full \
-            or "Install → approve → replan" in self.full
+        """M1612: the standalone "Install → approve → replan" section was
+        retired (it duplicated Decision Tree branches 0+1). The same
+        invariant — exec install only after user approval — is now
+        enforced by the Decision Tree (branch 0 fires only on
+        `install_approved=true`) and by the FORBIDDEN block ("exec
+        install steps before approval").
+        """
+        full_lower = self.full.lower()
+        assert "before approval" in full_lower or \
+               "install_approved=true" in full_lower or \
+               "after the user approves" in full_lower
 
     def test_planner_prompt_keeps_single_msg_rule(self):
         """The planner must still know about the "single msg" task pattern

@@ -45,17 +45,25 @@ class TestAskFirstPolicy:
         )
 
     def test_ask_first_phrasing_present(self, prompt_text):
-        """Some variant of 'Do you have a URL ...' must appear so the
-        planner has a concrete script to follow when a capability is
-        missing."""
-        candidates = (
-            "Do you have a specific URL",
-            "Do you have a URL",
-            "Do you have a specific link",
-            "do you have a url",
-        )
+        """Some variant of "ask the user for a URL or say search" must
+        appear so the planner has a concrete script to follow when a
+        capability is missing.
+
+        M1612: the canonical "Do you have a specific URL..." wording
+        was retired together with the duplicated "Capability missing —
+        ask-first flow" section (Decision Tree branch 2 covers the
+        same flow). The current wording — "Paste a URL to install
+        ... or say `search`" — is semantically equivalent.
+        """
         lower = prompt_text.lower()
-        assert any(c.lower() in lower for c in candidates), (
+        candidates = (
+            "do you have a specific url",
+            "do you have a url",
+            "do you have a specific link",
+            "paste a url to install",
+            "paste a url",
+        )
+        assert any(c in lower for c in candidates), (
             "planner.md must include an explicit ask-first phrasing "
             "that asks the user for a URL or to search"
         )

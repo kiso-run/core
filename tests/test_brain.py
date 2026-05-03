@@ -911,6 +911,56 @@ class TestBuildPlannerMessages:
         assert "## Pending Questions" in msgs[1]["content"]
         assert "Which DB?" in msgs[1]["content"]
 
+    async def test_includes_trusted_sources_status(self, db, config, tmp_path):
+        """M1612 Phase B: when the trust store has previously approved
+        sources, the planner context surfaces them in a `## Trusted
+        Sources Status` section so the planner doesn't default to
+        ``tier=untrusted`` when the user re-requests an install of an
+        already-approved source.
+        """
+        from unittest.mock import patch
+        from kiso import trust_store
+
+        await create_session(db, "sess1")
+        trust_path = tmp_path / "trust.json"
+        with patch("kiso.trust_store.TRUST_PATH", trust_path):
+            trust_store.add_prefix("mcp", "github.com/random-org/cool-mcp")
+            trust_store.add_prefix("skill", "github.com/other-org/some-skill")
+
+            msgs = await build_planner_messages(
+                db, config, "sess1", "admin", "hello",
+            )
+            content = msgs[1]["content"]
+
+        assert "## Trusted Sources Status" in content, (
+            f"expected `## Trusted Sources Status` section; got:\n{content[:1500]}"
+        )
+        assert "github.com/random-org/cool-mcp" in content
+        assert "github.com/other-org/some-skill" in content
+        # Each entry must declare the tier (custom — i.e. previously
+        # approved) so the planner's "default tier=untrusted" rule
+        # doesn't fire for these sources.
+        assert "custom" in content.lower()
+
+    async def test_omits_trusted_sources_when_empty(self, db, config, tmp_path):
+        """M1612 Phase B: the section is suppressed when the trust
+        store is empty — no informational noise on the prompt for
+        first-time users.
+        """
+        from unittest.mock import patch
+
+        await create_session(db, "sess1")
+        trust_path = tmp_path / "empty-trust.json"
+        with patch("kiso.trust_store.TRUST_PATH", trust_path):
+            msgs = await build_planner_messages(
+                db, config, "sess1", "admin", "hello",
+            )
+            content = msgs[1]["content"]
+
+        assert "## Trusted Sources Status" not in content, (
+            "section must be suppressed when trust store is empty"
+        )
+
     async def test_includes_recent_messages(self, db, config):
         await create_session(db, "sess1")
         await save_message(db, "sess1", "alice", "user", "first msg")
