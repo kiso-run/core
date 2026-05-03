@@ -172,14 +172,14 @@ CMD ["uv", "run", "uvicorn", "kiso.main:app", "--host", "0.0.0.0", "--port", "83
 ```dockerfile
 FROM kiso:latest
 RUN kiso mcp install --from-url \
-    uvx --from git+https://github.com/kiso-run/search-mcp@v0.1.0 kiso-search-mcp
+    uvx --from git+https://github.com/kiso-run/search-mcp@v0.2.0 kiso-search-mcp
 ```
 
 **Runtime** (in volume): mutable, updatable without rebuild.
 
 ```bash
 kiso mcp install --from-url \
-    uvx --from git+https://github.com/kiso-run/search-mcp@v0.1.0 kiso-search-mcp
+    uvx --from git+https://github.com/kiso-run/search-mcp@v0.2.0 kiso-search-mcp
 ```
 
 Volume contents take precedence over build-time installs (Docker mount behavior).

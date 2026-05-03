@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/specification/main/schema/2025-06-18/schema.json",
-  "$comment": "Kiso default MCP preset (v0.10). Bootstrapped by `kiso init --preset default`. Subject to the Kiso trust rule (four approved command shapes) and single-key invariant (only OPENROUTER_API_KEY mandatory; GITHUB_TOKEN optional).",
+  "$comment": "Kiso default MCP preset (v0.12). Bootstrapped by `kiso init --preset default`. Subject to the Kiso trust rule (four approved command shapes) and single-key invariant (only OPENROUTER_API_KEY mandatory; GITHUB_TOKEN optional). M1621 (2026-05-04): search/ocr/transcriber pinned at v0.2.0 for local-first / privacy-first defaults; users can opt back into v0.1 cloud-only behaviour with KISO_OCR_BACKEND=gemini, KISO_TRANSCRIBER_BACKEND=gemini, KISO_SEARCH_MODEL_FAST=perplexity/sonar-pro.",
   "mcpServers": {
     "filesystem": {
       "command": "npx",
@@ -32,7 +32,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/kiso-run/search-mcp@v0.1.0",
+        "git+https://github.com/kiso-run/search-mcp@v0.2.0",
         "kiso-search-mcp"
       ],
       "env": {
@@ -43,7 +43,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/kiso-run/transcriber-mcp@v0.1.0",
+        "git+https://github.com/kiso-run/transcriber-mcp@v0.2.0",
         "kiso-transcriber-mcp"
       ],
       "env": {
@@ -54,7 +54,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/kiso-run/ocr-mcp@v0.1.0",
+        "git+https://github.com/kiso-run/ocr-mcp@v0.2.0",
         "kiso-ocr-mcp"
       ],
       "env": {
