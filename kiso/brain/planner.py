@@ -400,12 +400,15 @@ def _validate_plan_ordering(
             and not allow_msg_only
         ):
             errors.append(
-                "Plan has only msg tasks — include at least one "
-                "exec/mcp task for action requests. "
-                "Msg-only is valid only for install proposals "
-                "(set needs_install), knowledge storage, KB recall "
-                "(set kb_answer when answering from briefer context), "
-                "or pausing for user input (set awaits_input)."
+                "Plan has only msg tasks — set the missing category "
+                "flag rather than switching to an action plan. Pick "
+                "ONE of: `awaits_input: true` (clarification ask), "
+                "`needs_install: [\"<source-or-capability>\"]` (URL "
+                "or missing capability), `kb_answer: true` (answer "
+                "from briefer-supplied facts), `knowledge: [\"<fact>\"]` "
+                "(user is teaching a fact). The msg-only shape is "
+                "correct; only the flag is missing. Do NOT add "
+                "`exec`/`mcp` tasks to bypass this rule."
             )
 
     # msg as first task wastes an LLM call before any action runs.

@@ -276,20 +276,18 @@ def _classify_install_mode(
             "reason": "target matches common Python package catalog",
         }
 
-    pkg_manager = (sys_env.get("os") or {}).get("pkg_manager")
-    available = {b.lower() for b in sys_env.get("available_binaries") or []}
-    if pkg_manager:
-        return {
-            "mode": _INSTALL_MODE_SYSTEM_PKG,
-            "target": target,
-            "reason": f"no kiso/Python signal; fallback to system package manager ({pkg_manager})",
-        }
-    if "uv" in available or "python3" in available or "python" in available:
-        return {
-            "mode": _INSTALL_MODE_PYTHON_LIB,
-            "target": target,
-            "reason": "no system package manager available; fallback to Python package flow",
-        }
+    # M1608: removed the arbitrary fallback to system_pkg / python_lib
+    # when the user gave no explicit hint. The fallback was producing
+    # a deterministic but WRONG `## Install Routing` context section
+    # (e.g. "Mode: system_pkg, Route: apt install, Do not set
+    # needs_install") for any "install <X> from <URL>" request, which
+    # contradicts the planning_rules Decision Tree (URL → install-
+    # proposal-first). Without a clear language-model-installable
+    # signal, mode stays NONE so the planner reads only the Decision
+    # Tree and decides via prompt — the right place for ambiguous
+    # cases. The router still fires authoritatively when the user
+    # explicitly says "apt install X", "pip install X", "npm install
+    # X", or names a well-known Python package.
     return {"mode": _INSTALL_MODE_NONE}
 
 

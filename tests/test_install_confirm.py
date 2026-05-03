@@ -45,9 +45,17 @@ class TestPlannerPromptInstallRules:
         assert "approved" in self.full.lower() or "consent" in self.full.lower()
 
     def test_core_allows_system_packages(self):
-        """core prompt allows system pkg manager for non-kiso packages."""
+        """core prompt allows system pkg manager for non-kiso packages.
+
+        M1608: the wording changed from "System package requests → exec
+        the package manager" to a more disambiguated form that pairs
+        OS-package-by-name with the package manager and routes URLs
+        through the Decision Tree. The contract — "named OS package
+        gets the package manager, named Python lib gets uv pip" — is
+        the same; the wording is just less ambiguous.
+        """
         core = _load_modular_prompt("planner", [])
-        assert "System package requests" in core
+        assert "package manager" in core
         assert "uv pip install" in core
 
 

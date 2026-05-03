@@ -1278,7 +1278,16 @@ class TestBuildPlannerMessages:
         assert "uv pip install flask" in user_content
 
     async def test_install_routing_injected_for_system_package(self, db, config):
-        """deterministic system-package routing is injected into planner context."""
+        """deterministic system-package routing is injected into planner
+        context when the user gives an explicit package-manager hint.
+
+        M1608: the router no longer fallback-classifies as system_pkg
+        when no explicit hint is present (that was producing
+        contradictory `## Install Routing` injections for URL/repo
+        installs). The authoritative system_pkg path now requires the
+        user to name the package manager (e.g. "apt install X") or
+        say "system package".
+        """
         await create_session(db, "sess1")
         cfg = Config(
             tokens=config.tokens,
@@ -1315,7 +1324,7 @@ class TestBuildPlannerMessages:
                 "output_indices": [], "relevant_tags": [], "relevant_entities": [], "mcp_methods": [], "mcp_resources": [], "mcp_prompts": [],
             }),
         ):
-            msgs = await build_planner_messages(db, cfg, "sess1", "admin", "install timg")
+            msgs = await build_planner_messages(db, cfg, "sess1", "admin", "apt install timg")
         user_content = msgs[1]["content"]
         assert "## Install Routing" in user_content
         assert "Mode: system_pkg" in user_content
@@ -6798,9 +6807,14 @@ class TestInstallRoutingHelper:
         assert route["mode"] == "python_lib"
         assert route["target"] == "flask"
 
-    def test_system_pkg_mode(self):
+    def test_system_pkg_mode_with_explicit_hint(self):
+        """The router authoritatively sets system_pkg ONLY when the user
+        explicitly references a package manager (apt/yum/pacman/brew)
+        or "system package". Without an explicit hint the router stays
+        out and lets the planner's Decision Tree decide.
+        """
         route = _classify_install_mode(
-            "install timg",
+            "apt install timg",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
         )
         assert route["mode"] == "system_pkg"
@@ -6814,13 +6828,49 @@ class TestInstallRoutingHelper:
         assert "Mode: python_lib" in text
         assert "uv pip install flask" in text
 
-    def test_generic_install_without_tool_signal_stays_system_pkg(self):
+    def test_generic_install_without_explicit_hint_stays_none(self):
+        """M1608: removed the arbitrary fallback to system_pkg when no
+        language-or-tool signal is present. "install jq" is genuinely
+        ambiguous (OS package? a custom git source named jq? a Python
+        lib?). The planner's Decision Tree handles it via prompt; the
+        deterministic router fires only when the user is explicit.
+        """
         route = _classify_install_mode(
             "install jq",
             {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
         )
-        assert route["mode"] == "system_pkg"
-        assert route["target"] == "jq"
+        assert route["mode"] == "none"
+
+    def test_install_with_url_returns_none(self):
+        """M1608: "install <X> from <URL>" must NOT receive a
+        deterministic Install Routing context — that contradicts the
+        Decision Tree (URL → install-proposal-first). The router stays
+        out so the planner reads only the prompt and follows branch 1.
+        """
+        route = _classify_install_mode(
+            "Please install the MCP from https://github.com/random-org/cool-mcp",
+            {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+        )
+        assert route["mode"] == "none"
+
+    def test_install_with_custom_git_server_returns_none(self):
+        """M1608: HTTP/HTTPS URLs are never authoritatively classified —
+        the host is unknown territory (github, gitlab, bitbucket, gitea,
+        codeberg, customer-internal git server, etc.) and the right
+        flow is install-proposal-first via the Decision Tree. The router
+        stays out for any `https?://` URL regardless of host.
+        """
+        for url in [
+            "install the runner from https://gitlab.example.com/team/runner",
+            "install from https://bitbucket.org/team/repo",
+            "install from https://gitea.customer.internal/team/repo",
+            "install from https://codeberg.org/team/repo",
+        ]:
+            route = _classify_install_mode(
+                url,
+                {"os": {"pkg_manager": "apt"}, "available_binaries": ["python3", "apt-get"]},
+            )
+            assert route["mode"] == "none", f"router must stay out for {url!r}; got {route!r}"
 
     def test_generic_pronoun_after_install_is_not_treated_as_target(self):
         route = _classify_install_mode(
