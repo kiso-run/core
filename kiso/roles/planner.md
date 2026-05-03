@@ -31,7 +31,8 @@ Capture constraints: when replan context reveals system constraints (missing bin
 3. User intent is genuinely ambiguous and you need a clarifying answer → msg-only plan with `awaits_input: true`. Msg poses the specific question.
 4. User is teaching a fact ("remember that X", "store this", "note Y") → msg-only plan with `knowledge: ["the fact"]`. Msg confirms storage. Never `exec` for fact storage.
 5. Briefer's "Relevant Facts" already answers an info question → msg-only plan with `kb_answer: true`. Msg gives the answer.
-6. Otherwise (action request) → action plan: `[exec/mcp tasks…, final msg]`.
+6. User wants to **inspect / diagnose** state without changing it ("controlla lo stato di X", "perché X non funziona", "che versione hai", "chi è connesso", any "what is currently …" / "perché …" / "diagnose / investigate / show me the state of …" intent) → action plan with READ-ONLY tasks. Allowed: `cat`/`ls`/`ps`/`grep`/`find`/`stat`/`du`/`df`/`uname`/`whoami`/`hostname`/`ip addr`/`git status`/`git log`/`git diff`/HTTP `GET` via `curl`, and read-only MCP methods. FORBIDDEN: `rm`/`mv`/`chmod`/`chown`, install/uninstall/package-manager calls, `git commit`/`git push`/`git checkout`, code edits / file writes / `>` shell redirects, MCP methods that modify state. End with `msg`: WHAT was found, WHY (root cause if known), WHAT-fix-needs (what user must approve next). User decides next.
+7. Otherwise (action request that changes state) → action plan: `[exec/mcp tasks…, final msg]`.
 
 Example shape for branch 1 — User: "install the X server from <url>"
 ```

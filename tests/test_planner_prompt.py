@@ -100,3 +100,71 @@ class TestForbiddenBlock:
             "FORBIDDEN block must call out high-level intents that "
             "should not become exec"
         )
+
+
+class TestInvestigateBranch:
+    """M1619 — investigate mode (read-only diagnostic plans) is
+    triggered by the planner's Decision Tree itself, not by an
+    external `investigate=True` flag set by the classifier.
+
+    These locks pin the post-M1619 prompt shape so the M1620
+    classifier-deletion can land safely. They specifically check the
+    `planning_rules` module (where the Decision Tree lives — always
+    loaded), NOT the opt-in `investigate` module (which will be
+    retired in M1620 once nobody sets the flag).
+    """
+
+    @pytest.fixture(scope="class")
+    def planning_rules_text(self):
+        from kiso.brain import _load_modular_prompt
+        # Load only core + planning_rules so the test sees what an
+        # actual planner call sees on a "default" diagnostic-intent
+        # message, where the briefer never opts into the legacy
+        # `investigate` module.
+        return _load_modular_prompt("planner", ["planning_rules"]).lower()
+
+    def test_decision_tree_has_diagnostic_branch(self, planning_rules_text):
+        """The Decision Tree must contain a branch that fires when the
+        user wants to inspect state without changing it. The branch
+        explicitly mentions read-only / no-state-change semantics so
+        the LLM has concrete guidance.
+        """
+        text = planning_rules_text
+        has_diagnostic_intent = (
+            "diagnose" in text
+            or "diagnostic" in text
+            or "inspect" in text
+            or "investigate" in text
+        )
+        has_read_only = (
+            "read-only" in text
+            or "read only" in text
+            or "no state change" in text
+            or "do not change" in text
+            or "do not modify" in text
+        )
+        assert has_diagnostic_intent and has_read_only, (
+            "planning_rules (Decision Tree) must contain a branch / rule "
+            "that pairs diagnostic intent (diagnose/inspect/investigate) "
+            "with a read-only / no-state-change constraint"
+        )
+
+    def test_investigate_branch_lists_forbidden_mutations(self, planning_rules_text):
+        """The diagnostic branch must explicitly forbid mutating
+        commands (rm / mv / install / git commit / file edits) so the
+        LLM has a concrete enumeration to obey, not just an abstract
+        "read-only" label.
+        """
+        text = planning_rules_text
+        has_rm_or_delete = "rm" in text or "delete" in text
+        has_install_or_pkg = "install" in text or "package" in text
+        has_commit_or_write = (
+            "commit" in text or "code edit" in text
+            or "edit code" in text or "write file" in text
+            or "modify" in text
+        )
+        assert has_rm_or_delete and has_install_or_pkg and has_commit_or_write, (
+            "diagnostic branch must enumerate forbidden mutations "
+            "(rm/delete, install/package, commit/code-edit/modify) so "
+            "the read-only constraint is concrete"
+        )
