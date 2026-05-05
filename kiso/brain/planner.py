@@ -54,6 +54,7 @@ from .common import (
     TASK_TYPE_REPLAN,
     TASK_TYPES,
     _INSTALL_CMD_RE,
+    _KISO_INSTALL_CMD_RE,
     _INSTALL_MODE_NONE,
     _MIN_PROMOTED_FACT_LEN,
     _NPM_GLOBAL_RE,
@@ -436,6 +437,30 @@ def _validate_plan_ordering(
                 f"hasn't replied yet. Plan a SINGLE msg task asking whether to install, "
                 f"offer alternatives, and end the plan there. The install happens in the "
                 f"next cycle after the user approves."
+            )
+
+    # under install_approved=True the planner MUST emit at least one
+    # exec task whose detail is the literal `kiso (mcp|skill) install`
+    # command. The `--from-url <url>` token is load-bearing (the worker
+    # translator and the trust-tier reviewer key off it). Paraphrases
+    # like "Install the MCP server using the kiso CLI" leak past the
+    # natural-language carve-out in planner.md branch 0 about ~10-30%
+    # of the time; this check converts that prompt-stochastic failure
+    # into a deterministic retry signal.
+    if install_approved:
+        has_literal_kiso_install = any(
+            t.get("type") == TASK_TYPE_EXEC
+            and _KISO_INSTALL_CMD_RE.search(t.get("detail", ""))
+            for t in tasks
+        )
+        if not has_literal_kiso_install:
+            errors.append(
+                "install_approved=true requires at least one exec task "
+                "whose detail is the LITERAL command "
+                "`kiso mcp install --from-url <url>` (MCP) or "
+                "`kiso skill install --from-url <url>` (skill). "
+                "Paraphrases like 'install ... using the kiso CLI' are "
+                "rejected — the `--from-url <url>` token is load-bearing."
             )
 
     # after installing a package that was proposed in a prior turn, the

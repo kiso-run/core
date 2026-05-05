@@ -444,6 +444,14 @@ _INSTALL_CMD_RE = re.compile(
     r"(?:kiso\s+(?:mcp|skill)\s+install|apt[- ]get\s+install|apk\s+add|dnf\s+install|yum\s+install|pacman\s+-S|brew\s+install|uv\s+pip\s+install|pip\s+install|npm\s+install|npx\s+-y)",
     re.IGNORECASE,
 )
+# Strict literal form for the kiso install command — used by
+# validate_plan to enforce that install_approved=True plans emit the
+# exact CLI string the worker translator and trust-tier reviewer key
+# off (the `--from-url` token is load-bearing).
+_KISO_INSTALL_CMD_RE = re.compile(
+    r"\bkiso\s+(?:mcp|skill)\s+install\b",
+    re.IGNORECASE,
+)
 # Detect external git URLs — these bypass registry name validation.
 _GIT_URL_RE = re.compile(r"https?://|git@|\.git\b", re.IGNORECASE)
 # Exec details mentioning pip for package installation without uv prefix.
@@ -1867,6 +1875,7 @@ __brain_exports__ = [
     "_ANSWER_IN_LANG_RE",
     "_BRIEFER_MODULE_DESCRIPTIONS",
     "_INSTALL_CMD_RE",
+    "_KISO_INSTALL_CMD_RE",
     "_MAX_MESSENGER_FACTS",
     "_MESSENGER_RETRY_BACKOFF",
     "_MIN_PROMOTED_FACT_LEN",

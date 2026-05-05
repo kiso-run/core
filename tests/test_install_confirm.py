@@ -148,6 +148,90 @@ class TestValidatePlanInstallApproved:
         assert not any("first plan" in e for e in errors)
 
 
+class TestValidatePlanInstallLiteralForm:
+    """When install_approved=True the plan MUST contain at least one
+    exec task whose detail matches the literal install command form
+    (`kiso (mcp|skill) install ...`). Paraphrases such as 'install the
+    MCP server using the kiso CLI' are rejected — the worker translator
+    and trust-tier reviewer key off the literal `--from-url` token.
+    """
+
+    def test_install_approved_paraphrase_detail_rejected(self):
+        plan = {"tasks": [
+            {"type": "exec",
+             "detail": "Install the MCP server from "
+                       "https://github.com/random-org/cool-mcp using "
+                       "the kiso CLI",
+             "expect": "kiso mcp install completes with exit code 0"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=False, install_approved=True)
+        assert any(
+            "literal" in e.lower() or "kiso mcp install" in e.lower()
+            or "kiso skill install" in e.lower()
+            for e in errors
+        ), (
+            f"validate_plan must reject paraphrased install detail "
+            f"under install_approved=True; got errors: {errors}"
+        )
+
+    def test_install_approved_literal_kiso_mcp_form_accepted(self):
+        plan = {"tasks": [
+            {"type": "exec",
+             "detail": "kiso mcp install --from-url "
+                       "https://github.com/random-org/cool-mcp",
+             "expect": "exit 0"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=False, install_approved=True)
+        assert not any(
+            "literal" in e.lower() or "paraphrase" in e.lower()
+            for e in errors
+        ), (
+            f"validate_plan must accept literal kiso-mcp form under "
+            f"install_approved=True; got errors: {errors}"
+        )
+
+    def test_install_approved_literal_kiso_skill_form_accepted(self):
+        plan = {"tasks": [
+            {"type": "exec",
+             "detail": "kiso skill install --from-url "
+                       "https://github.com/kiso-run/some-skill",
+             "expect": "exit 0"},
+            {"type": "replan", "detail": "continue", "expect": None},
+        ]}
+        errors = validate_plan(plan, is_replan=False, install_approved=True)
+        assert not any(
+            "literal" in e.lower() or "paraphrase" in e.lower()
+            for e in errors
+        ), (
+            f"validate_plan must accept literal kiso-skill form under "
+            f"install_approved=True; got errors: {errors}"
+        )
+
+    def test_install_not_approved_no_literal_check(self):
+        """The literal-form check is gated on install_approved=True;
+        the install-proposal flow (install_approved=False with
+        needs_install) must NOT trigger the literal-form rejection.
+        It already gets rejected by the existing 'first plan'
+        rule and we don't want a redundant error."""
+        plan = {"tasks": [
+            {"type": "msg",
+             "detail": "I don't recognize this MCP source — install?",
+             "expect": None},
+        ], "needs_install": ["github.com/random-org/cool-mcp"]}
+        errors = validate_plan(plan, is_replan=False, install_approved=False)
+        assert not any(
+            "literal" in e.lower() and "install" in e.lower()
+            for e in errors
+        ), (
+            f"literal-form check fired without install_approved=True; "
+            f"got errors: {errors}"
+        )
+
+
+
+
 @pytest.mark.asyncio
 class TestSessionHasInstallProposal:
     """session_has_install_proposal checks install_proposal column."""
