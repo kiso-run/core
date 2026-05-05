@@ -20,6 +20,7 @@ from kiso.worker.loop import _execute_plan, _review_task
 
 pytestmark = pytest.mark.llm_live
 
+from tests._helpers import make_task_dict
 from tests.conftest import LLM_ROLE_ONLY_TIMEOUT, LLM_TEST_TIMEOUT as TIMEOUT
 
 
@@ -93,15 +94,14 @@ class TestReplanFlowE2E:
         Synthetic input avoids the LLM-driven exec_translator +
         reviewer prologue, whose flake rate dominated the signal.
         """
-        completed = [{
-            "type": "exec",
-            "detail": "Write 'hello world' to /proc/nonexistent/report.txt",
-            "status": "failed",
-            "output": (
+        completed = [make_task_dict(
+            detail="Write 'hello world' to /proc/nonexistent/report.txt",
+            status="failed",
+            output=(
                 "bash: line 1: /proc/nonexistent/report.txt: "
                 "No such file or directory"
             ),
-        }]
+        )]
         remaining = [{"type": "msg", "detail": "Tell the user the report was saved"}]
         replan_reason = (
             "exec failed: /proc/nonexistent/ is a virtual filesystem and "

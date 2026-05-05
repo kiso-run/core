@@ -81,6 +81,7 @@ from kiso.worker.utils import (
     _write_plan_outputs,
 )
 
+from tests._helpers import make_task_dict
 from tests.conftest import patch_kiso_dir as _patch_kiso_dir
 
 
@@ -1542,7 +1543,7 @@ class TestBuildReplanContext:
         assert "## Previous Replan Attempts" not in ctx
 
     def test_with_completed(self):
-        completed = [{"type": "exec", "detail": "echo hi", "status": "done", "output": "hi\n"}]
+        completed = [make_task_dict(output="hi\n")]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "## Completed Tasks" in ctx
         assert "[exec] echo hi: done" in ctx
@@ -1590,7 +1591,7 @@ class TestBuildReplanContext:
 
     def test_output_truncated_to_limit(self):
         long_output = "x" * 5000
-        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
+        completed = [make_task_dict(detail="cmd", output=long_output)]
         ctx = _build_replan_context(completed, [], "broke", [])
         # Head+tail truncation: should contain marker
         assert "chars truncated" in ctx
@@ -1599,7 +1600,7 @@ class TestBuildReplanContext:
 
     def test_output_under_limit_not_truncated(self):
         output = "short output"
-        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": output}]
+        completed = [make_task_dict(detail="cmd", output=output)]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "short output" in ctx
         assert "truncated" not in ctx
@@ -1609,7 +1610,7 @@ class TestBuildReplanContext:
         head = "=== START ===\n" + "info line\n" * 50
         tail = "ERROR: file not found\nTraceback: ...\n"
         long_output = head + "x" * 3000 + tail
-        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": long_output}]
+        completed = [make_task_dict(detail="cmd", output=long_output)]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "START" in ctx       # head preserved
         assert "file not found" in ctx  # tail preserved (error at end)
@@ -1618,9 +1619,9 @@ class TestBuildReplanContext:
     def test_msg_tasks_stripped_from_completed(self):
         """msg-type tasks are excluded from completed tasks in replan context."""
         completed = [
-            {"type": "exec", "detail": "install", "status": "done", "output": "installed ok"},
-            {"type": "msg", "detail": "intent message", "status": "done", "output": "hello user"},
-            {"type": "exec", "detail": "run plugin", "status": "done", "output": "result", "args": None},
+            make_task_dict(detail="install", output="installed ok"),
+            make_task_dict(type="msg", detail="intent message", output="hello user"),
+            make_task_dict(detail="run plugin", output="result"),
         ]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "install" in ctx
@@ -1629,7 +1630,7 @@ class TestBuildReplanContext:
         assert "hello user" not in ctx
 
     def test_all_sections(self):
-        completed = [{"type": "exec", "detail": "ls", "status": "done", "output": "files"}]
+        completed = [make_task_dict(detail="ls", output="files")]
         remaining = [{"type": "msg", "detail": "tell user"}]
         history = [{"goal": "old", "failure": "old reason", "what_was_tried": ["[exec] ls"]}]
         ctx = _build_replan_context(completed, remaining, "new failure", history)
@@ -1671,7 +1672,7 @@ class TestBuildReplanContext:
         """extract wrapper name from registry JSON output."""
         import json as _json
         registry_output = _json.dumps({"name": "browser", "version": "1.0", "description": "Browse the web"})
-        completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
+        completed = [make_task_dict(detail="curl registry", output=registry_output)]
         ctx = _build_replan_context(completed, [], "wrapper not installed", [])
         assert "Confirmed Facts" in ctx
         assert "browser" in ctx
@@ -1684,7 +1685,7 @@ class TestBuildReplanContext:
             {"name": "browser", "version": "1.0"},
             {"name": "search", "version": "2.0"},
         ])
-        completed = [{"type": "exec", "detail": "curl registry", "status": "done", "output": registry_output}]
+        completed = [make_task_dict(detail="curl registry", output=registry_output)]
         ctx = _build_replan_context(completed, [], "need wrappers", [])
         assert "Confirmed Facts" in ctx
         assert "browser" in ctx
@@ -1692,8 +1693,7 @@ class TestBuildReplanContext:
 
     def test_confirmed_facts_from_install_output(self):
         """extract install status from command output."""
-        completed = [{"type": "exec", "detail": "kiso wrapper install browser", "status": "done",
-                      "output": "Wrapper 'browser' installed successfully\nReady to use"}]
+        completed = [make_task_dict(detail="kiso wrapper install browser", output="Wrapper 'browser' installed successfully\nReady to use")]
         ctx = _build_replan_context(completed, [], "next step", [])
         assert "Confirmed Facts" in ctx
         assert "installed" in ctx.lower()
@@ -1713,15 +1713,15 @@ class TestBuildReplanContext:
 
     def test_no_confirmed_facts_for_empty_outputs(self):
         """no Confirmed Facts section when outputs are empty."""
-        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": ""}]
+        completed = [make_task_dict(detail="cmd")]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "Confirmed Facts" not in ctx
 
     def test_reviewer_summary_as_confirmed_fact(self):
         """reviewer summaries appear as confirmed facts in replan context."""
         completed = [
-            {"type": "exec", "detail": "curl site.com", "status": "done",
-             "output": "<html>very long html...</html>",
+            {**make_task_dict(detail="curl site.com",
+                              output="<html>very long html...</html>"),
              "reviewer_summary": "Site is a design agency based in Milan"},
         ]
         ctx = _build_replan_context(completed, [], "need screenshot", [])
@@ -1732,8 +1732,8 @@ class TestBuildReplanContext:
         """confirmed facts capped at 15."""
         from kiso.worker.utils import _extract_confirmed_facts
         completed = [
-            {"type": "exec", "detail": f"cmd-{i}", "status": "done",
-             "output": f"result-{i}", "reviewer_summary": f"fact-{i}"}
+            {**make_task_dict(detail=f"cmd-{i}", output=f"result-{i}"),
+             "reviewer_summary": f"fact-{i}"}
             for i in range(20)
         ]
         facts = _extract_confirmed_facts(completed)
@@ -1744,8 +1744,7 @@ class TestTaskTypeLabel:
     """replan context renders generic task type labels."""
 
     def test_exec_task_no_tool_suffix(self):
-        completed = [{"type": "exec", "detail": "echo hi",
-                       "status": "done", "output": "hi"}]
+        completed = [make_task_dict(output="hi")]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[exec]" in ctx
         assert "[exec/" not in ctx
@@ -1758,8 +1757,7 @@ class TestTaskTypeLabel:
 
     def test_tool_none_no_suffix(self):
         """Wrapper field is None (e.g. exec task) — no slash suffix."""
-        completed = [{"type": "exec", "detail": "ls",
-                       "status": "done", "output": "files"}]
+        completed = [make_task_dict(detail="ls", output="files")]
         ctx = _build_replan_context(completed, [], "failed", [])
         assert "[exec]" in ctx
         assert "[exec/" not in ctx
@@ -3694,14 +3692,14 @@ class TestFencingInWorker:
         assert "(no output)" in result
 
     def test_replan_context_fenced(self):
-        completed = [{"type": "exec", "detail": "echo hi", "status": "done", "output": "hi\n"}]
+        completed = [make_task_dict(output="hi\n")]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "<<<TASK_OUTPUT_" in ctx
         assert "<<<END_TASK_OUTPUT_" in ctx
         assert "hi" in ctx
 
     def test_replan_context_no_output_placeholder(self):
-        completed = [{"type": "exec", "detail": "cmd", "status": "done", "output": ""}]
+        completed = [make_task_dict(detail="cmd")]
         ctx = _build_replan_context(completed, [], "broke", [])
         assert "(no output)" in ctx
 
@@ -6068,7 +6066,7 @@ class TestBuildReplanContextSearchLimit:
         """Exec task output uses _REPLAN_OUTPUT_LIMIT (1000) char limit in replan context."""
         long_output = "x" * 5000
         completed = [
-            {"type": "exec", "detail": "run command", "status": "done", "output": long_output},
+            make_task_dict(detail="run command", output=long_output),
         ]
         context = _build_replan_context(completed, [], "replan reason", [])
         assert "chars truncated" in context
@@ -6076,7 +6074,7 @@ class TestBuildReplanContextSearchLimit:
     def test_budget_overflow_summarizes(self):
         """Tasks exceeding char budget are summarized as one-liners."""
         completed = [
-            {"type": "exec", "detail": f"task{i}", "status": "done", "output": "x" * 2000}
+            make_task_dict(detail=f"task{i}", output="x" * 2000)
             for i in range(20)
         ]
         context = _build_replan_context(completed, [], "reason", [])
@@ -8559,7 +8557,7 @@ class TestSuggestedFixesSection:
 
     def test_suggested_fixes_before_confirmed_facts(self):
         """Suggested Fixes section appears before Confirmed Facts."""
-        completed = [{"type": "exec", "detail": "check", "status": "done", "output": "installed"}]
+        completed = [make_task_dict(detail="check", output="installed")]
         history = [{
             "goal": "fix",
             "failure": "broken",
@@ -9665,7 +9663,7 @@ class TestPhase13Integration:
         async def mock_execute(db, cfg, sess, pid, goal, content, **kw):
             # Mark existing task as done
             await ut(db, t1, "done", output="file list")
-            completed = [{"type": "exec", "detail": "ls -la", "status": "done", "output": "file list"}]
+            completed = [make_task_dict(detail="ls -la", output="file list")]
             return (False, "need replan", None, completed, [], [])
 
         # run_planner raises PlanError during replan
@@ -9719,7 +9717,7 @@ class TestPhase13Integration:
 
         async def mock_execute(db, cfg, sess, pid, goal, content, **kw):
             await ut(db, t1, "done", output="ok")
-            return (False, "replan needed", None, [{"type": "exec", "detail": "ls", "status": "done", "output": "ok"}], [], [])
+            return (False, "replan needed", None, [make_task_dict(detail="ls", output="ok")], [], [])
 
         async def mock_planner(db, cfg, sess, role, msg, **kw):
             planner_kwargs_captured.append(kw)
