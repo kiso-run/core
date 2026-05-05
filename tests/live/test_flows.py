@@ -82,7 +82,7 @@ class TestExecThenReviewReplan:
 
 class TestPlanValidationRetry:
     async def test_retry_produces_valid_plan_after_feedback(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, live_kiso_dir,
     ):
         """What: Patches validate_plan to reject the first attempt, then allows the retry.
 
@@ -101,10 +101,7 @@ class TestPlanValidationRetry:
                 return ["Simulated validation error: please try again"]
             return original_validate(plan, **kwargs)
 
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-            patch("kiso.brain.validate_plan", side_effect=rejecting_validate),
-        ):
+        with patch("kiso.brain.validate_plan", side_effect=rejecting_validate):
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",

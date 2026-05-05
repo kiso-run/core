@@ -91,6 +91,26 @@ def mock_noop_infra():
     )
 
 
+@pytest.fixture()
+def live_kiso_dir(tmp_path, monkeypatch):
+    """Re-point ``kiso.brain.KISO_DIR`` at the per-test ``tmp_path``
+    for live tests that need an isolated KISO_DIR. The patch is
+    unwound automatically at teardown via ``monkeypatch``.
+
+    Usage::
+
+        def test_something(self, ..., live_kiso_dir):
+            # kiso.brain.KISO_DIR == live_kiso_dir for this test
+            ...
+
+    Returns the tmp_path so tests that also need the path itself
+    (e.g. to write fixture files) can use it directly without
+    requesting both ``tmp_path`` and ``live_kiso_dir``.
+    """
+    monkeypatch.setattr("kiso.brain.KISO_DIR", tmp_path)
+    return tmp_path
+
+
 @pytest_asyncio.fixture()
 async def live_msg(seeded_db, live_session):
     """Save a message to DB and return the msg dict ready for _process_message.

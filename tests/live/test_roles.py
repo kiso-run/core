@@ -49,7 +49,7 @@ TIMEOUT = LLM_ROLE_ONLY_TIMEOUT
 
 class TestPlannerLive:
     async def test_exec_request_produces_exec_and_msg(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, live_kiso_dir,
     ):
         """What: Asks 'Run echo hello world' and inspects the plan structure.
 
@@ -58,16 +58,13 @@ class TestPlannerLive:
         """
         await save_message(seeded_db, live_session, "testadmin", "user", "hi")
 
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "Run 'echo hello world' and tell me the output",
-                ),
-                timeout=TIMEOUT,
-            )
+        plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin",
+                "Run 'echo hello world' and tell me the output",
+            ),
+            timeout=TIMEOUT,
+        )
 
         assert validate_plan(plan) == []
         types = [t["type"] for t in plan["tasks"]]
@@ -462,7 +459,7 @@ class TestPlannerSystemPackageLive:
         return build_system_env_section(fake_env, session="test-sess")
 
     async def test_system_package_uses_apt(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, tmp_path, live_kiso_dir,
     ):
         """What: Asks 'installa timg' with Debian sysenv and no kiso wrappers.
 
@@ -473,7 +470,6 @@ class TestPlannerSystemPackageLive:
         await save_message(seeded_db, live_session, "testadmin", "user", "hi")
 
         with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.get_system_env", return_value={
                 "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
                        "distro": "Debian GNU/Linux 12 (bookworm)", "distro_id": "debian",
@@ -529,7 +525,7 @@ class TestPlannerSystemPackageLive:
         )
 
     async def test_python_lib_uses_uv_pip(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, tmp_path, live_kiso_dir,
     ):
         """What: Asks 'installa flask' — a Python library.
 
@@ -539,7 +535,6 @@ class TestPlannerSystemPackageLive:
         await save_message(seeded_db, live_session, "testadmin", "user", "hi")
 
         with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.brain.get_system_env", return_value={
                 "os": {"system": "Linux", "machine": "x86_64", "release": "6.1.0",
                        "distro": "Debian GNU/Linux 12 (bookworm)", "pkg_manager": "apt"},
@@ -655,20 +650,19 @@ class TestPlannerV4FlashLive:
     """
 
     async def test_simple_exec_request(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, live_kiso_dir,
     ):
         """Echo command: planner emits exec + msg, both validated."""
         await save_message(
             seeded_db, live_session, "testadmin", "user", "hi")
 
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "Run echo hello world and report the output.",
-                ),
-                timeout=TIMEOUT,
-            )
+        plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin",
+                "Run echo hello world and report the output.",
+            ),
+            timeout=TIMEOUT,
+        )
 
         assert validate_plan(plan) == [], (
             f"V4-Flash planner produced invalid plan: {plan}"
@@ -680,7 +674,7 @@ class TestPlannerV4FlashLive:
         )
 
     async def test_chat_request_kb_answer_or_msg(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, live_kiso_dir,
     ):
         """Pure chat / info question: planner emits a valid plan
         (msg-only with kb_answer, or msg + minimal action). Either
@@ -688,14 +682,13 @@ class TestPlannerV4FlashLive:
         await save_message(
             seeded_db, live_session, "testadmin", "user", "hi")
 
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "ciao come stai?",
-                ),
-                timeout=TIMEOUT,
-            )
+        plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin",
+                "ciao come stai?",
+            ),
+            timeout=TIMEOUT,
+        )
 
         assert validate_plan(plan) == [], (
             f"V4-Flash planner produced invalid plan for chat: {plan}"

@@ -39,7 +39,7 @@ from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT, LLM_REPLAN_TIMEOUT
 
 class TestExecChaining:
     async def test_create_and_read_file(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+        self, live_config, seeded_db, live_session, live_kiso_dir, mock_noop_infra,
     ):
         """What: Plans 'echo hello world > hello.txt && cat hello.txt', then executes.
 
@@ -54,15 +54,12 @@ class TestExecChaining:
             seeded_db, live_session, "testadmin", "user", content,
         )
 
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin", content,
-                ),
-                timeout=TIMEOUT,
-            )
+        plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin", content,
+            ),
+            timeout=TIMEOUT,
+        )
         assert validate_plan(plan) == []
 
         plan_id = await create_plan(
@@ -105,7 +102,7 @@ class TestExecTranslator:
     task descriptions into runnable shell commands."""
 
     async def test_ls_via_natural_language(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+        self, live_config, seeded_db, live_session, live_kiso_dir, mock_noop_infra,
     ):
         """What: Submits a natural-language 'list files' task through the full exec pipeline.
 
@@ -152,7 +149,7 @@ class TestExecTranslator:
         assert exec_tasks[0]["status"] == "done"
 
     async def test_create_and_delete_file(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+        self, live_config, seeded_db, live_session, live_kiso_dir, mock_noop_infra,
     ):
         """What: Runs a two-step exec pipeline: create test123.txt, then verify and delete it.
 
@@ -207,7 +204,7 @@ class TestExecTranslator:
         )
 
     async def test_cat_etc_hostname(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+        self, live_config, seeded_db, live_session, live_kiso_dir, mock_noop_infra,
     ):
         """What: Translates and executes 'Display the system hostname' end-to-end.
 
@@ -262,7 +259,7 @@ class TestExecTranslator:
 class TestFullPipeline:
     async def test_process_message_simple_question(
         self, live_config, seeded_db, live_session, live_msg,
-        tmp_path, mock_noop_infra,
+        live_kiso_dir, mock_noop_infra,
     ):
         """What: Runs _process_message for 'What is 2+2?' through the full pipeline.
 
@@ -274,7 +271,6 @@ class TestFullPipeline:
 
         with (
             mock_noop_infra,
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -297,7 +293,7 @@ class TestFullPipeline:
 
     async def test_process_message_exec_flow(
         self, live_config, seeded_db, live_session, live_msg,
-        tmp_path, mock_noop_infra,
+        live_kiso_dir, mock_noop_infra,
     ):
         """What: Runs _process_message for 'Run echo hello' through the full pipeline.
 
@@ -309,7 +305,6 @@ class TestFullPipeline:
 
         with (
             mock_noop_infra,
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -345,7 +340,7 @@ class TestFullPipeline:
 class TestReplanRecovery:
     async def test_full_replan_cycle(
         self, live_config, seeded_db, live_session, live_msg,
-        tmp_path, mock_noop_infra,
+        live_kiso_dir, mock_noop_infra,
     ):
         """What: Runs _process_message with a nonexistent directory path to trigger replan.
 
@@ -360,7 +355,6 @@ class TestReplanRecovery:
 
         with (
             mock_noop_infra,
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -483,7 +477,7 @@ class TestFactPoisoning:
 class TestPerStepTokenTracking:
     async def test_exec_pipeline_records_per_step_tokens(
         self, live_config, seeded_db, live_session, live_msg,
-        tmp_path, mock_noop_infra,
+        live_kiso_dir, mock_noop_infra,
     ):
         """What: Runs _process_message and checks per-task token counts in the DB.
 
@@ -495,7 +489,6 @@ class TestPerStepTokenTracking:
 
         with (
             mock_noop_infra,
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(
@@ -535,7 +528,7 @@ class TestPerStepTokenTracking:
 
     async def test_exec_chaining_uses_preceding_output(
         self, live_config, seeded_db, live_session, live_msg,
-        tmp_path, mock_noop_infra,
+        live_kiso_dir, mock_noop_infra,
     ):
         """What: Creates a file in task 1, then reads it in task 2 using the path from task 1's output.
 
@@ -551,7 +544,6 @@ class TestPerStepTokenTracking:
 
         with (
             mock_noop_infra,
-            patch("kiso.brain.KISO_DIR", tmp_path),
             patch("kiso.worker.loop.SessionLogger"),
         ):
             await asyncio.wait_for(

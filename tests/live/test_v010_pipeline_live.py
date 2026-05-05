@@ -42,7 +42,7 @@ FIXTURES = (
 
 class TestV010PlannerRoutesThroughSkillAndMcp:
     async def test_planner_emits_mcp_task_when_skill_guides(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, tmp_path, live_kiso_dir,
     ) -> None:
         """What: planner guided by a skill + MCP catalog emits an
         ``mcp`` task, not an exec guess.
@@ -71,10 +71,7 @@ class TestV010PlannerRoutesThroughSkillAndMcp:
             dirs_exist_ok=True,
         )
 
-        with (
-            patch("kiso.skill_loader.KISO_DIR", tmp_path),
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
+        with patch("kiso.skill_loader.KISO_DIR", tmp_path):
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
@@ -95,7 +92,7 @@ class TestV010PlannerRoutesThroughSkillAndMcp:
 
 class TestV010ChatMediatedInstall:
     async def test_planner_proposes_install_when_capability_missing(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, tmp_path, live_kiso_dir,
     ) -> None:
         """What: a message requiring a capability not in the
         installed MCP catalog must yield a msg-only install proposal,
@@ -117,10 +114,7 @@ class TestV010ChatMediatedInstall:
             "trascrivi questo audio per me (transcribe this audio)",
         )
 
-        with (
-            patch("kiso.skill_loader.KISO_DIR", tmp_path),
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
+        with patch("kiso.skill_loader.KISO_DIR", tmp_path):
             plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",

@@ -26,7 +26,7 @@ from tests.conftest import LLM_ROLE_ONLY_TIMEOUT, LLM_TEST_TIMEOUT as TIMEOUT
 
 class TestExecAndReviewOkE2E:
     async def test_exec_review_ok_flow(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+        self, live_config, seeded_db, live_session, live_kiso_dir, mock_noop_infra,
     ):
         """What: Plans 'echo hello world', executes the exec+review+msg pipeline.
 
@@ -38,16 +38,13 @@ class TestExecAndReviewOkE2E:
             "Run 'echo hello world' and tell me the output",
         )
 
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
-            plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    "Run 'echo hello world' and tell me the output",
-                ),
-                timeout=TIMEOUT,
-            )
+        plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin",
+                "Run 'echo hello world' and tell me the output",
+            ),
+            timeout=TIMEOUT,
+        )
         assert validate_plan(plan) == []
 
         plan_id = await create_plan(
@@ -81,7 +78,7 @@ class TestExecAndReviewOkE2E:
 
 class TestReplanFlowE2E:
     async def test_planner_emits_valid_plan_on_replan_context(
-        self, live_config, seeded_db, live_session, tmp_path,
+        self, live_config, seeded_db, live_session, live_kiso_dir,
     ):
         """The planner, called with `is_replan=True` on an enriched
         message that contains a `_build_replan_context` block, must
@@ -120,14 +117,13 @@ class TestReplanFlowE2E:
         await save_message(
             seeded_db, live_session, "testadmin", "user", enriched_msg,
         )
-        with patch("kiso.brain.KISO_DIR", tmp_path):
-            new_plan = await asyncio.wait_for(
-                run_planner(
-                    seeded_db, live_config, live_session, "admin",
-                    enriched_msg, is_replan=True,
-                ),
-                timeout=LLM_ROLE_ONLY_TIMEOUT,
-            )
+        new_plan = await asyncio.wait_for(
+            run_planner(
+                seeded_db, live_config, live_session, "admin",
+                enriched_msg, is_replan=True,
+            ),
+            timeout=LLM_ROLE_ONLY_TIMEOUT,
+        )
         assert validate_plan(new_plan, is_replan=True) == [], (
             f"planner produced invalid replan plan: {new_plan!r}"
         )
