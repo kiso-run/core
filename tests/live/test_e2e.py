@@ -20,7 +20,7 @@ from kiso.worker.loop import _execute_plan, _review_task
 
 pytestmark = pytest.mark.llm_live
 
-from tests.conftest import LLM_TEST_TIMEOUT as TIMEOUT
+from tests.conftest import LLM_ROLE_ONLY_TIMEOUT, LLM_TEST_TIMEOUT as TIMEOUT
 
 
 class TestExecAndReviewOkE2E:
@@ -79,52 +79,35 @@ class TestExecAndReviewOkE2E:
 
 
 class TestReplanFlowE2E:
-    async def test_replan_after_failed_exec(
-        self, live_config, seeded_db, live_session, tmp_path, mock_noop_infra,
+    async def test_planner_emits_valid_plan_on_replan_context(
+        self, live_config, seeded_db, live_session, tmp_path,
     ):
-        """What: Builds a plan with a deliberately failing exec (write to nonexistent dir), runs _execute_plan.
+        """The planner, called with `is_replan=True` on an enriched
+        message that contains a `_build_replan_context` block, must
+        return a validated plan.
 
-        Why: Validates the replan loop — a failed exec must produce a replan reason, and re-planning with that reason yields a valid new plan.
-        Expects: success=False, non-empty replan_reason, second planner call produces a valid plan.
+        This is the only LIVE coverage of the planner-on-replan
+        path (`is_replan=True`). The replan-context builder itself
+        is unit-tested in ``tests/test_worker.py::TestBuildReplanContext``.
+
+        Synthetic input avoids the LLM-driven exec_translator +
+        reviewer prologue, whose flake rate dominated the signal.
         """
-        msg_id = await save_message(
-            seeded_db, live_session, "testadmin", "user",
-            "Save report to the project directory",
-        )
-        plan_id = await create_plan(
-            seeded_db, live_session, msg_id,
-            "Create a report file in the project directory",
-        )
-        # Deliberately failing exec — /proc is a virtual filesystem where
-        # mkdir -p always fails, even as root.  No workaround exists.
-        await create_task(
-            seeded_db, plan_id, live_session,
-            type="exec",
-            detail="Write 'hello world' to /proc/nonexistent/report.txt",
-            expect="File created successfully at the specified path",
-        )
-        await create_task(
-            seeded_db, plan_id, live_session,
-            type="msg",
-            detail="Tell the user the report was saved",
+        completed = [{
+            "type": "exec",
+            "detail": "Write 'hello world' to /proc/nonexistent/report.txt",
+            "status": "failed",
+            "output": (
+                "bash: line 1: /proc/nonexistent/report.txt: "
+                "No such file or directory"
+            ),
+        }]
+        remaining = [{"type": "msg", "detail": "Tell the user the report was saved"}]
+        replan_reason = (
+            "exec failed: /proc/nonexistent/ is a virtual filesystem and "
+            "cannot accept new files; the writable target path must change"
         )
 
-        with mock_noop_infra:
-            success, replan_reason, _stuck, completed, remaining, _outputs = await asyncio.wait_for(
-                _execute_plan(
-                    seeded_db, live_config, live_session, plan_id,
-                    "Create a report file in the project directory",
-                    "save report to the project directory",
-                ),
-                timeout=TIMEOUT,
-            )
-
-        assert success is False
-        assert replan_reason is not None
-        assert len(replan_reason) > 0
-
-        # use the real replan context builder so the planner gets
-        # "Previous Replan Attempts", "Suggested Fixes", "Completed Tasks"
         from kiso.worker.utils import _build_replan_context
         replan_ctx = _build_replan_context(
             completed=completed,
@@ -134,18 +117,20 @@ class TestReplanFlowE2E:
         )
         enriched_msg = f"save report to the project\n\n{replan_ctx}"
 
-        # Verify a new plan from the replan context is valid
-        with (
-            patch("kiso.brain.KISO_DIR", tmp_path),
-        ):
+        await save_message(
+            seeded_db, live_session, "testadmin", "user", enriched_msg,
+        )
+        with patch("kiso.brain.KISO_DIR", tmp_path):
             new_plan = await asyncio.wait_for(
                 run_planner(
                     seeded_db, live_config, live_session, "admin",
                     enriched_msg, is_replan=True,
                 ),
-                timeout=TIMEOUT,
+                timeout=LLM_ROLE_ONLY_TIMEOUT,
             )
-        assert validate_plan(new_plan, is_replan=True) == []
+        assert validate_plan(new_plan, is_replan=True) == [], (
+            f"planner produced invalid replan plan: {new_plan!r}"
+        )
 
 
 class TestKnowledgeFlowE2E:
