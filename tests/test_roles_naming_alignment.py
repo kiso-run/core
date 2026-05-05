@@ -13,6 +13,7 @@ Two changes verified here:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,8 @@ class TestSummarizerMigration:
 class TestGrepGuard:
     """Audit-time checks: old names must not appear in production source."""
 
+    _RUN_CLASSIFIER_RE = re.compile(r"\brun_classifier\b")
+
     def _kiso_py_files(self) -> list[Path]:
         root = Path(__file__).resolve().parent.parent / "kiso"
         return list(root.rglob("*.py"))
@@ -206,11 +209,9 @@ class TestGrepGuard:
         """M1620: run_classifier is fully retired; no source file may
         reference it (apart from inflight-classifier which is a
         distinct symbol — call it ``run_inflight_classifier``)."""
-        import re
-        pattern = re.compile(r"\brun_classifier\b")
         for f in self._kiso_py_files():
             text = f.read_text(encoding="utf-8")
-            assert not pattern.search(text), (
+            assert not self._RUN_CLASSIFIER_RE.search(text), (
                 f"{f}: still references run_classifier (M1620 retired)"
             )
 
@@ -230,4 +231,19 @@ class TestGrepGuard:
             text = f.read_text(encoding="utf-8")
             assert "summarizer-session" not in text, (
                 f"{f}: still references summarizer-session"
+            )
+
+    def test_no_run_classifier_in_live_tests(self):
+        """The live-tier test tree must not import or reference the
+        retired `run_classifier`. Catches orphan tests left behind
+        when the classifier was retired — they would otherwise fail
+        collection with `ImportError` and pollute the live-tier
+        signal."""
+        live_root = Path(__file__).resolve().parent / "live"
+        for f in live_root.rglob("*.py"):
+            text = f.read_text(encoding="utf-8")
+            assert not self._RUN_CLASSIFIER_RE.search(text), (
+                f"{f}: still references run_classifier — "
+                f"the symbol was retired and any test importing it "
+                f"will fail collection"
             )
