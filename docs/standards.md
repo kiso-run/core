@@ -120,27 +120,6 @@ preset inclusion required. For inclusion in
 `upstream`/`license`/`key-requirements` block following the
 conventions in that file.
 
-## CI template for sibling `kiso-run/*-mcp` repos
-
-Every repo under the `kiso-run` GitHub org hosting an MCP server
-vendors a copy of
-[`.github/workflows/mcp-ci-template.yml`](../.github/workflows/mcp-ci-template.yml)
-(renamed to `ci.yml` in the sibling repo). The template runs
-`ruff`, `pytest`, and `uv lock --check` on every push and PR,
-and on tag pushes adds a release-verification job that enforces
-the `v<major>.<minor>.<patch>` tag format and checks the tag
-matches the version in `pyproject.toml`.
-
-**Distribution model**: the git tag IS the release. No PyPI
-upload. Consumers install via `uvx --from
-git+https://github.com/kiso-run/<name>-mcp@<tag>`. The CI is
-consistent across the five sibling repos so a fresh contributor
-sees the same shape in every repo.
-
-When a sibling repo diverges from the template (e.g. adds an
-extra job for a native dependency), update the template here first
-and the sibling second — never the other way round.
-
 ## `x-kiso-consumes` tool extension
 
 Kiso's briefer + planner reason about which MCP method consumes
