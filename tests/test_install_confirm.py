@@ -68,6 +68,79 @@ class TestPlannerPromptInstallRules:
         assert "uv pip install" in core
 
 
+class TestPlannerPromptNeverFabricateFileContents:
+    """When the user references a previously-created file, output, or
+    task result, the planner must read it (exec/mcp) rather than
+    fabricate properties from context. The Session Workspace section
+    surfaces NAMES, not CONTENTS — relying on names alone produces
+    hallucinated word counts, file sizes, etc. (F24 hallucination
+    flake on 2026-05-06 full-suite run).
+    """
+
+    def test_planner_prompt_forbids_fabricating_file_contents(self):
+        """The planner prompt must contain a rule that explicitly
+        forbids fabricating file CONTENTS / properties from the
+        Session Workspace listing alone, using strong-imperative
+        wording ('NEVER fabricate' or equivalent) so the LLM weights
+        it on par with the install-routing carve-out at branch 0."""
+        full = _load_modular_prompt(
+            "planner", ["session_files"],
+        ).lower()
+        # Sentinel signature: must include both a NEVER/MUST verb AND
+        # the words "fabricate" / "hallucinate" / "invent" applied to
+        # file contents. Loose keyword matches don't count.
+        forbids_fabrication = (
+            ("never fabricate" in full
+             or "do not fabricate" in full
+             or "must read" in full
+             or "must not fabricate" in full
+             or "never invent" in full
+             or "never hallucinate" in full)
+            and (
+                "file" in full
+                or "workspace" in full
+                or "content" in full
+            )
+        )
+        assert forbids_fabrication, (
+            "planner prompt must include a strong-imperative rule "
+            "forbidding the fabrication of file contents/properties "
+            "from the Session Workspace listing alone (NEVER fabricate "
+            "/ MUST read / etc.)"
+        )
+
+
+class TestBrieferPromptOutputIndicesForFileReferences:
+    """When the New Message references a previously-created file or
+    output, the briefer must include the matching plan_output index
+    in `output_indices` so the planner sees it. AGGRESSIVE-filter
+    default would otherwise drop the relevant output, leaving the
+    planner with names-only context.
+    """
+
+    def test_briefer_prompt_keeps_output_indices_for_prior_work(self):
+        """Briefer prompt must contain a rule directing it to keep
+        output_indices populated when the New Message references
+        prior work (file, output, demonstrative). The default
+        AGGRESSIVE-filter would otherwise drop them."""
+        briefer = _load_modular_prompt("briefer", [])
+        briefer_lower = briefer.lower()
+        # Sentinel: a sentence pairing "previously" / "prior" / "just
+        # created" / "appena" with the planner consumer / output_indices
+        # rule.
+        has_prior_work_rule = (
+            "previously" in briefer_lower
+            or "prior" in briefer_lower
+            or "just created" in briefer_lower
+            or "appena" in briefer_lower
+        )
+        assert has_prior_work_rule, (
+            "briefer prompt must mention prior-work references "
+            "(previously/prior/just created/appena) so the planner "
+            "consumer flow can keep output_indices populated"
+        )
+
+
 # --- 2–4. validate_plan: install only in replan ---
 
 

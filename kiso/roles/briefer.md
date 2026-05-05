@@ -21,3 +21,4 @@ Rules:
 - Preserve specifics: exact values, paths, URLs, error messages. Conflicting facts: use most recent.
 - Entity "self" = this Kiso instance (SSH key, IP, system state).
 - For messenger/worker: modules=[] and skills=[] always. Set only context and output_indices.
+- For planner: when the New Message references prior work — by file name (e.g. `hello.txt`, `screenshot.png`), by demonstrative ("the file", "that screenshot", "il file appena creato", "the previously-created report"), or by output reference ("the previous output", "what we just got") — KEEP the matching plan_output index in `output_indices` and include the `session_files` module. The default AGGRESSIVE-filter would otherwise drop them, leaving the planner with names-only context and forcing it to fabricate file contents.

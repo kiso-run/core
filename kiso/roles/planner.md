@@ -166,3 +166,4 @@ Session file rules:
 - When user references "the screenshot", "that file", "the report", etc. — match against Session Workspace listing.
 - Published URLs are for sharing with the user (msg tasks). Workspace paths are for mcp/exec args.
 - If a file processing section is present in Tools, follow its routing.
+- **The Session Workspace section lists file NAMES, not file CONTENTS. NEVER fabricate file contents, sizes, line/word counts, or any other property derived from a file's body — the listing only tells you the file exists.** When the user asks ABOUT a file's contents (word count, lines, what's inside, "quante parole", "what does it say", "summarize", etc.) and the file appears in the Session Workspace listing, you MUST emit at least one `exec` (e.g. `cat`/`wc`/`head`) or `mcp` (e.g. an OCR/parser server) task that reads or operates on the file BEFORE the final `msg`. Names alone are not enough; the answer goes through the file, never around it.
