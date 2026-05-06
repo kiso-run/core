@@ -3011,6 +3011,30 @@ class TestRunMessenger:
             await run_messenger(db, config, "sess1", "say hi")
         assert captured["role"] == "messenger"
 
+    async def test_messenger_does_not_set_artificial_max_tokens(self, db):
+        """Regression guard: the messenger path must never pass an
+        artificial max_tokens cap to call_llm. Caps are reserved for
+        single-token roles (classifier); on conversational text any
+        cap silently truncates the user-visible reply mid-token, which
+        broke the citation-marker behaviour rule. The codebase has no
+        max_tokens kwarg on the messenger call site today; this test
+        locks that in.
+        """
+        config = _make_brain_config()
+        captured: dict = {}
+
+        async def _capture(cfg, role, messages, **kw):
+            captured.update(kw)
+            captured["role"] = role
+            return "ok"
+
+        with patch("kiso.brain.call_llm", side_effect=_capture):
+            await run_messenger(db, config, "sess1", "say hi")
+        assert captured["role"] == "messenger"
+        assert "max_tokens" not in captured, (
+            f"messenger must not pass max_tokens to call_llm; got: {captured!r}"
+        )
+
     async def test_goal_passed_to_context(self, db):
         """run_messenger passes goal to build_messenger_messages context."""
         config = _make_brain_config()
