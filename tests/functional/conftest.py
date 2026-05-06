@@ -683,6 +683,152 @@ async def run_message(func_config, func_db, func_session, mock_mcp_catalog):
     return _run
 
 
+@pytest_asyncio.fixture()
+async def run_message_e2e(func_db, func_session):
+    """E2E variant of run_message — reloads config + reconstructs the
+    MCP manager before every call.
+
+    Use this fixture in extended tests that perform a *real* MCP
+    install during the conversation (e.g. via `kiso mcp install
+    --from-url`). The standard `run_message` fixture binds the MCP
+    manager once at setup (mock catalog) and never refreshes it; for
+    real installs the manager must reflect the new
+    `[mcp.<server>]` block written by the install CLI.
+
+    Skip-conditions are intentionally left to the caller — extended
+    tests typically gate on `OPENROUTER_API_KEY`, network, and
+    presence of `npx`/`uv` on PATH before invoking this fixture.
+    """
+    from kiso.config import load_config
+    from kiso.mcp.manager import MCPManager
+    from pathlib import Path
+
+    await _collect_boot_facts(func_db)
+
+    async def _run(
+        content: str,
+        *,
+        timeout: float = 600,
+        base_url: str = "http://test",
+        session_id: str | None = None,
+    ) -> FunctionalResult:
+        active_session = session_id or func_session
+        try:
+            await create_session(func_db, active_session)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Reload config.toml from KISO_DIR — pick up any [mcp.<name>]
+        # block added by a prior `kiso mcp install --from-url` step
+        # in the same test.
+        kiso_dir_str = os.environ.get("KISO_HOME") or ""
+        if not kiso_dir_str:
+            raise RuntimeError(
+                "KISO_HOME is not set — the _func_kiso_dir fixture "
+                "must run before run_message_e2e",
+            )
+        config_path = Path(kiso_dir_str) / "config.toml"
+        fresh_config = load_config(config_path)
+
+        # Build a fresh MCP manager from the fresh config. Returns
+        # None when no MCP servers are configured yet (e.g. before
+        # the first install).
+        mcp_manager = None
+        if fresh_config.mcp_servers:
+            mcp_manager = MCPManager(fresh_config.mcp_servers)
+            for _name in fresh_config.mcp_servers:
+                try:
+                    await mcp_manager.list_methods(_name)
+                except Exception as e:  # noqa: BLE001 — install in flight
+                    log.warning(
+                        "MCP %s warm-up failed (continuing): %s", _name, e,
+                    )
+
+        msg_id = await save_message(
+            func_db, active_session, "testadmin", "user", content,
+        )
+        msg = {
+            "id": msg_id,
+            "content": content,
+            "user_role": "admin",
+            "user_mcp": "*", "user_skills": "*",
+            "username": "testadmin",
+            "base_url": base_url,
+        }
+
+        cancel_event = asyncio.Event()
+        t0 = time.monotonic()
+
+        bg_task = await asyncio.wait_for(
+            _process_message(
+                func_db,
+                fresh_config,
+                active_session,
+                msg,
+                cancel_event,
+                llm_timeout=fresh_config.settings["llm_timeout"],
+                max_replan_depth=fresh_config.settings["max_replan_depth"],
+                mcp_manager=mcp_manager,
+                messenger_timeout=fresh_config.settings["llm_timeout"],
+            ),
+            timeout=timeout,
+        )
+        if bg_task is not None and not bg_task.done():
+            try:
+                await asyncio.wait_for(bg_task, timeout=90)
+            except (asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
+                log.warning("Background knowledge task: %s", e)
+
+        # Tear down the manager we built for this single call so
+        # subprocesses spawned by MCP servers don't accumulate across
+        # the test conversation. The next call will rebuild from the
+        # current config.
+        if mcp_manager is not None:
+            try:
+                await mcp_manager.shutdown_all()
+            except Exception as e:  # noqa: BLE001
+                log.warning("MCP manager shutdown: %s", e)
+
+        elapsed = time.monotonic() - t0
+
+        cur = await func_db.execute(
+            "SELECT * FROM plans WHERE session = ? ORDER BY id",
+            (active_session,),
+        )
+        plans = [dict(r) for r in await cur.fetchall()]
+        all_tasks: list[dict] = []
+        for p in plans:
+            cur2 = await func_db.execute(
+                "SELECT * FROM tasks WHERE plan_id = ? ORDER BY id",
+                (p["id"],),
+            )
+            all_tasks.extend(dict(r) for r in await cur2.fetchall())
+
+        success = bool(plans and plans[-1].get("status") == "done")
+        msg_output = "\n".join(
+            t.get("output", "") or ""
+            for t in all_tasks
+            if t.get("type") == "msg" and t.get("status") == "done"
+        )
+        pub_files: list[dict] = []
+        for t in all_tasks:
+            output = t.get("output") or ""
+            for url in _PUB_URL_RE.findall(output):
+                filename = url.rsplit("/", 1)[-1] if "/" in url else url
+                pub_files.append({"filename": filename, "url": url})
+
+        return FunctionalResult(
+            success=success,
+            plans=plans,
+            tasks=all_tasks,
+            msg_output=msg_output,
+            pub_files=pub_files,
+            elapsed=elapsed,
+        )
+
+    return _run
+
+
 # ---------------------------------------------------------------------------
 # Wrapper install helpers — retired (M1611 cleanup completed)
 # ---------------------------------------------------------------------------
