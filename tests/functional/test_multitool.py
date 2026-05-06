@@ -9,6 +9,16 @@ Exercises the full cross-wrapper pipeline in a single session:
 
 Validates session file listing, cross-plan state, wrapper
 injection, and file routing.
+
+STATUS: skipped pending rewrite. The wrapper subsystem this test
+drives was retired in v0.10. The shared `tool_installed()` helper
+in `tests/functional/conftest.py` permanently reports False on the
+migrated environment, so `drive_install_flow` loops to its
+`max_turns` limit without ever exiting the install dialogue,
+guaranteeing that no `.png` is ever published before the first
+assertion. Adjacent coverage (F1 install flow, F36 browser→OCR
+cross-plan handoff) keeps the regression surface intact while this
+test is rewritten against the v0.10+ MCP install flow.
 """
 
 from __future__ import annotations
@@ -40,6 +50,16 @@ class TestF17FullPipeline:
     conversational install flow (same as F1) if not already present.
     """
 
+    @pytest.mark.skip(
+        reason=(
+            "Depends on the retired wrapper subsystem (v0.10 cycle). "
+            "tool_installed() in tests/functional/conftest.py reports "
+            "False permanently, so drive_install_flow can never reach "
+            "the screenshot path. Rewrite tracked separately — "
+            "rebuild against the v0.10+ MCP install flow with concrete "
+            "browser/OCR/aider MCP URLs once those are stable."
+        ),
+    )
     async def test_screenshot_ocr_aider_exec_msg(self, run_message):
         """What: 4-plan pipeline: screenshot → OCR → aider script → exec+msg.
 
