@@ -78,16 +78,6 @@ _RU_WORDS = frozenset(
 )
 
 
-def tool_installed(name: str) -> bool:
-    """Return True when a named wrapper is currently installed.
-
-    The wrapper subsystem was retired in the v0.10 cycle, so this helper
-    always reports False in the migrated test environment. Tests that
-    still depend on it patch this function directly in
-    ``tests.functional.conftest`` to drive the install flow.
-    """
-    return False
-
 _LANG_WORDS = {"it": _IT_WORDS, "en": _EN_WORDS, "es": _ES_WORDS, "ru": _RU_WORDS}
 _LANG_NAMES = {"it": "Italian", "en": "English", "es": "Spanish", "ru": "Russian",
                "zh": "Chinese"}
@@ -99,6 +89,15 @@ _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 
 
 _BLOCKQUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
+
+# Used ONLY by assert_no_failure_language. Scraped/cited news content
+# (sports headlines, press releases) often appears as markdown list
+# items containing words like "errore" / "failed" that legitimately
+# describe a third-party event, not a kiso failure. Stripping them
+# here prevents the false positive. assert_language deliberately does
+# not strip list items — see _strip_quoted_content docstring.
+_LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+.*$", re.MULTILINE)
+_NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s+.*$", re.MULTILINE)
 
 # Multilingual regex for text stats assertions (chars/lines count).
 # Matches: "chars: 1432", "**Character Count:** 1432", "caratteri: 92",
@@ -285,11 +284,16 @@ _PUB_URL_RE = re.compile(r"https?://\S+/pub/\S+")
 def assert_no_failure_language(text: str) -> None:
     """Assert that *text* does not contain obvious failure indicators.
 
-    Fenced code blocks and blockquotes are stripped first so that
-    technical code and scraped/cited content don't trigger false
-    positives.
+    Strips fenced code blocks, blockquotes, AND markdown list /
+    numbered items first, so technical code and scraped/cited content
+    (e.g. sports headlines containing "errore") don't trigger false
+    positives. Note this is a wider strip than `_strip_quoted_content`,
+    which keeps list items because language detection needs that
+    signal.
     """
     cleaned = _strip_quoted_content(text)
+    cleaned = _LIST_ITEM_RE.sub("", cleaned)
+    cleaned = _NUMBERED_ITEM_RE.sub("", cleaned)
     match = _FAILURE_PATTERNS.search(cleaned)
     assert match is None, (
         f"Failure language detected: {match.group()!r} in: {text[:300]}"
@@ -694,74 +698,14 @@ async def run_message(func_config, func_db, func_session, mock_mcp_catalog):
 
 
 # ---------------------------------------------------------------------------
-# drive_install_flow + assert_no_command_word
+# assert_no_command_word
 # ---------------------------------------------------------------------------
 
-# Two test-infrastructure helpers to make functional
-# tests robust against:
-# 1. LLM behavior drift on Turn 1 of an install flow (the planner is
-#    free to propose, install directly, or work around — the helper
-#    just keeps driving the conversation forward)
-# 2. False-positive substring matches when an assertion intended to
-#    catch shell commands scans free-form data fields (heredoc bodies,
-#    OCR text, planner reasoning) that may incidentally contain
-#    substrings matching command names (e.g. "curly" matches "curl")
-
-
-async def drive_install_flow(
-    run_message,
-    wrapper_name: str,
-    prompt: str,
-    *,
-    max_turns: int = 4,
-    timeout: float | None = None,
-):
-    """Drive a conversation forward until *wrapper_name* is installed.
-
-    Sends *prompt*, then loops sending follow-up "sì, installa il
-    wrapper {wrapper_name}" messages until the wrapper is installed or
-    *max_turns* is reached. When the wrapper finally installs, re-issues
-    the original prompt one more time so the returned result reflects
-    the installed-wrapper path.
-
-    The helper does NOT prescribe what the planner should do on any
-    given turn — it just drives the conversation forward the way a
-    real user would. The planner remains free to propose installation,
-    install directly, attempt a workaround, or change strategy
-    mid-flow. This preserves Kiso's generalist nature in functional
-    tests.
-
-    If *max_turns* is exhausted without the wrapper being installed,
-    returns the last result so the caller's assertion can show the
-    diagnostic state.
-
-    *timeout* defaults to ``LLM_INSTALL_TIMEOUT`` (15 min) because the
-    install plan often downloads multi-hundred-MB packages and runs
-    deps.sh. Caller can override with a smaller value for tests where
-    the wrapper is already installed.
-    """
-    if timeout is None:
-        from tests.conftest import LLM_INSTALL_TIMEOUT
-        timeout = LLM_INSTALL_TIMEOUT
-    kwargs = {"timeout": timeout}
-    # if the wrapper is already installed before turn 1, the
-    # first call already executes the prompt with the wrapper available
-    # — no need to re-issue. The re-issue at the end exists specifically
-    # for the install-happened path (where turns 2..N are install
-    # approvals, not the actual task).
-    preinstalled = tool_installed(wrapper_name)
-    result = await run_message(prompt, **kwargs)
-    if preinstalled:
-        return result
-    turns_used = 1
-    while not tool_installed(wrapper_name) and turns_used < max_turns:
-        result = await run_message(
-            f"sì, installa il wrapper {wrapper_name}", **kwargs,
-        )
-        turns_used += 1
-    if tool_installed(wrapper_name):
-        result = await run_message(prompt, **kwargs)
-    return result
+# Test-infrastructure helper to avoid false-positive substring matches
+# when an assertion intended to catch shell commands scans free-form
+# data fields (heredoc bodies, OCR text, planner reasoning) that may
+# incidentally contain substrings matching command names
+# (e.g. "curly" matches "curl").
 
 
 def assert_no_command_word(tasks, words):
