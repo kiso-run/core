@@ -178,7 +178,11 @@ class TestPromptBudgetSmoke:
         # MCP-vs-exec capability rule (prefer installed MCP over
         # inline-exec reimplementation when MCP declares matching
         # capability) + abstract examples + unhealthy-fallback clause.
-        ("planner.md", 23700),
+        # 2026-05-06: bumped to 24300 to accommodate the new
+        # `chat: true` Decision Tree branch covering turn-closer
+        # replies (rejection acks, thanks, social, "annulla") that
+        # do not require kiso to take any action.
+        ("planner.md", 24300),
         ("messenger.md", 2500),
         # M1610 (2026-05-03): bumped from 3400 → 3900 to accommodate
         # the "exit code is the primary signal" rule (exit=0 + silent

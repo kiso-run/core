@@ -1815,7 +1815,7 @@ class TestPlanSchema:
         base = {
             "goal": "Do X", "secrets": None, "tasks": [{**_MSG_TASK_DICT}],
             "extend_replan": None, "needs_install": None, "knowledge": None,
-            "kb_answer": None, "awaits_input": None,
+            "kb_answer": None, "awaits_input": None, "chat": None,
         }
         base.update(overrides)
         return base
@@ -8391,6 +8391,7 @@ class TestKbAnswerFlag:
             "knowledge": None,
             "kb_answer": True,
             "awaits_input": None,
+            "chat": None,
             "tasks": [
                 {"type": "msg", "detail": "Answer in English. fact",
                  "expect": None, "args": None},
@@ -8411,9 +8412,31 @@ class TestKbAnswerFlag:
             "knowledge": None,
             "kb_answer": None,
             "awaits_input": None,
+            "chat": None,
             "tasks": [
                 {"type": "exec", "detail": "ls", "expect": "files",
                  "args": None},
+            ],
+        }
+        jsonschema.validate(instance=plan, schema=self._inner_schema())
+
+    def test_plan_schema_accepts_chat_field(self):
+        """PLAN_SCHEMA must accept chat field (additionalProperties=false)."""
+        import jsonschema
+
+        plan = {
+            "goal": "Acknowledge cancellation",
+            "secrets": [],
+            "extend_replan": None,
+            "needs_install": None,
+            "knowledge": None,
+            "kb_answer": None,
+            "awaits_input": None,
+            "chat": True,
+            "tasks": [
+                {"type": "msg",
+                 "detail": "Answer in English. OK, won't install.",
+                 "expect": None, "args": None},
             ],
         }
         jsonschema.validate(instance=plan, schema=self._inner_schema())
@@ -8430,6 +8453,62 @@ class TestKbAnswerFlag:
         }
         errors = validate_plan(plan, installed_skills=[])
         assert not any("Plan has only msg tasks" in e for e in errors)
+
+    def test_chat_flag_allows_msg_only_plan(self):
+        """chat=True is a valid escape hatch for msg-only plans
+        (rejection ack, thanks, social, "annulla")."""
+        plan = {
+            "goal": "Acknowledge user's cancellation of install request",
+            "secrets": [],
+            "chat": True,
+            "tasks": [
+                {"type": "msg",
+                 "detail": "Answer in English. OK, I won't install it.",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+    def test_chat_with_action_task_rejected(self):
+        """chat=True + action task → coherence rejection (mirrors
+        kb_answer / awaits_input pattern)."""
+        plan = {
+            "goal": "Acknowledge but verify by listing",
+            "secrets": [],
+            "chat": True,
+            "tasks": [
+                {"type": "exec",
+                 "detail": "verify state by listing installed mcp servers",
+                 "expect": "list of servers", "args": None},
+                {"type": "msg",
+                 "detail": "Answer in English. confirmed not installed",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert any(
+            "chat is set but plan contains action tasks" in e
+            for e in errors
+        ), f"Expected chat coherence rejection, got: {errors}"
+
+    def test_msg_only_without_any_flag_still_rejected(self):
+        """The original guardrail must remain in force: a msg-only plan
+        with NO category flag (not chat / kb_answer / awaits_input /
+        needs_install / knowledge) is rejected."""
+        plan = {
+            "goal": "Just talk",
+            "secrets": [],
+            "tasks": [
+                {"type": "msg",
+                 "detail": "Answer in English. random response",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert any("Plan has only msg tasks" in e for e in errors), (
+            f"Expected msg-only-without-flag rejection, got: {errors}"
+        )
 
 
 class TestValidatePlanGroups:

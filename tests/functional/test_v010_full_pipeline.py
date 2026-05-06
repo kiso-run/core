@@ -101,6 +101,7 @@ def _plan_json(
         "needs_install": None,
         "knowledge": None,
         "kb_answer": None,
+        "chat": None,
     })
 
 

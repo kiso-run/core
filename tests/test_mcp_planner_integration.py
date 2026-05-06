@@ -57,6 +57,7 @@ def _plan(tasks: list[dict]) -> dict:
         "needs_install": None,
         "knowledge": None,
         "kb_answer": None,
+        "chat": None,
     }
 
 

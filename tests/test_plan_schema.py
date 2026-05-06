@@ -32,6 +32,7 @@ def _make_plan(**overrides) -> dict:
         "knowledge": None,
         "kb_answer": None,
         "awaits_input": None,
+        "chat": None,
     }
     base.update(overrides)
     return base

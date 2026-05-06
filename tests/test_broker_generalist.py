@@ -56,6 +56,7 @@ def _make_msg_only_plan(**overrides) -> dict:
         }],
         "extend_replan": None, "needs_install": None,
         "knowledge": None, "kb_answer": None, "awaits_input": True,
+        "chat": None,
     }
     base.update(overrides)
     return base

@@ -66,6 +66,7 @@ def _make_plan(**overrides) -> dict:
         "needs_install": None,
         "knowledge": None,
         "kb_answer": None,
+        "chat": None,
     }
     base.update(overrides)
     return base

@@ -1,30 +1,30 @@
 {
   "Bash tests": {
-    "avg_seconds": 0.1731,
+    "avg_seconds": 0.25,
     "count": 104
   },
   "Docker tests": {
-    "avg_seconds": 0.04,
+    "avg_seconds": 0.03,
     "count": 6
   },
   "Extended tests": {
-    "avg_seconds": 903.52,
+    "avg_seconds": 221.64,
     "count": 2
   },
   "Functional tests": {
-    "avg_seconds": 80.3414,
+    "avg_seconds": 72.5641,
     "count": 37
   },
   "Integration tests": {
-    "avg_seconds": 0.0945,
+    "avg_seconds": 0.1985,
     "count": 55
   },
   "Live tests": {
-    "avg_seconds": 17.6338,
+    "avg_seconds": 15.2636,
     "count": 69
   },
   "Unit tests": {
-    "avg_seconds": 0.0198,
-    "count": 4712
+    "avg_seconds": 0.0196,
+    "count": 4718
   }
 }

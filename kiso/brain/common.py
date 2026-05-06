@@ -904,7 +904,15 @@ PLAN_SCHEMA: dict = _build_strict_schema("plan", {
     # `kb_answer`: msg-only plans with this flag pass the validator;
     # mixing it with action tasks fails the coherence check.
     "awaits_input": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
-}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge", "kb_answer", "awaits_input"])
+    # Conversational turn-closer escape hatch. The planner sets this
+    # to true when the user's message does not require any action
+    # from kiso — rejection of a prior proposal, ack/thanks, social,
+    # "annulla / lascia stare / forget it / no never mind",
+    # confirmation of state without follow-up. Same family as
+    # `kb_answer` and `awaits_input`: msg-only plans with this flag
+    # pass the validator; mixing with action tasks fails coherence.
+    "chat": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+}, ["goal", "secrets", "tasks", "extend_replan", "needs_install", "knowledge", "kb_answer", "awaits_input", "chat"])
 
 
 REVIEW_SCHEMA: dict = _build_strict_schema("review", {
