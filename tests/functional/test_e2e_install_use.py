@@ -23,6 +23,7 @@ import os
 import shutil
 import socket
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -46,6 +47,24 @@ _OCR_MCP_NAME = "ocr"
 # and the Playwright Chromium browser (~150MB on first run).
 _INSTALL_SUBPROCESS_TIMEOUT = 600  # 10 minutes
 
+# Repo root (the directory containing pyproject.toml). All `uv run
+# kiso ...` subprocesses use this as `cwd` so they always pick up
+# the project's local CLI via [project.scripts] in the project venv,
+# never a `kiso` binary that may exist elsewhere on PATH.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _kiso_cmd(*args: str) -> list[str]:
+    """Build a `uv run kiso ...` command list.
+
+    Tests must exercise the CLI from THIS repo, not whatever `kiso`
+    binary the host happens to have on PATH. `uv run` resolves the
+    `kiso` script from the project's `[project.scripts]` section
+    using the project venv, so the binary version always matches the
+    code under test. No PATH `kiso` is required.
+    """
+    return ["uv", "run", "--project", str(_REPO_ROOT), "kiso", *args]
+
 
 def _network_reachable(host: str = "registry.npmjs.org", port: int = 443) -> bool:
     try:
@@ -55,26 +74,26 @@ def _network_reachable(host: str = "registry.npmjs.org", port: int = 443) -> boo
         return False
 
 
-def _skip_if_missing_prereqs(*, need_uv: bool = False) -> None:
+def _skip_if_missing_prereqs(*, need_github: bool = False) -> None:
     """Common skip-conditions for extended E2E install tests.
 
-    `need_uv` adds a check for the `uv` binary, required when the
-    test installs a kiso-run MCP (uvx-based) in addition to the
-    npm-based browser MCP.
+    `uv` is always required (the tests invoke the kiso CLI via
+    `uv run kiso ...` against the project venv — no host-PATH `kiso`
+    dependency). `npx` is always required (every extended test
+    installs at least one npm-based MCP). `need_github=True` adds a
+    reachability check on github.com for tests that also install a
+    kiso-run MCP from a github URL.
     """
+    if not shutil.which("uv"):
+        pytest.skip("uv not on PATH — needed to invoke the project's kiso CLI")
     if not shutil.which("npx"):
         pytest.skip("npx not on PATH — needed to install npm-based MCP servers")
-    if not shutil.which("kiso"):
-        pytest.skip("kiso CLI not on PATH — install kiso in the test env first")
     if not os.environ.get("OPENROUTER_API_KEY"):
         pytest.skip("OPENROUTER_API_KEY not set — required for live LLM calls")
     if not _network_reachable():
         pytest.skip("npm registry unreachable — extended install needs network")
-    if need_uv:
-        if not shutil.which("uv"):
-            pytest.skip("uv not on PATH — needed to install uvx-based MCP servers")
-        if not _network_reachable("github.com", 443):
-            pytest.skip("github.com unreachable — kiso-run MCP install needs network")
+    if need_github and not _network_reachable("github.com", 443):
+        pytest.skip("github.com unreachable — kiso-run MCP install needs network")
 
 
 def _mcp_already_installed(name: str) -> bool:
@@ -85,9 +104,9 @@ def _mcp_already_installed(name: str) -> bool:
     """
     try:
         out = subprocess.run(
-            ["kiso", "mcp", "list"],
+            _kiso_cmd("mcp", "list"),
             capture_output=True, text=True, timeout=30,
-            env={**os.environ},
+            env={**os.environ}, cwd=str(_REPO_ROOT),
         )
     except (subprocess.SubprocessError, FileNotFoundError):
         return False
@@ -95,16 +114,17 @@ def _mcp_already_installed(name: str) -> bool:
 
 
 def _install_via_cli(url: str, name: str) -> None:
-    """Run `kiso mcp install --from-url <url> --yes` synchronously.
+    """Run `kiso mcp install --from-url <url> --yes` synchronously
+    via `uv run kiso ...` so the CLI matches the project under test.
 
     The `--yes` flag skips the untrusted-source approval prompt, which
     is appropriate inside an isolated extended test.
     """
     result = subprocess.run(
-        ["kiso", "mcp", "install", "--from-url", url, "--yes"],
+        _kiso_cmd("mcp", "install", "--from-url", url, "--yes"),
         capture_output=True, text=True,
         timeout=_INSTALL_SUBPROCESS_TIMEOUT,
-        env={**os.environ},
+        env={**os.environ}, cwd=str(_REPO_ROOT),
     )
     if result.returncode != 0:
         pytest.fail(
@@ -246,7 +266,7 @@ class TestE2ECrossMCPHandoff:
           "illustrative") — proves the OCR call actually happened
           and its result reached the user.
         """
-        _skip_if_missing_prereqs(need_uv=True)
+        _skip_if_missing_prereqs(need_github=True)
 
         # Pre-install both MCPs via subprocess CLI (idempotent).
         if not _mcp_already_installed(_BROWSER_MCP_NAME):

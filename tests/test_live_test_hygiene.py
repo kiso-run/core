@@ -96,6 +96,50 @@ class TestNoWrapperKwargInLiveAndFunctional:
         )
 
 
+class TestNoBareKisoSubprocessInLiveAndFunctional:
+    """Tests that exercise the kiso CLI via subprocess MUST go through
+    the project's local CLI — `uv run --project <repo> kiso ...` or a
+    helper like `_kiso_cmd(...)` — never the bare `["kiso", ...]`
+    argv form, which silently picks up whatever `kiso` binary the host
+    happens to have on PATH (a different version, an older install,
+    or nothing at all).
+
+    Direct PATH `kiso` invocation in tests would let:
+    - a stale system install mask regressions in the code under test;
+    - a fresh runner with no `kiso` on PATH skip every install test
+      with a misleading "kiso CLI not on PATH" message instead of
+      using the project's own CLI.
+
+    The fix is mechanical: replace `subprocess.run(["kiso", ...])`
+    with `subprocess.run(_kiso_cmd(...))`, where `_kiso_cmd` builds
+    `["uv", "run", "--project", <repo_root>, "kiso", *args]`.
+    """
+
+    # Match `["kiso"` or `("kiso"` or `["kiso ` (with optional whitespace)
+    # at the START of a list/tuple. Does not match `, "kiso"` (the right
+    # form, where `kiso` is preceded by `uv run`).
+    BARE_KISO_RE = re.compile(r"""[\[\(]\s*["']kiso["']\s*[,\)\]]""")
+
+    def test_no_bare_kiso_in_subprocess_argv(self):
+        offenders: list[str] = []
+        for path in _live_and_functional_py_files():
+            text = path.read_text()
+            for match in self.BARE_KISO_RE.finditer(text):
+                line_no = text[: match.start()].count("\n") + 1
+                offenders.append(
+                    f"{path.relative_to(_TESTS_DIR.parent)}:{line_no}"
+                )
+        assert not offenders, (
+            "live + functional tests must not invoke the kiso CLI via "
+            "the bare `['kiso', ...]` argv form — that picks up "
+            "whatever `kiso` binary is on PATH, not the project's "
+            "code under test. Use `subprocess.run(_kiso_cmd(...))` "
+            "(see tests/functional/test_e2e_install_use.py) which "
+            "expands to `['uv', 'run', '--project', <repo>, 'kiso', "
+            f"*args]`. Offenders: {offenders}"
+        )
+
+
 class TestNoParadigmMismatchedStrings:
     """Post-v0.10 vocabulary sweep. The wrapper subsystem was retired
     (M1504-M1566), `registry.json` was retired (M1545), and `moltbook`
