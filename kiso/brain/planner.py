@@ -197,6 +197,18 @@ def _validate_plan_tasks(
         if t not in TASK_TYPES:
             errors.append(f"Task {i}: unknown type {t!r}")
             continue
+        # `detail` must always be a string. PLAN_SCHEMA declares it
+        # required, but strict-schema enforcement is best-effort across
+        # the model fleet (json_object fallbacks, partial schema
+        # honouring); a malformed task can otherwise crash the worker
+        # at sanitize time. Same bug class as M1617 in a different path.
+        if "detail" not in task or not isinstance(task.get("detail"), str):
+            errors.append(
+                f"Task {i}: missing required `detail` field — "
+                f"every task must include a non-null string `detail` "
+                f"that describes the natural-language intent."
+            )
+            continue
         if t in (TASK_TYPE_EXEC, TASK_TYPE_MCP) and task.get("expect") is None:
             errors.append(
                 f"Task {i}: {t} task must have expect describing WHAT RESULT you need "

@@ -2176,10 +2176,17 @@ async def _process_message(
         if session_secrets:
             log.info("%d secrets extracted", len(session_secrets))
 
-    # Sanitize secrets from task detail/args before DB storage
+    # Sanitize secrets from task detail/args before DB storage.
+    # Use `.get(...) or ""` for `detail` defensively: validate_plan
+    # rejects tasks missing the field, but a future regression that
+    # bypassed that path must not crash the worker with KeyError —
+    # surface a meaningful failure later instead. Mirrors the M1617
+    # pattern in the replan-context formatter.
     deploy_secrets = collect_deploy_secrets()
     for t in plan["tasks"]:
-        t["detail"] = sanitize_output(t["detail"], deploy_secrets, session_secrets)
+        t["detail"] = sanitize_output(
+            t.get("detail") or "", deploy_secrets, session_secrets,
+        )
         if t.get("args"):
             t["args"] = sanitize_value(t["args"], deploy_secrets, session_secrets)
 

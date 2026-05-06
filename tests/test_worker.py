@@ -4901,6 +4901,68 @@ class TestSanitizeTaskDetail:
         assert "sk-secret-value-1234" not in exec_task["detail"]
         assert "[REDACTED]" in exec_task["detail"]
 
+    async def test_missing_detail_does_not_raise_keyerror(self, db, tmp_path):
+        """A planner-emitted task missing the `detail` field must not
+        crash the worker sanitize step. Layer 1 (validate_plan) rejects
+        the malformation; this test locks the Layer 2 defensive
+        backstop in `kiso/worker/loop.py` so a future regression that
+        re-bypasses the validator does not crash.
+        """
+        config = make_config()
+        await create_session(db, "sess1")
+        msg_id = await save_message(
+            db, "sess1", "alice", "user", "go", processed=False,
+        )
+
+        # Final plan has a task without a `detail` key. validate_plan
+        # mocked away here; the test exercises ONLY the sanitize path.
+        plan_missing_detail = {
+            "goal": "Run a command",
+            "secrets": [],
+            "tasks": [
+                # `detail` key absent on purpose
+                {"type": "exec", "expect": "ok", "args": None},
+                {"type": "msg",
+                 "detail": "Done", "args": None, "expect": None},
+            ],
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        await queue.put(
+            {"id": msg_id, "content": "go", "user_role": "admin"},
+        )
+
+        with patch(
+            "kiso.worker.loop.run_planner",
+            new_callable=AsyncMock,
+            return_value=plan_missing_detail,
+        ), patch(
+            "kiso.worker.loop.run_messenger",
+            new_callable=AsyncMock,
+            return_value="Done",
+        ), patch(
+            "kiso.worker.loop.run_reviewer",
+            new_callable=AsyncMock,
+            return_value=REVIEW_OK,
+        ), patch(
+            "kiso.worker.loop._exec_task",
+            new_callable=AsyncMock,
+            return_value=("ok", "", True, 0),
+        ), _patch_translator(), _patch_kiso_dir(tmp_path):
+            # Must not raise KeyError. The plan completes (or fails for
+            # any other unrelated reason); the only contract is that
+            # the sanitize step does not crash on the missing key.
+            await asyncio.wait_for(
+                run_worker(db, config, "sess1", queue), timeout=5,
+            )
+
+        plan = await get_plan_for_session(db, "sess1")
+        tasks = await get_tasks_for_plan(db, plan["id"])
+        exec_task = [t for t in tasks if t["type"] == "exec"][0]
+        # The persisted detail is the empty-string fallback.
+        assert exec_task["detail"] == ""
+
+
 class TestBuildFailureSummary:
     def test_basic(self):
         completed = [

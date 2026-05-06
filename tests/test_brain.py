@@ -8535,6 +8535,70 @@ class TestKbAnswerFlag:
         )
 
 
+class TestValidatePlanRejectsMissingDetail:
+    """A task whose `detail` field is missing or non-string must be
+    rejected by validate_plan with a clear retry signal. Same bug
+    class as M1617 (replan-context formatter) in a different path
+    (worker sanitize step in loop.py); without this guard the worker
+    crashes with KeyError on the malformed input."""
+
+    def test_missing_detail_key_rejected(self):
+        plan = {
+            "goal": "Run a command",
+            "secrets": [],
+            "tasks": [
+                # `detail` key absent — a malformed planner output
+                # that PLAN_SCHEMA strict mode should block but
+                # which can slip through with json_object fallback
+                # or partial-schema model honouring.
+                {"type": "exec", "expect": "ok", "args": None},
+                {"type": "msg",
+                 "detail": "Answer in English. done",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert any(
+            "missing required `detail` field" in e for e in errors
+        ), f"Expected missing-detail rejection, got: {errors}"
+
+    def test_null_detail_rejected(self):
+        plan = {
+            "goal": "Run a command",
+            "secrets": [],
+            "tasks": [
+                {"type": "exec", "detail": None,
+                 "expect": "ok", "args": None},
+                {"type": "msg",
+                 "detail": "Answer in English. done",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert any(
+            "missing required `detail` field" in e for e in errors
+        ), f"Expected null-detail rejection, got: {errors}"
+
+    def test_detail_present_passes_check(self):
+        """Sanity: a task with a string `detail` must NOT trigger
+        the missing-detail error, regardless of other fields."""
+        plan = {
+            "goal": "Run a command",
+            "secrets": [],
+            "tasks": [
+                {"type": "exec", "detail": "list files",
+                 "expect": "ok", "args": None},
+                {"type": "msg",
+                 "detail": "Answer in English. done",
+                 "expect": None, "args": None},
+            ],
+        }
+        errors = validate_plan(plan, installed_skills=[])
+        assert not any(
+            "missing required `detail`" in e for e in errors
+        ), f"Did not expect missing-detail error, got: {errors}"
+
+
 class TestValidatePlanGroups:
     """validate parallel group constraints."""
 
