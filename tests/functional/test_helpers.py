@@ -70,6 +70,22 @@ class TestAssertItalian:
             "Il risultato per i primi 20 numeri della sequenza è il seguente."
         )
 
+    def test_italian_in_markdown_list_passes(self):
+        # Italian prose formatted as a markdown bullet list must still
+        # score as Italian. Stripping list items used to discard real
+        # signal and break this case (regression observed when a model
+        # answered "quali framework Python conosci?" with a bulleted
+        # comparison of Django and Flask).
+        assert_italian(
+            "Ecco i framework che conosco:\n\n"
+            "- **Django**: un framework batteries-included, "
+            "con ORM integrato e template engine proprio. "
+            "È ideale per progetti più strutturati.\n"
+            "- **Flask**: un framework leggero che usa Werkzeug "
+            "come WSGI toolkit e Jinja2 per i template. "
+            "È adatto a progetti più piccoli e modulari.\n"
+        )
+
 
 class TestAssertEnglish:
     def test_english_text_passes(self):

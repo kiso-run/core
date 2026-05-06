@@ -98,8 +98,6 @@ _WORD_RE = re.compile(r"[a-zàèéìòùáéíóúñüа-яё]+", re.IGNORECASE)
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
 
 
-_LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+.*$", re.MULTILINE)
-_NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s+.*$", re.MULTILINE)
 _BLOCKQUOTE_RE = re.compile(r"^>.*$", re.MULTILINE)
 
 # Multilingual regex for text stats assertions (chars/lines count).
@@ -122,16 +120,22 @@ def _strip_code_blocks(text: str) -> str:
 
 
 def _strip_quoted_content(text: str) -> str:
-    """Remove code blocks, list items, and blockquotes from *text*.
+    """Remove fenced code blocks and blockquotes from *text*.
 
-    Messenger failure language appears in prose paragraphs. Scraped/cited
-    content appears as markdown list items, numbered lists, or blockquotes.
-    Stripping these prevents false positives from external content that
-    happens to contain words like "errore" (e.g. sports headlines).
+    Used by `assert_language` (function-word scoring) and
+    `assert_no_failure_language` (forbidden-pattern search). Code
+    blocks contain non-prose tokens that skew language scoring;
+    blockquotes are typically scraped/cited content that should not
+    drive either kind of assertion.
+
+    Markdown list items (`- `, `* `, `1. `) are NOT stripped: they
+    are the natural shape of structured prose responses and stripping
+    them removed real signal — e.g. an Italian list of frameworks
+    failed `assert_italian` despite being unambiguously Italian.
+    Cited/scraped content tends to live inside blockquotes or fenced
+    blocks, not loose list items.
     """
     text = _CODE_BLOCK_RE.sub("", text)
-    text = _LIST_ITEM_RE.sub("", text)
-    text = _NUMBERED_ITEM_RE.sub("", text)
     text = _BLOCKQUOTE_RE.sub("", text)
     return text
 
@@ -281,9 +285,9 @@ _PUB_URL_RE = re.compile(r"https?://\S+/pub/\S+")
 def assert_no_failure_language(text: str) -> None:
     """Assert that *text* does not contain obvious failure indicators.
 
-    Code blocks, markdown list items, numbered lists, and blockquotes are
-    stripped first so that technical code and scraped/cited content don't
-    trigger false positives.
+    Fenced code blocks and blockquotes are stripped first so that
+    technical code and scraped/cited content don't trigger false
+    positives.
     """
     cleaned = _strip_quoted_content(text)
     match = _FAILURE_PATTERNS.search(cleaned)
