@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -62,6 +63,14 @@ class ResolvedServer:
     headers: dict[str, str] = field(default_factory=dict)
     pre_install: list[list[str]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Optional thunk invoked by the CLI after `pre_install` runs to
+    # finalize `command`. Used by the github resolver to read the
+    # cloned repo's `pyproject.toml [project.scripts]` and pick the
+    # entry-point binary, since that information is not available
+    # until the editable install has populated the venv.
+    post_install_command_resolver: Callable[[], str] | None = field(
+        default=None, repr=False, compare=False
+    )
 
 
 class InstallResolverError(Exception):
@@ -178,15 +187,28 @@ def _resolve_npm_pkg(pkg: str, name_hint: str | None) -> ResolvedServer:
     if not (_SCOPED_NPM_RE.match(pkg) or _PACKAGE_NAME_RE.match(pkg)):
         raise InstallResolverError(f"invalid npm package name: {pkg!r}")
     name = name_hint or _sanitize_name(pkg.split("/")[-1])
+    args = ["-y", pkg]
+    notes = [
+        f"Installs ephemerally via npx on first use. No global install.",
+        f"Package: {pkg}",
+    ]
+    # @playwright/mcp defaults to launching the `chrome` channel (system
+    # Chrome at /opt/google/chrome/chrome). On hosts without system
+    # Chrome (the common case) this fails. Force the bundled Chromium
+    # browser so the install works out of the box after a one-time
+    # `npx playwright install chromium`.
+    if pkg == "@playwright/mcp":
+        args.append("--browser=chromium")
+        notes.append(
+            "Auto-added --browser=chromium so the bundled Playwright "
+            "Chromium is used (no system Chrome required)."
+        )
     return ResolvedServer(
         name=name,
         transport="stdio",
         command="npx",
-        args=["-y", pkg],
-        notes=[
-            f"Installs ephemerally via npx on first use. No global install.",
-            f"Package: {pkg}",
-        ],
+        args=args,
+        notes=notes,
     )
 
 
@@ -230,6 +252,46 @@ def _resolve_raw_manifest(
     return _resolve_from_manifest(payload, name_hint, source=url)
 
 
+def _select_entry_point_from_scripts(scripts: dict[str, str]) -> str:
+    """Deterministically pick a venv binary name from `[project.scripts]`.
+
+    Selection order:
+    1. Zero entries → ``InstallResolverError`` (the upstream repo
+       declares no script, kiso can't run it as an MCP).
+    2. One entry → that one, regardless of name.
+    3. Multiple entries → prefer scripts matching ``kiso-*-mcp``, then
+       ``*-mcp``, then alphabetical first. Ties are broken
+       alphabetically so the choice is reproducible across hosts.
+    """
+    if not scripts:
+        raise InstallResolverError(
+            "no [project.scripts] entry in pyproject.toml — cannot "
+            "determine MCP entry-point binary"
+        )
+    names = sorted(scripts.keys())
+    if len(names) == 1:
+        return names[0]
+    kiso_mcp = [n for n in names if n.startswith("kiso-") and n.endswith("-mcp")]
+    if kiso_mcp:
+        return kiso_mcp[0]
+    dash_mcp = [n for n in names if n.endswith("-mcp")]
+    if dash_mcp:
+        return dash_mcp[0]
+    return names[0]
+
+
+def _read_pyproject_scripts(clone_dir: Path) -> dict[str, str]:
+    pyproject = clone_dir / "pyproject.toml"
+    if not pyproject.is_file():
+        raise InstallResolverError(
+            f"pyproject.toml not found in {clone_dir} — cannot "
+            "determine MCP entry-point binary"
+        )
+    data = tomllib.loads(pyproject.read_text())
+    project = data.get("project") or {}
+    return dict(project.get("scripts") or {})
+
+
 def _resolve_github(url: str, name_hint: str | None) -> ResolvedServer:
     parsed = urlparse(url)
     parts = [p for p in parsed.path.split("/") if p]
@@ -246,21 +308,25 @@ def _resolve_github(url: str, name_hint: str | None) -> ResolvedServer:
         ["uv", "venv", str(clone_dir / ".venv")],
         ["uv", "pip", "install", "--python", str(clone_dir / ".venv" / "bin" / "python"), "-e", str(clone_dir)],
     ]
-    # Entry-point detection happens after install (inspection of the
-    # cloned repo's pyproject.toml). For the resolver stage we just
-    # point at the venv's python + the expected entry-point binary
-    # name — a final sanity check is left to the CLI after install.
+
+    def _resolve_command_after_install() -> str:
+        scripts = _read_pyproject_scripts(clone_dir)
+        entry = _select_entry_point_from_scripts(scripts)
+        return str(clone_dir / ".venv" / "bin" / entry)
+
     return ResolvedServer(
         name=name,
         transport="stdio",
+        # Placeholder — replaced by the CLI after pre_install runs.
         command=str(clone_dir / ".venv" / "bin" / name),
         args=[],
         cwd=str(clone_dir),
         pre_install=pre_install,
+        post_install_command_resolver=_resolve_command_after_install,
         notes=[
             f"Git-clone install from {owner}/{repo}",
             f"Clone target: {clone_dir}",
-            "Entry-point assumed to match the repo name — verify via kiso mcp test after install.",
+            "Entry-point auto-detected from pyproject.toml [project.scripts] after install.",
         ],
     )
 

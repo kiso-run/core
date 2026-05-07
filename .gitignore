@@ -6,3 +6,4 @@ __pycache__/
 .env
 .codex
 .aider*
+.playwright-mcp/

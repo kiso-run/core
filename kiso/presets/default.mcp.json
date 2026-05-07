@@ -14,7 +14,8 @@
       "command": "npx",
       "args": [
         "-y",
-        "@playwright/mcp@0.0.70"
+        "@playwright/mcp@0.0.70",
+        "--browser=chromium"
       ]
     },
     "aider": {

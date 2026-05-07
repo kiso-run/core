@@ -74,7 +74,38 @@ def _network_reachable(host: str = "registry.npmjs.org", port: int = 443) -> boo
         return False
 
 
-def _skip_if_missing_prereqs(*, need_github: bool = False) -> None:
+_PLAYWRIGHT_INSTALL_TIMEOUT = 300  # 5 minutes — first download is ~150MB
+
+
+def _ensure_chromium_installed() -> None:
+    """Ensure the `chrome-for-testing` build that
+    `@playwright/mcp --browser=chromium` expects is installed.
+
+    `@playwright/mcp` resolves `--browser=chromium` to the
+    `chrome-for-testing` distribution, NOT the regular Playwright
+    `chromium` build. The MCP exposes its own install subcommand —
+    we call it idempotently before any test that drives the
+    browser MCP. The subcommand is a no-op on cache hit, so we
+    don't manage a separate cache check on our side. The helper
+    skips the calling test if the install itself fails — that's an
+    environment problem, not a kiso bug.
+    """
+    result = subprocess.run(
+        ["npx", "@playwright/mcp", "install-browser", "chrome-for-testing"],
+        capture_output=True, text=True,
+        timeout=_PLAYWRIGHT_INSTALL_TIMEOUT,
+    )
+    if result.returncode != 0:
+        pytest.skip(
+            f"`npx @playwright/mcp install-browser chrome-for-testing` "
+            f"failed (exit {result.returncode}). "
+            f"stderr: {result.stderr[-500:]}"
+        )
+
+
+def _skip_if_missing_prereqs(
+    *, need_github: bool = False, need_browser: bool = False,
+) -> None:
     """Common skip-conditions for extended E2E install tests.
 
     `uv` is always required (the tests invoke the kiso CLI via
@@ -82,7 +113,9 @@ def _skip_if_missing_prereqs(*, need_github: bool = False) -> None:
     dependency). `npx` is always required (every extended test
     installs at least one npm-based MCP). `need_github=True` adds a
     reachability check on github.com for tests that also install a
-    kiso-run MCP from a github URL.
+    kiso-run MCP from a github URL. `need_browser=True` ensures a
+    Playwright-bundled Chromium is available for tests that drive
+    `@playwright/mcp`.
     """
     if not shutil.which("uv"):
         pytest.skip("uv not on PATH — needed to invoke the project's kiso CLI")
@@ -94,6 +127,8 @@ def _skip_if_missing_prereqs(*, need_github: bool = False) -> None:
         pytest.skip("npm registry unreachable — extended install needs network")
     if need_github and not _network_reachable("github.com", 443):
         pytest.skip("github.com unreachable — kiso-run MCP install needs network")
+    if need_browser:
+        _ensure_chromium_installed()
 
 
 def _mcp_already_installed(name: str) -> bool:
@@ -121,7 +156,12 @@ def _install_via_cli(url: str, name: str) -> None:
     is appropriate inside an isolated extended test.
     """
     result = subprocess.run(
-        _kiso_cmd("mcp", "install", "--from-url", url, "--yes"),
+        _kiso_cmd(
+            "mcp", "install",
+            "--from-url", url,
+            "--name", name,
+            "--yes",
+        ),
         capture_output=True, text=True,
         timeout=_INSTALL_SUBPROCESS_TIMEOUT,
         env={**os.environ}, cwd=str(_REPO_ROOT),
@@ -172,7 +212,7 @@ class TestE2EBrowserInstallAndUse:
         targeting the playwright/browser server; no inline `curl` /
         `wget` rewrite of the navigate intent.
         """
-        _skip_if_missing_prereqs()
+        _skip_if_missing_prereqs(need_browser=True)
 
         # Pre-install via subprocess CLI rather than driving it
         # through the planner. The conversational install flow is
@@ -266,7 +306,7 @@ class TestE2ECrossMCPHandoff:
           "illustrative") — proves the OCR call actually happened
           and its result reached the user.
         """
-        _skip_if_missing_prereqs(need_github=True)
+        _skip_if_missing_prereqs(need_github=True, need_browser=True)
 
         # Pre-install both MCPs via subprocess CLI (idempotent).
         if not _mcp_already_installed(_BROWSER_MCP_NAME):

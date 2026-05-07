@@ -343,6 +343,15 @@ def _cmd_install(args: argparse.Namespace) -> int:
             sys.stderr.write(result.stderr)
             die(f"pre-install step failed: {' '.join(step)}")
 
+    # Some resolvers (github) defer the venv binary path until after
+    # the editable install populates the venv and the cloned
+    # pyproject.toml is parseable. Finalize `command` here.
+    if resolved.post_install_command_resolver is not None:
+        try:
+            resolved.command = resolved.post_install_command_resolver()
+        except InstallResolverError as e:
+            die(str(e))
+
     entry = _entry_from_resolved(resolved)
     return _persist_server_entry(resolved.name, entry)
 
