@@ -38,6 +38,10 @@ pytestmark = [pytest.mark.functional, pytest.mark.requires_docker]
 _KISO_IMAGE = os.environ.get("KISO_TEST_IMAGE_TAG", "kiso:latest")
 _HEALTH_TIMEOUT_S = 30.0
 _HEALTH_POLL_INTERVAL_S = 0.5
+_BUILD_TIMEOUT_S = 600.0  # 10 min for a clean-cache build; cache-hit ≪ 10s
+
+# Repo root (the directory containing pyproject.toml + Dockerfile).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _docker_available() -> bool:
@@ -64,16 +68,44 @@ def _image_present(tag: str) -> bool:
     return r.returncode == 0
 
 
+def _ensure_image(tag: str) -> tuple[bool, str | None]:
+    """Ensure the local image *tag* exists, building it from the
+    repo Dockerfile when missing.
+
+    Returns ``(True, None)`` when the image is available (already
+    present or built fresh), ``(False, reason)`` otherwise.
+
+    Skip-reason strings are diagnostic — they surface the actual
+    blocker (Docker daemon unreachable / build stderr / build
+    timeout) so a CI run that skips this test is debuggable
+    without re-running anything.
+
+    Repeated builds hit Docker's layer cache; the cost is paid
+    once per source change. M1649 motivation: the prior
+    `pytest.mark.skipif(not _image_present(...))` silently skipped
+    the test on every host that hadn't pre-built the image, which
+    was a coverage gap on a load-bearing isolation property.
+    """
+    if _image_present(tag):
+        return True, None
+    if not _docker_available():
+        return False, "Docker daemon unreachable"
+    try:
+        r = subprocess.run(
+            ["docker", "build", "-t", tag, str(_REPO_ROOT)],
+            capture_output=True, text=True, timeout=_BUILD_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"docker build timed out after {_BUILD_TIMEOUT_S}s"
+    if r.returncode != 0:
+        tail = (r.stderr or r.stdout or "(no output)").strip()
+        return False, tail[-1000:]
+    return True, None
+
+
 _skip_unless_docker = pytest.mark.skipif(
     not _docker_available(),
     reason="Docker daemon unreachable — skipping multi-instance isolation test",
-)
-_skip_unless_image = pytest.mark.skipif(
-    not _image_present(_KISO_IMAGE),
-    reason=(
-        f"Local `{_KISO_IMAGE}` image missing — build it via `docker build -t "
-        f"{_KISO_IMAGE} .` to run this test"
-    ),
 )
 
 
@@ -152,7 +184,6 @@ def _kiso_container(kiso_dir: Path, host_port: int, token: str):
 
 
 @_skip_unless_docker
-@_skip_unless_image
 def test_two_instances_keep_sessions_isolated(tmp_path):
     """Sessions created in instance A do NOT appear in instance B's listing.
 
@@ -160,6 +191,12 @@ def test_two_instances_keep_sessions_isolated(tmp_path):
     feature: separate `~/.kiso` volumes → separate `store.db` files →
     one instance's session table is invisible to the other.
     """
+    # M1649: lazy-build the kiso image when missing (instead of
+    # silently skipping). Build cost is paid once per source change;
+    # subsequent runs hit the Docker layer cache.
+    ok, reason = _ensure_image(_KISO_IMAGE)
+    if not ok:
+        pytest.skip(f"Cannot ensure `{_KISO_IMAGE}` image: {reason}")
     kiso_dir_a = tmp_path / "instance_a"
     kiso_dir_b = tmp_path / "instance_b"
     kiso_dir_a.mkdir()
