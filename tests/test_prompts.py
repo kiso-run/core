@@ -190,7 +190,15 @@ class TestPromptBudgetSmoke:
         # planner a clean route for "what is recursion?"-type asks
         # that previously fell through to "ask the user to install a
         # search MCP".
-        ("planner.md", 25000),
+        # M1649 (2026-05-08): bumped to 26000 to accommodate the
+        # Cross-plan MCP switching invariant — when the user's
+        # intent in turn N maps to a different installed MCP than
+        # turn N-1's, the planner MUST emit the new MCP directly
+        # and NOT re-run the prior turn's MCP "to obtain its input
+        # first" (recency-bias loop). Pairs with the M1647
+        # capability augmenter: augmenter ensures the right MCP is
+        # visible; M1649 ensures the planner uses it.
+        ("planner.md", 26000),
         ("messenger.md", 2500),
         # M1610 (2026-05-03): bumped from 3400 → 3900 to accommodate
         # the "exit code is the primary signal" rule (exit=0 + silent
