@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import LLM_MULTI_PLAN_TIMEOUT
-from tests.functional.conftest import assert_no_command_word
+from tests.functional.conftest import assert_no_unconditional_mcp_bypass
 
 pytestmark = [pytest.mark.functional, pytest.mark.extended]
 
@@ -258,10 +258,16 @@ class TestE2EBrowserInstallAndUse:
             f"{[t.get('server') for t in result.tasks if t.get('type') == 'mcp']}"
         )
         # M1609 invariant: when an MCP exists for the intent, do not
-        # bypass it via inline curl / wget. Apply the word-boundary
-        # check on `command` to avoid false positives from page-content
-        # text that may contain "curl" / "wget" as substrings.
-        assert_no_command_word(result.tasks, ["curl", "wget"])
+        # bypass it via inline curl / wget. M1650: the assertion is
+        # the bypass-aware variant — exec fallback to curl AFTER the
+        # browser MCP has already failed in-session is legitimate per
+        # M1609; only unconditional bypass (curl with no MCP attempt
+        # or before the MCP attempt) is forbidden.
+        assert_no_unconditional_mcp_bypass(
+            result.tasks,
+            mcp_server=_BROWSER_MCP_NAME,
+            capability_words=["curl", "wget"],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +413,15 @@ class TestE2ECrossMCPHandoff:
         )
 
         # Defensive: neither plan should have re-implemented browser /
-        # OCR via inline shell commands.
-        assert_no_command_word(r1.tasks, ["curl", "wget"])
-        assert_no_command_word(r2.tasks, ["curl", "wget", "tesseract"])
+        # OCR via inline shell commands. M1650: post-failure fallback
+        # is legit per M1609; only unconditional bypass is forbidden.
+        assert_no_unconditional_mcp_bypass(
+            r1.tasks,
+            mcp_server=_BROWSER_MCP_NAME,
+            capability_words=["curl", "wget"],
+        )
+        assert_no_unconditional_mcp_bypass(
+            r2.tasks,
+            mcp_server=_OCR_MCP_NAME,
+            capability_words=["curl", "wget", "tesseract"],
+        )

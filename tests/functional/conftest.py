@@ -885,3 +885,56 @@ def assert_no_command_word(tasks, words):
             f"forbidden command word {m.group(0)!r} in exec task command: "
             f"{command[:200]}"
         )
+
+
+def assert_no_unconditional_mcp_bypass(
+    tasks, *, mcp_server: str, capability_words: list[str],
+):
+    """Assert the planner did NOT bypass *mcp_server* unconditionally.
+
+    Inspects the ``command`` field of ``exec`` tasks (same scope as
+    :func:`assert_no_command_word`) for any whole-word match against
+    *capability_words*. A match is a violation EXCEPT when it appears
+    in tasks emitted *after* the first failed ``mcp`` task whose
+    ``server`` field matches *mcp_server*: per the planner.md M1609
+    rule, exec fallback for that capability is allowed once the
+    matching MCP has failed in this session.
+
+    This is the bypass check the original
+    :func:`assert_no_command_word` was meant to provide. The old
+    helper false-positived on every legitimate post-failure fallback
+    because it had no notion of MCP-failure context; this one
+    encodes that context explicitly.
+
+    The matching rules are intentionally per-capability: a failure
+    on a DIFFERENT MCP does not authorize fallback for *mcp_server*.
+    A SUCCESSFUL MCP call also does not authorize fallback (the
+    planner already got the data the right way; a curl after success
+    is suspect).
+    """
+    if not tasks:
+        return
+    pattern = re.compile(
+        r"\b(" + "|".join(re.escape(w) for w in capability_words) + r")\b"
+    )
+    failed_idx: int | None = None
+    for i, t in enumerate(tasks):
+        if (
+            t.get("type") == "mcp"
+            and t.get("server") == mcp_server
+            and t.get("status") == "failed"
+        ):
+            failed_idx = i
+            break
+    for i, t in enumerate(tasks):
+        if t.get("type") != "exec":
+            continue
+        if failed_idx is not None and i > failed_idx:
+            continue
+        command = t.get("command") or ""
+        m = pattern.search(command)
+        assert m is None, (
+            f"forbidden command word {m.group(0)!r} in exec task at index "
+            f"{i} — bypass of mcp[{mcp_server}] without a prior failure of "
+            f"that server. Command: {command[:200]}"
+        )
