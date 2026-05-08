@@ -182,7 +182,15 @@ class TestPromptBudgetSmoke:
         # `chat: true` Decision Tree branch covering turn-closer
         # replies (rejection acks, thanks, social, "annulla") that
         # do not require kiso to take any action.
-        ("planner.md", 24300),
+        # M1646 (2026-05-08): bumped to 25000 to accommodate Decision
+        # Tree branch 5b — common, stable-knowledge Q&A answered from
+        # training (definitions, fundamental concepts) with explicit
+        # SCOPE LIMIT clause excluding dynamic / specific-entity
+        # queries. Closes the F19 stochastic-flake by giving the
+        # planner a clean route for "what is recursion?"-type asks
+        # that previously fell through to "ask the user to install a
+        # search MCP".
+        ("planner.md", 25000),
         ("messenger.md", 2500),
         # M1610 (2026-05-03): bumped from 3400 → 3900 to accommodate
         # the "exit code is the primary signal" rule (exit=0 + silent

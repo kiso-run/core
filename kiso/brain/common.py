@@ -1667,6 +1667,145 @@ def validate_briefing(briefing: dict, *, check_modules: bool = True) -> list[str
 
 _POOL_NAME_RE = re.compile(r"^-\s+(\S+)")
 
+# Tokens too generic to drive a capability match. English/Italian
+# stopwords + common short words. Deliberately conservative — it is
+# better to over-include a method (the planner sees one extra option
+# in the prompt) than to under-include and force the planner into an
+# exec fallback.
+_CAPABILITY_STOPWORDS = frozenset({
+    "the", "and", "for", "but", "you", "are", "with", "from", "this",
+    "that", "have", "will", "into", "your", "what", "when", "they",
+    "their", "them", "any", "all", "one", "two", "via", "use", "get",
+    "set", "run", "see", "now", "let", "me", "us", "our", "his", "her",
+    "ora", "che", "una", "uno", "del", "dei", "delle", "della", "dal",
+    "dalla", "con", "per", "nel", "nella", "sul", "sulla", "alla", "alle",
+    "tra", "fra", "non", "puoi", "puo", "devo", "deve", "fai", "fa",
+    "sia", "sui", "sui", "vai", "stai", "vado",
+})
+
+# Multilingual capability synonyms → canonical English token. Used by
+# the augmenter so a user writing "traduci" (Italian) still surfaces
+# `translate-mcp:translate`. Generalist coverage of the most common
+# capability verbs across IT / ES / FR / DE — the catalog itself stays
+# English so a single English-side match table is enough. Extend
+# freely; missing entries just degrade to the briefer's prompt-only
+# selection (no regression).
+_CAPABILITY_SYNONYMS: dict[str, str] = {
+    # Italian
+    "traduci": "translate", "tradurre": "translate", "traduzione": "translate",
+    "cerca": "search", "cercare": "search", "ricerca": "search", "ricercare": "search",
+    "trascrivi": "transcribe", "trascrivere": "transcribe", "trascrizione": "transcribe",
+    "naviga": "navigate", "navigare": "navigate", "navigazione": "navigate",
+    "estrai": "extract", "estrarre": "extract", "estrazione": "extract",
+    "scarica": "fetch", "scaricare": "fetch", "preleva": "fetch", "prelevare": "fetch",
+    "schermata": "screenshot", "cattura": "screenshot",
+    "immagine": "image",
+    # Spanish
+    "traducir": "translate", "traduccion": "translate",
+    "buscar": "search", "busqueda": "search",
+    "transcribir": "transcribe", "transcripcion": "transcribe",
+    "navegar": "navigate", "navegacion": "navigate",
+    "extraer": "extract", "extraccion": "extract",
+    "descargar": "fetch", "descarga": "fetch",
+    "captura": "screenshot",
+    # French
+    "traduire": "translate", "traduction": "translate",
+    "rechercher": "search", "recherche": "search",
+    "transcrire": "transcribe",
+    "naviguer": "navigate", "navigation": "navigate",
+    "extraire": "extract", "extraction": "extract",
+    "telecharger": "fetch",
+    # German
+    "ubersetzen": "translate", "ubersetzung": "translate",
+    "suchen": "search", "suche": "search",
+    "transkribieren": "transcribe", "transkription": "transcribe",
+    "navigieren": "navigate",
+    "extrahieren": "extract", "extraktion": "extract",
+    "herunterladen": "fetch",
+    "bildschirmfoto": "screenshot",
+}
+
+_CAPABILITY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+def _capability_tokens(text: str) -> set[str]:
+    """Tokenize *text* for capability matching.
+
+    Lowercase; alphanumeric runs only; ≥3 chars; stopwords dropped.
+    Uppercase acronyms (≥2 chars) preserved as lowercase tokens too —
+    short acronyms like "OCR" or "URL" are load-bearing for capability
+    routing even though they are <3 chars under the general filter.
+
+    Multilingual: tokens that match a known synonym (Italian / Spanish
+    / French / German action verbs) are normalized to their canonical
+    English form, so the augmenter can match a user writing "traduci"
+    against a catalog method named "translate".
+    """
+    out: set[str] = set()
+    for tok in _CAPABILITY_TOKEN_RE.findall(text):
+        is_acronym = len(tok) >= 2 and tok.isupper()
+        low = tok.lower()
+        if low in _CAPABILITY_STOPWORDS:
+            continue
+        canonical = _CAPABILITY_SYNONYMS.get(low)
+        if canonical is not None:
+            out.add(canonical)
+            out.add(low)
+            continue
+        if is_acronym:
+            out.add(low)
+        elif len(low) >= 4:
+            out.add(low)
+    return out
+
+
+def _augment_capability_matches(
+    existing: list[str], *, task_description: str, pool_text: str,
+) -> list[str]:
+    """Deterministically ensure catalog MCP methods that match the
+    user's named capability appear in *existing* `mcp_methods`.
+
+    The briefer is an LLM and occasionally drops a relevant method
+    despite the prompt rule. This safety net guarantees that any
+    method whose name OR description tokens overlap the user's
+    task-description tokens is included. Generalist (any capability
+    that has tokens in the catalog), deterministic (no model call).
+
+    *pool_text* is the formatted catalog produced by
+    ``format_mcp_catalog``: lines of the form
+    ``- server:method(args) — description``. Lines that do not
+    parse are skipped.
+
+    Returns the augmented list. Existing entries are preserved in
+    order; new matches are appended in the order they appear in the
+    catalog. Duplicates are deduped.
+    """
+    if not pool_text or not task_description:
+        return list(existing)
+
+    user_tokens = _capability_tokens(task_description)
+    if not user_tokens:
+        return list(existing)
+
+    augmented = list(existing)
+    seen = set(augmented)
+    for line in pool_text.split("\n"):
+        m = _POOL_NAME_RE.match(line)
+        if not m:
+            continue
+        qualified = m.group(1)
+        # Drop the args parenthetical from the captured token, keeping
+        # `server:method`. The pool format guarantees at most one `(`.
+        if "(" in qualified:
+            qualified = qualified.split("(", 1)[0]
+        if qualified in seen:
+            continue
+        method_tokens = _capability_tokens(line)
+        if user_tokens & method_tokens:
+            augmented.append(qualified)
+            seen.add(qualified)
+    return augmented
+
 
 def _filter_briefer_names(
     names: list[str], pool_text: str | None, label: str,
@@ -1739,6 +1878,19 @@ async def run_briefer(
             briefing.get("mcp_methods", []),
             context_pool.get("mcp_methods"),
             "mcp method",
+        )
+        # M1647: deterministic safety net for capability-match. The
+        # briefer prompt asks the LLM to surface methods whose name /
+        # description matches a user-named capability ("OCR",
+        # "search", "transcribe", ...), but the briefer is a small
+        # model and occasionally drops them. We re-augment from the
+        # catalog so the planner downstream sees the right MCP
+        # regardless of briefer-LLM stochasticity. Generalist (no
+        # per-capability hardcoding) and deterministic.
+        briefing["mcp_methods"] = _augment_capability_matches(
+            briefing["mcp_methods"],
+            task_description=task_description,
+            pool_text=context_pool["mcp_methods"],
         )
     if context_pool.get("mcp_resources"):
         briefing["mcp_resources"] = _filter_briefer_names(

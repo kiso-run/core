@@ -70,6 +70,14 @@ CLIENT_VERSION = "0.9.0"
 _STDERR_RING_MAX_BYTES = 1 * 1024 * 1024  # 1 MB per server in memory
 _SHUTDOWN_GRACE_S = 5.0
 
+# Per-line buffer on the subprocess stdout StreamReader. Asyncio's
+# default is 64 KiB, which is too small for any MCP that returns
+# image / audio / file content inline (a single newline-delimited
+# JSON-RPC line). 32 MiB covers full-page 4K screenshots
+# base64-encoded with safety margin, paid only when a single line
+# actually grows that big — no constant memory cost.
+_STDOUT_LIMIT_BYTES = 32 * 1024 * 1024
+
 _WORLD_READABLE_BITS = stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
 
 
@@ -482,6 +490,7 @@ class MCPStdioClient(MCPClient):
             env=env,
             cwd=cwd,
             start_new_session=True,
+            limit=_STDOUT_LIMIT_BYTES,
         )
         if self._sandbox_uid is not None:
             # asyncio forwards `user=` to setuid() in the child between

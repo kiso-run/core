@@ -13,6 +13,7 @@ Return JSON (empty list/string for unused fields):
 
 Rules:
 - AGGRESSIVE filtering. Default to EXCLUDING.
+- **Capability-match override (exception to AGGRESSIVE).** When the user's New Message literally names a capability — "OCR" / "extract text", "search the web" / "search for", "transcribe", "navigate to", "translate", "fetch", "screenshot", and similar — AND an Available MCP Method's NAME or DESCRIPTION matches that capability, that method MUST appear in `mcp_methods`. AGGRESSIVE filtering does NOT apply to capability matches: pruning a capability the user named is a regression that breaks the planner's downstream MCP-vs-exec routing. Include all matching methods if more than one applies.
 - Fast-path (all empty): greetings, small talk, simple knowledge. Needs context only: info retrieval. Needs modules: multi-step plans, replan, error recovery — add only specific module(s).
 - For planner: select ONLY skills and MCP methods the plan will actually use. Skills have a `when_to_use` hint — rely on it. Most requests need ZERO modules.
 - `skills`: positive selection — list only names whose hint matches. Never include a skill "just in case". Empty list if nothing fits.

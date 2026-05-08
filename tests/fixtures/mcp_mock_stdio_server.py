@@ -390,6 +390,20 @@ def _handle(req: dict) -> dict | None:
                     "structuredContent": {"ok": True, "value": 42},
                 },
             }
+        if SCENARIO == "large_tool_response":
+            # Emit a tools/call response whose serialized JSON line
+            # is well over the asyncio default 64 KiB readline buffer
+            # (M1644). 100 KiB of payload guarantees the bug fires
+            # without the fix, and stays comfortably under the new
+            # 32 MiB limit.
+            big_payload = "x" * (100 * 1024)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": big_payload}],
+                },
+            }
         # happy path
         if name == "echo":
             text = args.get("text", "")
