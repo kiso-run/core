@@ -79,7 +79,8 @@ _PLAYWRIGHT_INSTALL_TIMEOUT = 300  # 5 minutes — first download is ~150MB
 
 def _ensure_chromium_installed() -> None:
     """Ensure the `chrome-for-testing` build that
-    `@playwright/mcp --browser=chromium` expects is installed.
+    `@playwright/mcp --browser=chromium` expects is installed AND
+    its system dependencies are present (when running as root).
 
     `@playwright/mcp` resolves `--browser=chromium` to the
     `chrome-for-testing` distribution, NOT the regular Playwright
@@ -89,6 +90,16 @@ def _ensure_chromium_installed() -> None:
     don't manage a separate cache check on our side. The helper
     skips the calling test if the install itself fails — that's an
     environment problem, not a kiso bug.
+
+    M1653: chrome-for-testing also requires system libraries
+    (libnss3, libxss1, libgbm1, …) that the binary install does NOT
+    pull in. On bare-bones containers these are missing and the
+    browser crashes at launch with "Missing system dependencies".
+    `playwright install-deps chrome-for-testing` runs the apt-get
+    install for them — this requires root. When uid=0 we run it
+    inline; non-root developer hosts typically already have the libs
+    (Chrome / Firefox / etc. installed), so we skip the deps step
+    there and let any future launch failure surface naturally.
     """
     result = subprocess.run(
         ["npx", "@playwright/mcp", "install-browser", "chrome-for-testing"],
@@ -101,6 +112,18 @@ def _ensure_chromium_installed() -> None:
             f"failed (exit {result.returncode}). "
             f"stderr: {result.stderr[-500:]}"
         )
+    if os.geteuid() == 0:
+        deps = subprocess.run(
+            ["npx", "playwright", "install-deps", "chrome-for-testing"],
+            capture_output=True, text=True,
+            timeout=_PLAYWRIGHT_INSTALL_TIMEOUT,
+        )
+        if deps.returncode != 0:
+            pytest.skip(
+                f"`npx playwright install-deps chrome-for-testing` "
+                f"failed under root (exit {deps.returncode}). "
+                f"stderr: {deps.stderr[-500:]}"
+            )
 
 
 def _skip_if_missing_prereqs(
