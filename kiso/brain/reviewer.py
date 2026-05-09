@@ -313,6 +313,87 @@ def build_reviewer_messages(
     return _build_messages(system_prompt, context)
 
 
+_NO_WARNING_EXPECT_RE = re.compile(
+    # Phrasings the reviewer.md rule line 13 already enumerates.
+    # Match case-insensitive whole-words/phrases.
+    r"\b(no\s+(warnings?|errors?|warning/error)|"
+    r"without\s+(warnings?|errors?|warning/error)|"
+    r"cleanly|"
+    r"clean(\s+(install|build|run|exit|finish|completion))?)\b",
+    re.IGNORECASE,
+)
+
+# Match LOG-FORMATTED warning/error lines: token followed by `:` or
+# `[` (for prefix tags like "[WARNING]"). Word-boundary on the front
+# avoids matching "warned" / "warner" / "errors-out" etc. The
+# trailing punctuation requirement avoids matching prose like
+# "without any warning given" or "no errors today".
+_WARNING_LINE_RE = re.compile(
+    r"(?im)(^|\s)(\[?(warn(ing)?|err(or)?))\s*[:\]]",
+)
+
+
+def _output_has_warning_line(output: str) -> str | None:
+    """Return the matching excerpt if *output* contains a log-formatted
+    warning/error line, else None. The excerpt is the line containing
+    the match, trimmed to 120 chars, used for diagnostic reasons."""
+    if not output:
+        return None
+    m = _WARNING_LINE_RE.search(output)
+    if m is None:
+        return None
+    line_start = output.rfind("\n", 0, m.start()) + 1
+    line_end = output.find("\n", m.end())
+    if line_end == -1:
+        line_end = len(output)
+    return output[line_start:line_end].strip()[:120]
+
+
+def _expect_demands_no_warning(expect: str) -> bool:
+    if not expect:
+        return False
+    return bool(_NO_WARNING_EXPECT_RE.search(expect))
+
+
+def _enforce_no_warning_expect(
+    review: dict, expect: str, output: str,
+) -> dict:
+    """Post-validation override for `reviewer.md:13`.
+
+    The reviewer prompt already encodes: when ``expect`` demands "no
+    warning/error" / "cleanly" AND the output has a warning/error
+    log line, the review MUST be ``replan``. The reviewer-LLM
+    occasionally returns ``ok`` despite this — this helper closes
+    the gap deterministically.
+
+    Only fires when:
+    1. `review["status"]` is currently ``"ok"`` (don't downgrade
+       ``replan`` / ``stuck`` to anything else),
+    2. ``expect`` matches the no-warning phrasing,
+    3. ``output`` contains at least one log-formatted warning/error
+       line (not just prose mentioning the word).
+
+    All three must hold. Mutates and returns *review* with the
+    overridden status, reason marked ``[enforced]``, and
+    ``retry_hint=None`` (the planner should change strategy, not
+    retry the same command).
+    """
+    if review.get("status") != REVIEW_STATUS_OK:
+        return review
+    if not _expect_demands_no_warning(expect):
+        return review
+    excerpt = _output_has_warning_line(output)
+    if excerpt is None:
+        return review
+    review["status"] = REVIEW_STATUS_REPLAN
+    review["reason"] = (
+        f"[enforced] expect demands no warning/error but output contains: "
+        f"{excerpt!r}"
+    )
+    review["retry_hint"] = None
+    return review
+
+
 async def run_reviewer(
     config: Config,
     goal: str,
@@ -342,6 +423,11 @@ async def run_reviewer(
         validate_review, ReviewError, "Review",
         session=session,
     )
+    # M1651: deterministic post-validation override for the
+    # "no-warning expect" rule (reviewer.md:13). The reviewer-LLM
+    # occasionally returns `ok` despite the rule; this guarantees
+    # `replan` when the pattern unambiguously fires.
+    review = _enforce_no_warning_expect(review, expect, output)
     log.info("Review: status=%s reason=%s", review["status"],
              (review.get("reason") or "")[:200])
     return review
