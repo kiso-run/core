@@ -139,3 +139,81 @@ class TestBuildTimeout:
         assert ok is False
         assert reason is not None
         assert "timeout" in reason.lower() or "timed out" in reason.lower()
+
+
+class TestDockerCheckEvaluatedLazily:
+    """The docker-availability check must happen at TEST RUN time,
+    not at module-import time. M1649b: a transient docker-info
+    hiccup at import time used to freeze the skip mark for the
+    whole pytest session — so a test would skip with 'Docker
+    daemon unreachable' even if the daemon recovered before the
+    test actually ran.
+    """
+
+    def test_no_module_level_docker_call(self):
+        """AST-walk the module to verify no top-level
+        `pytest.mark.skipif(...)` call passes a `_docker_available()`
+        invocation as its first arg. That's the import-time-evaluation
+        bug we're guarding against. Strings / docstrings / comments
+        that mention the pattern in prose are ignored — only call
+        nodes count."""
+        import ast
+        import inspect
+
+        from tests.functional import test_multi_instance_isolation as mod
+
+        tree = ast.parse(inspect.getsource(mod))
+        offenders: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            # Match `pytest.mark.skipif(...)`
+            func = node.func
+            if not (
+                isinstance(func, ast.Attribute)
+                and func.attr == "skipif"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "mark"
+            ):
+                continue
+            # First positional arg is the condition
+            if not node.args:
+                continue
+            cond = node.args[0]
+            # Look for any Call node whose func name matches
+            # `_docker_available` in the condition subtree
+            for sub in ast.walk(cond):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Name)
+                    and sub.func.id == "_docker_available"
+                ):
+                    offenders.append(ast.unparse(node)[:200])
+                    break
+        assert not offenders, (
+            "tests/functional/test_multi_instance_isolation.py must not "
+            "pass `_docker_available()` to a top-level "
+            "`pytest.mark.skipif`. A transient docker-info hiccup at "
+            "import freezes the skip for the whole pytest session. "
+            "Move the check into the test body / `_ensure_image` "
+            "(invoked at test-run time). Offenders: " + str(offenders)
+        )
+
+    def test_ensure_image_includes_docker_diagnostic(self):
+        """When `_ensure_image` returns False because Docker is
+        unreachable, the reason string must include the actual
+        docker-info stderr tail so the skip is debuggable
+        (instead of a generic 'unreachable')."""
+        with patch(
+            "tests.functional.test_multi_instance_isolation.subprocess.run",
+            side_effect=[
+                _proc(returncode=1),  # image inspect: absent
+                _proc(returncode=1, stderr="permission denied while trying to connect"),
+            ],
+        ):
+            ok, reason = _ensure_image("kiso:latest")
+        assert ok is False
+        assert reason is not None
+        assert "permission denied" in reason.lower(), (
+            f"reason must surface the actual docker-info stderr; got: {reason!r}"
+        )

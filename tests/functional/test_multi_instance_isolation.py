@@ -44,17 +44,35 @@ _BUILD_TIMEOUT_S = 600.0  # 10 min for a clean-cache build; cache-hit ≪ 10s
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _docker_available() -> bool:
+def _docker_status() -> tuple[bool, str]:
+    """Probe Docker daemon reachability.
+
+    Returns ``(True, "")`` when reachable, ``(False, diagnostic)``
+    otherwise. The diagnostic surfaces the actual blocker (binary
+    missing / `docker info` stderr / timeout) so skipped runs are
+    debuggable without re-running anything. Single subprocess
+    call — used by both the boolean check and the skip-reason
+    formatter, so we never double-probe.
+    """
     if shutil.which("docker") is None:
-        return False
+        return False, "docker binary not on PATH"
     try:
         r = subprocess.run(
             ["docker", "info", "--format", "{{.ServerVersion}}"],
-            capture_output=True, timeout=5,
+            capture_output=True, text=True, timeout=5,
         )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    return r.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False, "docker info timed out after 5s"
+    except OSError as e:
+        return False, f"docker info OS error: {e}"
+    if r.returncode == 0:
+        return True, ""
+    tail = (r.stderr or r.stdout or "(no output)").strip()
+    return False, f"docker info exit={r.returncode}: {tail[-300:]}"
+
+
+def _docker_available() -> bool:
+    return _docker_status()[0]
 
 
 def _image_present(tag: str) -> bool:
@@ -88,8 +106,9 @@ def _ensure_image(tag: str) -> tuple[bool, str | None]:
     """
     if _image_present(tag):
         return True, None
-    if not _docker_available():
-        return False, "Docker daemon unreachable"
+    docker_ok, docker_reason = _docker_status()
+    if not docker_ok:
+        return False, docker_reason or "Docker daemon unreachable"
     try:
         r = subprocess.run(
             ["docker", "build", "-t", tag, str(_REPO_ROOT)],
@@ -103,10 +122,14 @@ def _ensure_image(tag: str) -> tuple[bool, str | None]:
     return True, None
 
 
-_skip_unless_docker = pytest.mark.skipif(
-    not _docker_available(),
-    reason="Docker daemon unreachable — skipping multi-instance isolation test",
-)
+# M1649b: the previous `pytest.mark.skipif(not _docker_available(), …)`
+# evaluated `_docker_available()` at MODULE-IMPORT time. A transient
+# `docker info` hiccup at that exact moment (slow daemon, cold start,
+# 5s timeout edge) froze the skip for the whole pytest session — even
+# if the daemon recovered before the test would actually run. The
+# docker availability check now happens at TEST-RUN time inside the
+# test body via `_ensure_image`, which surfaces the actual stderr tail
+# in the skip reason.
 
 
 def _free_port() -> int:
@@ -183,7 +206,6 @@ def _kiso_container(kiso_dir: Path, host_port: int, token: str):
         )
 
 
-@_skip_unless_docker
 def test_two_instances_keep_sessions_isolated(tmp_path):
     """Sessions created in instance A do NOT appear in instance B's listing.
 
