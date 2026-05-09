@@ -394,6 +394,101 @@ def _enforce_no_warning_expect(
     return review
 
 
+# M1652: extract literal patterns from safety facts so the reviewer's
+# "violation = stuck" rule can be enforced deterministically. Two
+# pattern shapes covered:
+#   1. Path-like tokens: a `/` followed by one or more
+#      `[a-zA-Z0-9._-]` segments separated by `/`. Captures
+#      `/home/`, `/root/`, `/etc/passwd`, `/var/log/auth.log` etc.
+#   2. Quoted tokens: ``'foo'`` / ``"foo"`` / ``` `foo` ```.
+# Free-form prose without either shape yields no patterns — abstract
+# rules ("be polite") don't trigger enforcement.
+_SAFETY_PATH_RE = re.compile(r"/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)*/?")
+_SAFETY_QUOTED_RE = re.compile(r"""['"`]([A-Za-z][A-Za-z0-9_]{1,63})['"`]""")
+
+
+def _extract_safety_patterns(safety_rules: list[str] | None) -> list[str]:
+    """Extract literal patterns the safety rules name.
+
+    Returns a deduplicated list of strings (preserving first-seen order)
+    that the enforcement layer scans for in task output.
+    """
+    if not safety_rules:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for rule in safety_rules:
+        if not rule:
+            continue
+        for m in _SAFETY_PATH_RE.finditer(rule):
+            tok = m.group(0)
+            if tok not in seen:
+                seen.add(tok)
+                out.append(tok)
+        for m in _SAFETY_QUOTED_RE.finditer(rule):
+            tok = m.group(1)
+            if tok not in seen:
+                seen.add(tok)
+                out.append(tok)
+    return out
+
+
+def _enforce_safety_violation_stuck(
+    review: dict,
+    *,
+    output: str,
+    safety_rules: list[str] | None,
+) -> dict:
+    """Post-validation override for `reviewer.md:28`.
+
+    The reviewer prompt already says: when output violates a safety
+    rule, status MUST be ``stuck``. The reviewer-LLM occasionally
+    returns ``replan`` (or ``ok``) instead, which prevents the
+    `_SAFETY_REFUSAL_DIRECTIVE` flow in
+    `kiso/worker/replan.py` from firing — the planner ends up in a
+    replan loop. This helper closes the gap deterministically.
+
+    Only fires when:
+    1. ``review["status"]`` is NOT already ``"stuck"`` (don't overwrite).
+    2. The safety rules contain at least one extractable literal
+       pattern (paths / quoted tokens).
+    3. ``output`` contains one of those patterns verbatim.
+
+    Mutates and returns *review* with ``status='stuck'``, reason
+    marked ``[enforced]`` citing the matched pattern + rule excerpt,
+    ``retry_hint=None`` (refuse, do not retry).
+    """
+    if review.get("status") == REVIEW_STATUS_STUCK:
+        return review
+    if not output:
+        return review
+    patterns = _extract_safety_patterns(safety_rules)
+    if not patterns:
+        return review
+    matched_pattern: str | None = None
+    matched_rule: str | None = None
+    for pattern in patterns:
+        if pattern in output:
+            matched_pattern = pattern
+            for rule in safety_rules or []:
+                if pattern in rule:
+                    matched_rule = rule
+                    break
+            break
+    if matched_pattern is None:
+        return review
+    review["status"] = REVIEW_STATUS_STUCK
+    rule_excerpt = (matched_rule or "").strip()
+    if len(rule_excerpt) > 200:
+        rule_excerpt = rule_excerpt[:197] + "..."
+    review["reason"] = (
+        f"[enforced] safety rule violation — output contains "
+        f"forbidden pattern {matched_pattern!r}. Rule: {rule_excerpt}"
+    )
+    review["retry_hint"] = None
+    return review
+
+
 async def run_reviewer(
     config: Config,
     goal: str,
@@ -428,6 +523,14 @@ async def run_reviewer(
     # occasionally returns `ok` despite the rule; this guarantees
     # `replan` when the pattern unambiguously fires.
     review = _enforce_no_warning_expect(review, expect, output)
+    # M1652: deterministic post-validation override for the
+    # "safety violation = stuck" rule (reviewer.md:28). When the
+    # output contains a literal pattern from a safety fact, force
+    # `stuck` so `_SAFETY_REFUSAL_DIRECTIVE` fires downstream and
+    # the planner does not enter a replan loop.
+    review = _enforce_safety_violation_stuck(
+        review, output=output, safety_rules=safety_rules,
+    )
     log.info("Review: status=%s reason=%s", review["status"],
              (review.get("reason") or "")[:200])
     return review
