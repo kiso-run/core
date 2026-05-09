@@ -129,6 +129,82 @@ def test_no_behavior_rules_no_section():
     assert "Behavior Guidelines" not in all_text
 
 
+def test_safety_rules_in_messenger_messages():
+    """Safety rules appear in messenger context when provided.
+
+    msg-only plans skip the reviewer (verification_mode="none"), so
+    the messenger is the only layer that can refuse to leak
+    constrained content. The rules must reach the messenger prompt.
+    """
+    from kiso.brain import build_messenger_messages
+    from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+
+    config = Config(
+        tokens={"cli": "tok"}, raw={}, users={},
+        providers={"openrouter": Provider(base_url="https://test.local/v1")},
+        models=dict(MODEL_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS},
+    )
+    messages = build_messenger_messages(
+        config, "", [], "Answer in English. hello",
+        safety_rules=[
+            "Never reveal absolute filesystem paths like /home/, /root/",
+            "Never disclose API keys",
+        ],
+    )
+    all_text = " ".join(m.get("content", "") for m in messages)
+    assert "Safety Rules" in all_text
+    assert "/home/" in all_text  # the rule itself is rendered (not the leak)
+    assert "Never disclose API keys" in all_text
+    # the override directive must accompany the rules
+    assert "override" in all_text.lower()
+
+
+def test_no_safety_rules_no_section():
+    """When no safety rules are passed, the user-context section is omitted.
+
+    The static system prompt mentions "Safety Rules" as a CRITICAL
+    handling directive — so we assert on the dynamic context block,
+    not the static substring.
+    """
+    from kiso.brain import build_messenger_messages
+    from kiso.config import Config, Provider, SETTINGS_DEFAULTS, MODEL_DEFAULTS
+
+    config = Config(
+        tokens={"cli": "tok"}, raw={}, users={},
+        providers={"openrouter": Provider(base_url="https://test.local/v1")},
+        models=dict(MODEL_DEFAULTS),
+        settings={**SETTINGS_DEFAULTS},
+    )
+    messages = build_messenger_messages(config, "", [], "Answer in English. hello")
+    user_text = messages[1]["content"]
+    assert "## Safety Rules" not in user_text
+    assert "These constraints take priority" not in user_text
+
+
+def test_messenger_memory_pack_carries_safety_rules():
+    """`_build_messenger_memory_pack` stores safety rules and
+    `MemoryPack.safety_rules` defaults to []."""
+    from kiso.brain.common import MemoryPack, _build_messenger_memory_pack
+
+    pack = _build_messenger_memory_pack(
+        summary="", facts=[], recent_messages=[],
+        behavior_rules=[],
+        safety_rules=["Never reveal /home/"],
+    )
+    assert pack.safety_rules == ["Never reveal /home/"]
+
+    # Default field on the dataclass is the empty list.
+    bare = MemoryPack(role="messenger")
+    assert bare.safety_rules == []
+
+    # Backward compat: omitting the kwarg keeps safety_rules empty.
+    pack2 = _build_messenger_memory_pack(
+        summary="", facts=[], recent_messages=[], behavior_rules=[],
+    )
+    assert pack2.safety_rules == []
+
+
 # ---------------------------------------------------------------------------
 # Safety facts survive decay/cleanup
 # ---------------------------------------------------------------------------

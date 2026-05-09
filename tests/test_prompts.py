@@ -198,8 +198,23 @@ class TestPromptBudgetSmoke:
         # first" (recency-bias loop). Pairs with the M1647
         # capability augmenter: augmenter ensures the right MCP is
         # visible; M1649 ensures the planner uses it.
-        ("planner.md", 26000),
-        ("messenger.md", 2500),
+        # M1648 (2026-05-08, prompt-first audit): replaced the M1649
+        # rule (which referenced a non-existent `{{plan_output_N}}`
+        # substitution mechanism and was actively misleading the
+        # planner) with a schema-level clarification that `args`
+        # carries data while `detail`/`msg` carry descriptions, so
+        # copying prior outputs into args is correct, not a
+        # violation of "no raw data". Bumped to 26200 to
+        # accommodate the slightly longer rule with the generic
+        # search→summarize illustrative example.
+        ("planner.md", 26200),
+        # Bumped 2500 → 2600 to fit a CRITICAL directive that pins
+        # the messenger to refuse-generically when a "## Safety
+        # Rules" context section is present. Required because
+        # msg-only plans bypass the reviewer's safety enforcement
+        # (verification_mode="none" for msg tasks), so the messenger
+        # is the only layer that can prevent a leak.
+        ("messenger.md", 2600),
         # M1610 (2026-05-03): bumped from 3400 → 3900 to accommodate
         # the "exit code is the primary signal" rule (exit=0 + silent
         # stdout = ok, replan requires concrete failure signal —

@@ -994,6 +994,7 @@ class MemoryPack:
     facts: list[dict] = field(default_factory=list)
     recent_messages: list[dict] = field(default_factory=list)
     behavior_rules: list[str] = field(default_factory=list)
+    safety_rules: list[str] = field(default_factory=list)
     available_tags: list[str] = field(default_factory=list)
     available_entities: list[dict] = field(default_factory=list)
 
@@ -1080,6 +1081,7 @@ def _build_messenger_memory_pack(
     facts: list[dict],
     recent_messages: list[dict] | None,
     behavior_rules: list[str] | None,
+    safety_rules: list[str] | None = None,
 ) -> MemoryPack:
     """Assemble messenger-specific memory."""
     operational_sections: dict[str, str] = {}
@@ -1091,6 +1093,7 @@ def _build_messenger_memory_pack(
         facts=list(facts),
         recent_messages=list(recent_messages or []),
         behavior_rules=list(behavior_rules or []),
+        safety_rules=list(safety_rules or []),
     )
 
 

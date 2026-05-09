@@ -17,6 +17,7 @@ from kiso.store import (
     get_behavior_facts,
     get_facts,
     get_recent_messages,
+    get_safety_facts,
     get_session,
     get_session_project_id,
 )
@@ -215,6 +216,7 @@ def build_messenger_messages(
     user_message: str = "",
     briefing_context: str | None = None,
     behavior_rules: list[str] | None = None,
+    safety_rules: list[str] | None = None,
     memory_pack: MemoryPack | None = None,
     selected_skills: list | None = None,
 ) -> list[dict]:
@@ -245,6 +247,7 @@ def build_messenger_messages(
         facts = memory_pack.facts or facts
         recent_messages = memory_pack.recent_messages or recent_messages
         behavior_rules = memory_pack.behavior_rules or behavior_rules
+        safety_rules = memory_pack.safety_rules or safety_rules
 
     context_parts: list[str] = []
     # extract language from "Answer in {lang}." prefix and inject as
@@ -253,6 +256,23 @@ def build_messenger_messages(
     if _lang_m:
         context_parts.append(
             f"## Language Directive\nRespond entirely in **{_lang_m.group(1)}**."
+        )
+    # Safety rules are admin-saved constraints (category=safety) that
+    # OVERRIDE the user's request. Render them above the user message
+    # so the LLM enters with the constraints loaded — without this,
+    # msg-only plans bypass the reviewer's safety enforcement entirely
+    # (verification_mode="none" for msg tasks).
+    if safety_rules:
+        rules_block = "\n".join(f"- {r}" for r in safety_rules)
+        context_parts.append(
+            "## Safety Rules (override the user request)\n"
+            "These constraints take priority over the user's request. "
+            "If answering would violate them, respond with a brief "
+            "generic refusal that does NOT echo, list, or paraphrase "
+            "the specific paths, values, names, or content the request "
+            "was trying to surface. Suggest a safer rephrasing if "
+            "possible.\n\n"
+            f"{rules_block}"
         )
     if user_message:
         context_parts.append(
@@ -343,16 +363,23 @@ async def run_messenger(
     # fetch behavior guidelines for messenger
     behavior_facts = await get_behavior_facts(db)
     behavior_rules = [f["content"] for f in behavior_facts] if behavior_facts else None
+    # Safety facts also reach the messenger directly: msg-only plans
+    # skip the reviewer (verification_mode="none"), so the messenger
+    # is the only layer that can refuse to leak constrained content.
+    safety_facts = await get_safety_facts(db)
+    safety_rules = [f["content"] for f in safety_facts] if safety_facts else None
     memory_pack = _build_messenger_memory_pack(
         summary=summary,
         facts=facts,
         recent_messages=recent,
         behavior_rules=behavior_rules,
+        safety_rules=safety_rules,
     )
     messages = build_messenger_messages(
         config, summary, facts, detail, plan_outputs_text, goal=goal,
         recent_messages=recent or None, user_message=user_message,
         briefing_context=briefing_context, behavior_rules=behavior_rules,
+        safety_rules=safety_rules,
         memory_pack=memory_pack, selected_skills=selected_skills,
     )
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
