@@ -74,7 +74,18 @@ def _network_reachable(host: str = "registry.npmjs.org", port: int = 443) -> boo
         return False
 
 
-_PLAYWRIGHT_INSTALL_TIMEOUT = 300  # 5 minutes — first download is ~150MB
+# Browser tarball download (~150 MB on first run, near-instant on
+# cache hit). The deps install runs `apt-get update && apt-get
+# install` for ~30 packages, which on slow mirrors regularly
+# exceeds 5 min — that's why deps gets its own, larger budget.
+_PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT = 300   # 5 min for the binary download
+_PLAYWRIGHT_DEPS_INSTALL_TIMEOUT = 900      # 15 min for apt-get update + install
+
+# Backwards-compat alias retained for any caller that imports the
+# pre-split name. Sized for the browser download (the original
+# semantic) — the deps path uses _PLAYWRIGHT_DEPS_INSTALL_TIMEOUT
+# directly.
+_PLAYWRIGHT_INSTALL_TIMEOUT = _PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT
 
 
 def _ensure_chromium_installed() -> None:
@@ -101,11 +112,18 @@ def _ensure_chromium_installed() -> None:
     (Chrome / Firefox / etc. installed), so we skip the deps step
     there and let any future launch failure surface naturally.
     """
-    result = subprocess.run(
-        ["npx", "@playwright/mcp", "install-browser", "chrome-for-testing"],
-        capture_output=True, text=True,
-        timeout=_PLAYWRIGHT_INSTALL_TIMEOUT,
-    )
+    try:
+        result = subprocess.run(
+            ["npx", "@playwright/mcp", "install-browser", "chrome-for-testing"],
+            capture_output=True, text=True,
+            timeout=_PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.skip(
+            f"`npx @playwright/mcp install-browser chrome-for-testing` "
+            f"timed out after {_PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT}s — "
+            f"slow registry/CDN, environment problem"
+        )
     if result.returncode != 0:
         pytest.skip(
             f"`npx @playwright/mcp install-browser chrome-for-testing` "
@@ -113,11 +131,18 @@ def _ensure_chromium_installed() -> None:
             f"stderr: {result.stderr[-500:]}"
         )
     if os.geteuid() == 0:
-        deps = subprocess.run(
-            ["npx", "playwright", "install-deps", "chrome-for-testing"],
-            capture_output=True, text=True,
-            timeout=_PLAYWRIGHT_INSTALL_TIMEOUT,
-        )
+        try:
+            deps = subprocess.run(
+                ["npx", "playwright", "install-deps", "chrome-for-testing"],
+                capture_output=True, text=True,
+                timeout=_PLAYWRIGHT_DEPS_INSTALL_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.skip(
+                f"`npx playwright install-deps chrome-for-testing` "
+                f"timed out after {_PLAYWRIGHT_DEPS_INSTALL_TIMEOUT}s — "
+                f"slow apt mirror, environment problem"
+            )
         if deps.returncode != 0:
             pytest.skip(
                 f"`npx playwright install-deps chrome-for-testing` "

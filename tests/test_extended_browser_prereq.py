@@ -14,6 +14,7 @@ These tests are unit-tier (no network, no LLM): patch
 
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -125,6 +126,89 @@ class TestEnsureChromiumInstalledRoot:
                 _ensure_chromium_installed()
             # Skip reason must surface the apt-get error tail
             assert "libnss3" in str(exc_info.value)
+
+
+class TestEnsureChromiumInstalledTimeouts:
+    """Browser-install and deps-install must use distinct timeouts,
+    and a `TimeoutExpired` from either subprocess must convert into
+    `pytest.skip` (slow mirror = environment problem, not a kiso bug)
+    — same posture as the `returncode != 0` branch.
+    """
+
+    def test_browser_install_uses_browser_timeout(self):
+        from tests.functional.test_e2e_install_use import (
+            _ensure_chromium_installed,
+            _PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT,
+        )
+
+        with patch(
+            "tests.functional.test_e2e_install_use.os.geteuid",
+            return_value=1000,
+        ), patch(
+            "tests.functional.test_e2e_install_use.subprocess.run",
+            return_value=_make_run_mock(returncode=0),
+        ) as run:
+            _ensure_chromium_installed()
+        kwargs = run.call_args_list[0].kwargs
+        assert kwargs.get("timeout") == _PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT
+
+    def test_deps_install_uses_deps_timeout(self):
+        from tests.functional.test_e2e_install_use import (
+            _ensure_chromium_installed,
+            _PLAYWRIGHT_DEPS_INSTALL_TIMEOUT,
+            _PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT,
+        )
+
+        with patch(
+            "tests.functional.test_e2e_install_use.os.geteuid",
+            return_value=0,
+        ), patch(
+            "tests.functional.test_e2e_install_use.subprocess.run",
+            side_effect=[
+                _make_run_mock(returncode=0),
+                _make_run_mock(returncode=0),
+            ],
+        ) as run:
+            _ensure_chromium_installed()
+        deps_kwargs = run.call_args_list[1].kwargs
+        assert deps_kwargs.get("timeout") == _PLAYWRIGHT_DEPS_INSTALL_TIMEOUT
+        # deps timeout must be strictly larger than browser timeout
+        assert _PLAYWRIGHT_DEPS_INSTALL_TIMEOUT > _PLAYWRIGHT_BROWSER_INSTALL_TIMEOUT
+
+    def test_browser_timeout_expired_converts_to_skip(self):
+        from tests.functional.test_e2e_install_use import _ensure_chromium_installed
+
+        with patch(
+            "tests.functional.test_e2e_install_use.os.geteuid",
+            return_value=1000,
+        ), patch(
+            "tests.functional.test_e2e_install_use.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="npx", timeout=300),
+        ):
+            with pytest.raises(pytest.skip.Exception) as exc_info:
+                _ensure_chromium_installed()
+        msg = str(exc_info.value)
+        assert "timed out" in msg
+        assert "install-browser" in msg
+
+    def test_deps_timeout_expired_converts_to_skip(self):
+        from tests.functional.test_e2e_install_use import _ensure_chromium_installed
+
+        with patch(
+            "tests.functional.test_e2e_install_use.os.geteuid",
+            return_value=0,
+        ), patch(
+            "tests.functional.test_e2e_install_use.subprocess.run",
+            side_effect=[
+                _make_run_mock(returncode=0),
+                subprocess.TimeoutExpired(cmd="npx", timeout=900),
+            ],
+        ):
+            with pytest.raises(pytest.skip.Exception) as exc_info:
+                _ensure_chromium_installed()
+        msg = str(exc_info.value)
+        assert "timed out" in msg
+        assert "install-deps" in msg
 
 
 class TestSkipIfMissingPrereqsBrowserFlag:
