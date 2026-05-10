@@ -1646,6 +1646,17 @@ def _detect_circular_replan(
     1. Word overlap in failure reasons (>60%) against any previous entry
     2. Strategy fingerprint similarity (>50% Jaccard) against any previous entry
     3. Install→use→fail loops (install keywords in history + "not found" in current)
+
+    Self-directed replans (planner emitting `replan` as the last task to
+    advance a multi-stage pipeline) are explicitly NOT retries —
+    they're forward progress, e.g. `[exec(find image), replan(call OCR
+    with that path)]`. Their "failure" text is a next-step instruction
+    that naturally shares words with prior pipeline stages (screenshot,
+    image, OCR, ...). Including them in the failure-word-overlap check
+    produces false positives that block legitimate progression. The
+    `strategy_fingerprint` check is still applied — it's based on
+    goal + task types/details and remains effective for real loops
+    where plan shapes repeat.
     """
     if len(replan_history) < 2:
         return False
@@ -1653,18 +1664,24 @@ def _detect_circular_replan(
     curr = replan_history[-1]
     curr_words = set(curr["failure"].lower().split())
     curr_fp = curr.get("strategy_fingerprint", frozenset())
+    curr_self_directed = bool(curr.get("is_self_directed", False))
 
     fp_repeat_count = 0
     for prev in replan_history[:-1]:
-        # Word overlap check
-        prev_words = set(prev["failure"].lower().split())
-        if prev_words and curr_words:
-            ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
-            if ratio >= 0.5:
-                log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
-                            ratio * 100, replan_reason)
-                return True
-        # Strategy fingerprint check
+        prev_self_directed = bool(prev.get("is_self_directed", False))
+        # Word overlap check — skip when either side is a
+        # self-directed replan (pipeline progression, not a retry).
+        if not (curr_self_directed or prev_self_directed):
+            prev_words = set(prev["failure"].lower().split())
+            if prev_words and curr_words:
+                ratio = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
+                if ratio >= 0.5:
+                    log.warning("Circular replan detected (%.0f%% failure word overlap): %s",
+                                ratio * 100, replan_reason)
+                    return True
+        # Strategy fingerprint check (applies to both self-directed and
+        # genuine-failure replans — repeated plan shapes ARE loops
+        # regardless of how the replan was triggered).
         prev_fp = prev.get("strategy_fingerprint", frozenset())
         if prev_fp and curr_fp:
             union = prev_fp | curr_fp
@@ -1868,6 +1885,7 @@ async def _run_planning_loop(
             "key_outputs": key_outputs,
             "task_results": [result.to_dict() for result in task_results],
             "strategy_fingerprint": strategy_fp,
+            "is_self_directed": is_self_directed,
         }
         if retry_hints:
             history_entry["retry_hints"] = retry_hints

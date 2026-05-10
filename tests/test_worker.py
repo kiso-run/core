@@ -7704,6 +7704,94 @@ class TestDetectCircularReplanUnit:
         ]
         assert _detect_circular_replan(history, history[-1]["failure"]) is False
 
+    def test_self_directed_replan_pipeline_progression_not_stuck(self):
+        """Self-directed replans advancing a multi-stage pipeline
+        share many words across stages (e.g. 'screenshot' → 'OCR'
+        both mention 'image', 'screenshot', 'extract'). The detector
+        must NOT flag this as circular — strategy fingerprints
+        differ (different goals + different task lists), and the
+        word-overlap check is the only false-positive source.
+
+        Scenario: plan 1 emitted [exec(find image), replan('use the
+        path to call OCR')]; plan 2 emits [mcp(ocr), replan('report
+        the extracted text')]. Both replans are self-directed pipeline
+        progression, not retry loops.
+        """
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {
+                "failure": "Self-directed replan: Use the found image "
+                           "file path to call OCR via ocr:ocr_image and "
+                           "extract text from the screenshot",
+                "goal": "Locate the screenshot",
+                "is_self_directed": True,
+                "strategy_fingerprint": frozenset(
+                    {"goal:Locate the screenshot", "exec:find image", "replan:use path"},
+                ),
+            },
+            {
+                "failure": "Self-directed replan: Report the extracted "
+                           "text from the screenshot to the user in Italian",
+                "goal": "Extract text from screenshot via OCR",
+                "is_self_directed": True,
+                "strategy_fingerprint": frozenset(
+                    {"goal:Extract text from screenshot via OCR",
+                     "mcp:ocr extract", "replan:report text"},
+                ),
+            },
+        ]
+        assert _detect_circular_replan(
+            history, history[-1]["failure"],
+        ) is False, (
+            "self-directed pipeline progression must not be flagged "
+            "as circular — strategy fingerprints differ, only the "
+            "word-overlap on shared domain vocabulary is high."
+        )
+
+    def test_self_directed_replan_with_repeated_strategy_still_flagged(self):
+        """Strategy fingerprint check still applies to self-directed
+        replans — if the planner emits the SAME plan shape twice in
+        a row (same goal prefix + same task types/details), it IS a
+        loop regardless of the self-directed flag."""
+        from kiso.worker.loop import _detect_circular_replan
+        repeated_fp = frozenset(
+            {"goal:Find and OCR the screenshot",
+             "exec:find image", "replan:call OCR"},
+        )
+        history = [
+            {
+                "failure": "Self-directed replan: call OCR with the path",
+                "goal": "Find and OCR the screenshot",
+                "is_self_directed": True,
+                "strategy_fingerprint": repeated_fp,
+            },
+            {
+                "failure": "Self-directed replan: call OCR with the path",
+                "goal": "Find and OCR the screenshot",
+                "is_self_directed": True,
+                "strategy_fingerprint": repeated_fp,
+            },
+        ]
+        assert _detect_circular_replan(
+            history, history[-1]["failure"],
+        ) is True, (
+            "repeated strategy fingerprint must still be detected "
+            "even when both entries are self-directed."
+        )
+
+    def test_word_overlap_still_fires_when_neither_self_directed(self):
+        """Regression guard: the existing word-overlap detection
+        path must remain effective for genuine review-failure
+        retry loops."""
+        from kiso.worker.loop import _detect_circular_replan
+        history = [
+            {"failure": "browser wrapper not installed cannot navigate to site",
+             "goal": "g", "is_self_directed": False},
+            {"failure": "browser wrapper not installed cannot navigate to the site",
+             "goal": "g", "is_self_directed": False},
+        ]
+        assert _detect_circular_replan(history, history[-1]["failure"]) is True
+
 
 @pytest.mark.asyncio
 class TestCircularReplanDetection:
