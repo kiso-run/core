@@ -545,6 +545,64 @@ def _validate_plan_groups(tasks: list[dict]) -> list[str]:
     return errors
 
 
+def _normalize_mcp_server_names(
+    tasks: list[dict],
+    mcp_methods_pool: dict[str, list] | None,
+) -> None:
+    """Mutate `tasks` in place: when a task emits `mcp(server=X)` with X
+    not in the registered pool but the task's `method` matches exactly
+    one registered server's methods, rewrite `task['server']` to that
+    server.
+
+    Why: planners frequently confuse the package name (`@playwright/mcp`
+    → "playwright") with the registered server name ("browser"), or
+    drop a "-mcp" suffix ("translate" vs "translate-mcp"). Both look
+    like LLM hallucination; the fix is deterministic — the method name
+    is unique across the catalog (or at worst, has a small candidate
+    set). When exactly one server registers the method, resolution is
+    unambiguous and we normalize silently.
+
+    No-op when:
+    - `mcp_methods_pool` is None (no catalog to resolve against).
+    - `task['server']` is already a registered server.
+    - `task['method']` is missing, non-string, or one of the synthetic
+      methods (`__resource_read`, `__prompt_get`).
+    - The method matches 0 servers (planner hallucinated both, leave for
+      validator to reject) or ≥2 servers (ambiguous, leave for validator).
+    """
+    if not mcp_methods_pool:
+        return
+    pool_keys = set(mcp_methods_pool)
+    # Build inverted index: method_name → [server, ...]
+    by_method: dict[str, list[str]] = {}
+    for server, methods in mcp_methods_pool.items():
+        for m in methods:
+            name = getattr(m, "name", None)
+            if isinstance(name, str):
+                by_method.setdefault(name, []).append(server)
+    for task in tasks:
+        if task.get("type") != TASK_TYPE_MCP:
+            continue
+        server = task.get("server")
+        method = task.get("method")
+        if not isinstance(server, str) or not isinstance(method, str):
+            continue
+        if server in pool_keys:
+            continue
+        if method.startswith("__"):
+            continue  # synthetic method — server resolution doesn't apply
+        candidates = by_method.get(method, [])
+        if len(candidates) == 1:
+            resolved = candidates[0]
+            log.warning(
+                "Server-name resolved: planner emitted mcp(server=%r) "
+                "but no such server registered; method %r maps "
+                "uniquely to %r — normalizing.",
+                server, method, resolved,
+            )
+            task["server"] = resolved
+
+
 def validate_plan(
     plan: dict,
     installed_skills: list[str] | None = None,
@@ -562,10 +620,19 @@ def validate_plan(
     If is_replan is False, extend_replan is stripped.
     If force_msg_only is True, only msg tasks are allowed — all other task
     types are rejected.
+
+    Side effect: mutates the plan's tasks in place when a task's
+    `mcp` server name resolves uniquely by method. See
+    `_normalize_mcp_server_names`.
     """
     errors, tasks = _validate_plan_structure(plan, max_tasks, is_replan)
     if errors:
         return errors
+    # Resolve hallucinated server names BEFORE downstream validation —
+    # otherwise a recoverable name-confusion ("playwright" → "browser")
+    # surfaces as "server is not available" and the planner falls back
+    # to inline curl, defeating the M1609 capability rule.
+    _normalize_mcp_server_names(tasks, mcp_methods_pool)
     if force_msg_only:
         non_msg = [t for t in tasks if t.get("type") != TASK_TYPE_MSG]
         if non_msg:
