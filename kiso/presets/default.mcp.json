@@ -16,7 +16,9 @@
         "-y",
         "@playwright/mcp@0.0.70",
         "--browser=chromium",
-        "--isolated"
+        "--isolated",
+        "--output-dir",
+        "${session:workspace}/pub"
       ]
     },
     "aider": {

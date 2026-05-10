@@ -115,6 +115,29 @@ class TestDefaultPresetContents:
         # Sanity: --browser=chromium also pinned (predates this test)
         assert "--browser=chromium" in browser_args
 
+    def test_browser_launches_with_output_dir_in_session_workspace(self):
+        """`--isolated` puts screenshots in a tmp dir the next plan
+        turn can't reference. `--output-dir ${session:workspace}/pub`
+        redirects them into the session's auto-publish directory,
+        making cross-plan MCP handoff (screenshot → OCR) possible.
+        The token is substituted at MCP launch time by
+        `kiso.mcp.config.resolve_session_tokens` so each session
+        gets its own pub dir."""
+        servers = load_mcp_preset("default")["mcpServers"]
+        browser_args = servers["browser"]["args"]
+        assert "--output-dir" in browser_args, (
+            "default preset must set --output-dir; without it the "
+            "browser MCP writes outputs to a tmp dir that the next "
+            "plan turn can't reach, breaking screenshot → OCR "
+            "and similar cross-plan handoffs."
+        )
+        idx = browser_args.index("--output-dir")
+        assert browser_args[idx + 1] == "${session:workspace}/pub", (
+            f"--output-dir must point to "
+            f"${{session:workspace}}/pub so outputs land in the "
+            f"auto-published dir; got {browser_args[idx + 1]!r}"
+        )
+
 
 class TestTrustRule:
     def test_default_preset_passes_trust(self):

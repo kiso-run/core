@@ -216,6 +216,23 @@ def _resolve_npm_pkg(pkg: str, name_hint: str | None) -> ResolvedServer:
             "profile dir — avoids profile lock conflicts between "
             "sequential or concurrent MCP calls."
         )
+        # --output-dir → where browser_take_screenshot / save_pdf /
+        # similar tools write their output files. Without an explicit
+        # output-dir, @playwright/mcp writes to its launch cwd (often
+        # a tmp dir under --isolated), so the file is not in the
+        # session workspace and downstream OCR / file-reference tasks
+        # can't find it. Pointing to ${session:workspace}/pub puts
+        # outputs inside the session's auto-publish dir, so the next
+        # plan turn sees them in the Session Workspace listing and
+        # can pass the path to a consuming MCP.
+        args.append("--output-dir")
+        args.append("${session:workspace}/pub")
+        notes.append(
+            "Auto-added --output-dir ${session:workspace}/pub so "
+            "screenshots / PDFs land in the session's auto-publish "
+            "directory — enables cross-plan MCP handoff (e.g. "
+            "screenshot → OCR)."
+        )
     return ResolvedServer(
         name=name,
         transport="stdio",

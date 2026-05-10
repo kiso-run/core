@@ -35,12 +35,19 @@ class TestPlaywrightMcpHeuristic:
     def test_unpinned_playwright_mcp_gets_chromium_flag(self):
         res = _resolve_npm_pkg("@playwright/mcp", None)
         # --browser=chromium (M1642): use bundled Chromium, no system
-        # Chrome dependency. --isolated (M1660): fresh temp profile
-        # per launch, avoids profile-lock conflicts on sequential or
-        # concurrent kiso MCP calls. Both auto-injected for
-        # @playwright/mcp; both load-bearing.
+        # Chrome dependency.
+        # --isolated (M1660): fresh temp profile per launch, avoids
+        # profile-lock conflicts on sequential or concurrent kiso
+        # MCP calls.
+        # --output-dir ${session:workspace}/pub (M1666): screenshots /
+        # PDFs / other browser output files land in the session's
+        # auto-publish dir, enabling cross-plan MCP handoff
+        # (screenshot → OCR). Without this, --isolated puts outputs
+        # in a tmp dir the next plan can't see.
+        # All three are load-bearing.
         assert res.args == [
             "-y", "@playwright/mcp", "--browser=chromium", "--isolated",
+            "--output-dir", "${session:workspace}/pub",
         ]
 
     def test_other_npm_packages_unchanged(self):

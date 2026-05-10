@@ -42,14 +42,17 @@ class TestNpmResolvers:
             resolve_from_url("npm:")
 
     def test_npm_playwright_mcp_auto_args(self):
-        """`@playwright/mcp` needs two auto-injected flags:
+        """`@playwright/mcp` needs three auto-injected flags:
           - --browser=chromium → use the bundled Chromium (no
             system Chrome dependency).
           - --isolated → fresh temp userDataDir per launch (avoids
             profile-lock conflicts on sequential or concurrent
             kiso MCP calls).
-        Both must be in the resolved args; missing either produces
-        a regression we have already paid for once."""
+          - --output-dir ${session:workspace}/pub → screenshots /
+            PDFs land in the session's auto-publish dir, enabling
+            cross-plan MCP handoff (screenshot → OCR).
+        All three must be in the resolved args; missing any
+        produces a regression we have already paid for."""
         r = resolve_from_url("npm:@playwright/mcp")
         assert r.command == "npx"
         assert "@playwright/mcp" in r.args
@@ -60,6 +63,18 @@ class TestNpmResolvers:
         assert "--isolated" in r.args, (
             "missing --isolated → sequential extended browser tests "
             "fail with 'Browser is already in use' profile-lock errors"
+        )
+        # --output-dir must be followed by the workspace-token path
+        # (two consecutive args, since the option takes a value).
+        assert "--output-dir" in r.args, (
+            "missing --output-dir → screenshots land in a tmp dir "
+            "the next plan turn can't see, breaking cross-plan "
+            "handoff to OCR / file-consuming MCPs"
+        )
+        idx = r.args.index("--output-dir")
+        assert r.args[idx + 1] == "${session:workspace}/pub", (
+            f"--output-dir must point to ${{session:workspace}}/pub; "
+            f"got {r.args[idx + 1]!r}"
         )
 
 
