@@ -1804,6 +1804,7 @@ def _capability_tokens(text: str) -> set[str]:
 
 def _augment_capability_matches(
     existing: list[str], *, task_description: str, pool_text: str,
+    extra_context: str = "",
 ) -> list[str]:
     """Deterministically ensure catalog MCP methods that match the
     user's named capability appear in *existing* `mcp_methods`.
@@ -1819,14 +1820,25 @@ def _augment_capability_matches(
     ``- server:method(args) — description``. Lines that do not
     parse are skipped.
 
+    *extra_context* (optional): additional text whose tokens are
+    union-ed with the task-description tokens before matching. Used
+    to surface capability verbs from the original user message even
+    when *task_description* is a paraphrased replan goal that may
+    have dropped them — e.g. user wrote "ora traduci…" but the
+    replan paraphrased it to "Extract text from page", losing the
+    "translate" verb. Without this fallback, cross-turn MCP routing
+    fails on replans because the augmenter sees no capability token.
+
     Returns the augmented list. Existing entries are preserved in
     order; new matches are appended in the order they appear in the
     catalog. Duplicates are deduped.
     """
-    if not pool_text or not task_description:
+    if not pool_text or not (task_description or extra_context):
         return list(existing)
 
     user_tokens = _capability_tokens(task_description)
+    if extra_context:
+        user_tokens |= _capability_tokens(extra_context)
     if not user_tokens:
         return list(existing)
 
@@ -1930,10 +1942,17 @@ async def run_briefer(
         # catalog so the planner downstream sees the right MCP
         # regardless of briefer-LLM stochasticity. Generalist (no
         # per-capability hardcoding) and deterministic.
+        # Recent-message tokens recover the capability verb when the
+        # caller's task_description is a paraphrased replan goal that
+        # has dropped the verb (e.g. user said "ora traduci…", replan
+        # paraphrased to "Extract text from page" — "translate" gone).
+        # Cross-turn MCP routing depends on this fallback.
+        _recent_for_aug = context_pool.get("recent_messages") or ""
         briefing["mcp_methods"] = _augment_capability_matches(
             briefing["mcp_methods"],
             task_description=task_description,
             pool_text=context_pool["mcp_methods"],
+            extra_context=_recent_for_aug,
         )
     if context_pool.get("mcp_resources"):
         briefing["mcp_resources"] = _filter_briefer_names(

@@ -214,7 +214,11 @@ class TestPromptBudgetSmoke:
         # than `[exec, replan]`. Without this carve-out the planner
         # follows the generic "lack info → replan" rule and emits
         # exec→replan loops that the circular-detector blocks.
-        ("planner.md", 27000),
+        # Bumped again 27000 → 27800 for the "capability verb governs
+        # routing, not turn history" rule that pairs with the
+        # augmenter recent-messages extension. Together they close
+        # the cross-turn MCP recency-bias failure mode.
+        ("planner.md", 27800),
         # Bumped 2500 → 2600 to fit a CRITICAL directive that pins
         # the messenger to refuse-generically when a "## Safety
         # Rules" context section is present. Required because

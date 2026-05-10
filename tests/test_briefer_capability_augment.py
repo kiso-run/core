@@ -202,3 +202,70 @@ class TestMultilingualCapabilityMatch:
             pool_text=_POOL,
         )
         assert "translate-mcp:translate" in result
+
+
+class TestCapabilityAugmenterExtraContext:
+    """The augmenter accepts an *extra_context* string whose tokens
+    are union-ed with *task_description* tokens before matching.
+    Used to recover capability verbs from the original user message
+    when *task_description* is a paraphrased replan goal that has
+    dropped them — without this, cross-turn MCP routing fails on
+    replans because the paraphrase loses the verb."""
+
+    def test_extra_context_recovers_dropped_verb(self):
+        """Replan paraphrase ('Extract text from page') loses
+        'translate'; recent_messages still contains 'traduci' from
+        the user. extra_context must surface translate-mcp."""
+        existing: list[str] = []
+        result = _augment_capability_matches(
+            existing,
+            task_description="Extract text from page",
+            pool_text=_POOL,
+            extra_context=(
+                "user: ora traduci in inglese il contenuto della pagina\n"
+                "assistant: I navigated to the page and found content."
+            ),
+        )
+        assert "translate-mcp:translate" in result, (
+            "augmenter must use extra_context tokens when the "
+            "task_description has dropped the capability verb."
+        )
+
+    def test_extra_context_default_empty_no_change(self):
+        """Default behaviour (extra_context omitted) must match the
+        pre-extension behaviour exactly — no spurious matches."""
+        existing: list[str] = []
+        result = _augment_capability_matches(
+            existing,
+            task_description="say hello",
+            pool_text=_POOL,
+        )
+        # 'hello' tokenizes to {'hello'} which doesn't match any
+        # method. No catalog entry should surface.
+        assert result == []
+
+    def test_extra_context_does_not_double_count(self):
+        """Tokens in BOTH task_description and extra_context still
+        produce one match (set union, not duplicate matches)."""
+        existing: list[str] = []
+        result = _augment_capability_matches(
+            existing,
+            task_description="traduci",
+            pool_text=_POOL,
+            extra_context="please traduci the page",
+        )
+        # translate-mcp:translate appears exactly once
+        assert result.count("translate-mcp:translate") == 1
+
+    def test_only_extra_context_tokens_still_match(self):
+        """Even with empty task_description, tokens harvested from
+        extra_context alone are sufficient to match a catalog
+        method."""
+        existing: list[str] = []
+        result = _augment_capability_matches(
+            existing,
+            task_description="",
+            pool_text=_POOL,
+            extra_context="user: cerca documentazione su python",
+        )
+        assert "search-mcp:search" in result
