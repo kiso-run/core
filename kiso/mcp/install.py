@@ -203,6 +203,19 @@ def _resolve_npm_pkg(pkg: str, name_hint: str | None) -> ResolvedServer:
             "Auto-added --browser=chromium so the bundled Playwright "
             "Chromium is used (no system Chrome required)."
         )
+        # --isolated → fresh temp userDataDir per launch. Without it,
+        # @playwright/mcp uses a single shared profile under
+        # ~/.cache/ms-playwright/...; sequential or concurrent kiso
+        # MCP calls then fight over the profile lock and the second
+        # caller fails with "Browser is already in use". Kiso's MCP
+        # usage is ephemeral by design (no persistent cookies/auth
+        # needed across calls), so isolated is the correct default.
+        args.append("--isolated")
+        notes.append(
+            "Auto-added --isolated so each launch uses a fresh temp "
+            "profile dir — avoids profile lock conflicts between "
+            "sequential or concurrent MCP calls."
+        )
     return ResolvedServer(
         name=name,
         transport="stdio",

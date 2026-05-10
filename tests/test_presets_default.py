@@ -98,6 +98,23 @@ class TestDefaultPresetContents:
         for name in ("aider", "search", "transcriber", "ocr", "docreader"):
             assert name in servers, f"Tier 2 server '{name}' missing"
 
+    def test_browser_launches_with_isolated_flag(self):
+        """`@playwright/mcp` defaults to a single shared profile dir
+        under `~/.cache/ms-playwright/...`. Sequential or concurrent
+        kiso MCP calls then fight over its profile lock and the
+        second caller fails with "Browser is already in use".
+        `--isolated` gives every launch a fresh temp userDataDir.
+        Pinned here to prevent silent removal."""
+        servers = load_mcp_preset("default")["mcpServers"]
+        browser_args = servers["browser"]["args"]
+        assert "--isolated" in browser_args, (
+            "default preset must launch @playwright/mcp with "
+            "--isolated; without it, sequential extended browser "
+            "tests fail with profile-lock conflicts."
+        )
+        # Sanity: --browser=chromium also pinned (predates this test)
+        assert "--browser=chromium" in browser_args
+
 
 class TestTrustRule:
     def test_default_preset_passes_trust(self):

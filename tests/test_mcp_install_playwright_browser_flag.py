@@ -34,7 +34,14 @@ class TestPlaywrightMcpHeuristic:
 
     def test_unpinned_playwright_mcp_gets_chromium_flag(self):
         res = _resolve_npm_pkg("@playwright/mcp", None)
-        assert res.args == ["-y", "@playwright/mcp", "--browser=chromium"]
+        # --browser=chromium (M1642): use bundled Chromium, no system
+        # Chrome dependency. --isolated (M1660): fresh temp profile
+        # per launch, avoids profile-lock conflicts on sequential or
+        # concurrent kiso MCP calls. Both auto-injected for
+        # @playwright/mcp; both load-bearing.
+        assert res.args == [
+            "-y", "@playwright/mcp", "--browser=chromium", "--isolated",
+        ]
 
     def test_other_npm_packages_unchanged(self):
         """Regression guard: heuristic fires only for playwright."""

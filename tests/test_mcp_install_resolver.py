@@ -41,6 +41,27 @@ class TestNpmResolvers:
         with pytest.raises(InstallResolverError):
             resolve_from_url("npm:")
 
+    def test_npm_playwright_mcp_auto_args(self):
+        """`@playwright/mcp` needs two auto-injected flags:
+          - --browser=chromium → use the bundled Chromium (no
+            system Chrome dependency).
+          - --isolated → fresh temp userDataDir per launch (avoids
+            profile-lock conflicts on sequential or concurrent
+            kiso MCP calls).
+        Both must be in the resolved args; missing either produces
+        a regression we have already paid for once."""
+        r = resolve_from_url("npm:@playwright/mcp")
+        assert r.command == "npx"
+        assert "@playwright/mcp" in r.args
+        assert "--browser=chromium" in r.args, (
+            "missing --browser=chromium → install fails on hosts "
+            "without system Chrome at /opt/google/chrome/chrome"
+        )
+        assert "--isolated" in r.args, (
+            "missing --isolated → sequential extended browser tests "
+            "fail with 'Browser is already in use' profile-lock errors"
+        )
+
 
 class TestPypiResolvers:
     def test_pypi_pseudo_url(self):
