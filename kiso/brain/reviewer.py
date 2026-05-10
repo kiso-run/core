@@ -16,6 +16,7 @@ from .common import (
     REVIEW_STATUS_STUCK,
     ReviewError,
     _build_messages,
+    _extract_safety_patterns,
     _join_or_empty,
     _load_modular_prompt,
     _retry_llm_with_validation,
@@ -392,45 +393,6 @@ def _enforce_no_warning_expect(
     )
     review["retry_hint"] = None
     return review
-
-
-# M1652: extract literal patterns from safety facts so the reviewer's
-# "violation = stuck" rule can be enforced deterministically. Two
-# pattern shapes covered:
-#   1. Path-like tokens: a `/` followed by one or more
-#      `[a-zA-Z0-9._-]` segments separated by `/`. Captures
-#      `/home/`, `/root/`, `/etc/passwd`, `/var/log/auth.log` etc.
-#   2. Quoted tokens: ``'foo'`` / ``"foo"`` / ``` `foo` ```.
-# Free-form prose without either shape yields no patterns — abstract
-# rules ("be polite") don't trigger enforcement.
-_SAFETY_PATH_RE = re.compile(r"/[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._-]+)*/?")
-_SAFETY_QUOTED_RE = re.compile(r"""['"`]([A-Za-z][A-Za-z0-9_]{1,63})['"`]""")
-
-
-def _extract_safety_patterns(safety_rules: list[str] | None) -> list[str]:
-    """Extract literal patterns the safety rules name.
-
-    Returns a deduplicated list of strings (preserving first-seen order)
-    that the enforcement layer scans for in task output.
-    """
-    if not safety_rules:
-        return []
-    seen: set[str] = set()
-    out: list[str] = []
-    for rule in safety_rules:
-        if not rule:
-            continue
-        for m in _SAFETY_PATH_RE.finditer(rule):
-            tok = m.group(0)
-            if tok not in seen:
-                seen.add(tok)
-                out.append(tok)
-        for m in _SAFETY_QUOTED_RE.finditer(rule):
-            tok = m.group(1)
-            if tok not in seen:
-                seen.add(tok)
-                out.append(tok)
-    return out
 
 
 def _enforce_safety_violation_stuck(

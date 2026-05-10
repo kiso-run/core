@@ -845,6 +845,24 @@ _print_recap() {
         fi
     done
 
+    # Footnote: pytest's "deselected" count alongside passed/failed
+    # routinely confuses operators into thinking a test has lost its
+    # marker. It hasn't — those are tests in the same directory
+    # carrying ANOTHER tier marker (extended/destructive/
+    # requires_docker/...) that the current `-m <tier>` filter
+    # excludes. They run under their own tier flag (the runner
+    # already invokes them as separate suites). Surface the
+    # attribution once at the bottom so future runs are
+    # self-explanatory.
+    local has_deselected=0
+    for d in "${_SUITE_DETAILS[@]}"; do
+        if [[ "$d" == *deselected* ]]; then has_deselected=1; break; fi
+    done
+    if [[ $has_deselected -eq 1 ]]; then
+        echo ""
+        echo -e "  ${DIM}(\"deselected\" = tests in this directory under a different marker tier — they run in another suite, not orphaned)${NC}"
+    fi
+
     echo ""
     local summary="${GREEN}${n_passed} passed${NC}"
     if [[ $n_failed -gt 0 ]]; then

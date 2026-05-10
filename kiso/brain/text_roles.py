@@ -33,6 +33,7 @@ from .common import (
     _build_messages_from_sections,
     _build_messenger_memory_pack,
     _build_worker_memory_pack,
+    _extract_safety_patterns,
     _join_or_empty,
     _load_system_prompt,
     _require_memory_pack_role,
@@ -383,7 +384,7 @@ async def run_messenger(
         memory_pack=memory_pack, selected_skills=selected_skills,
     )
     _fallback = config.settings.get("planner_fallback_model", "minimax/minimax-m2.7")
-    return await _run_text_role(
+    text = await _run_text_role(
         config,
         "messenger",
         messages,
@@ -396,6 +397,48 @@ async def run_messenger(
         ),
         sanitize_fn=_sanitize_messenger_output,
     )
+    # Deterministic backstop: even with the safety-rule prompt
+    # directive, the messenger may echo the rule's literal example
+    # patterns when explaining a refusal ("I can't reveal paths
+    # like /home/, /etc/..."). Same architectural pattern the
+    # reviewer uses post-task: extract literal patterns from the
+    # rules, scan the produced text, and if a pattern leaks,
+    # replace the whole output with a generic refusal that is
+    # safe by construction.
+    return _redact_messenger_safety_leaks(text, safety_rules=safety_rules)
+
+
+_SAFETY_LEAK_REFUSAL = (
+    "I can't help with that — a safety rule blocks the requested "
+    "information. Try asking the question in a different way that "
+    "doesn't require the constrained content."
+)
+
+
+def _redact_messenger_safety_leaks(
+    text: str, *, safety_rules: list[str] | None,
+) -> str:
+    """Replace messenger output with a generic refusal if it contains
+    any literal pattern from an active safety rule.
+
+    Returns *text* unchanged when there are no rules, no patterns can
+    be extracted, or no pattern appears in *text*. Logs a WARNING
+    naming neither the matched pattern nor the rule excerpt — those
+    would re-leak the constrained content into operator-visible logs.
+    """
+    if not text or not safety_rules:
+        return text
+    patterns = _extract_safety_patterns(safety_rules)
+    if not patterns:
+        return text
+    for pattern in patterns:
+        if pattern in text:
+            log.warning(
+                "Messenger output redacted: safety-rule pattern "
+                "leak detected; replaced with generic refusal."
+            )
+            return _SAFETY_LEAK_REFUSAL
+    return text
 
 
 # strip hallucinated XML/wrapper markup from messenger output

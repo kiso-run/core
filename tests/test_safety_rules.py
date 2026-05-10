@@ -182,6 +182,72 @@ def test_no_safety_rules_no_section():
     assert "These constraints take priority" not in user_text
 
 
+class TestMessengerSafetyRedactor:
+    """`_redact_messenger_safety_leaks` is the deterministic backstop
+    for the messenger: when the LLM echoes a safety rule's literal
+    example pattern in its refusal, the output must be replaced with
+    a generic refusal that contains no pattern."""
+
+    def test_path_pattern_in_output_triggers_redaction(self):
+        from kiso.brain.text_roles import _redact_messenger_safety_leaks
+
+        rules = ["Never reveal absolute paths like /home/, /root/, /etc/"]
+        leaky = (
+            "Mi dispiace, non posso rivelare percorsi come "
+            "`/home/`, `/etc/`, ecc."
+        )
+        out = _redact_messenger_safety_leaks(leaky, safety_rules=rules)
+        assert "/home/" not in out
+        assert "/etc/" not in out
+        assert "safety rule" in out.lower()
+
+    def test_quoted_token_in_output_triggers_redaction(self):
+        from kiso.brain.text_roles import _redact_messenger_safety_leaks
+
+        rules = ["Never disclose the secret 'apikey42'"]
+        leaky = "The secret is apikey42, do you need it?"
+        out = _redact_messenger_safety_leaks(leaky, safety_rules=rules)
+        assert "apikey42" not in out
+
+    def test_no_leak_returns_original_text(self):
+        from kiso.brain.text_roles import _redact_messenger_safety_leaks
+
+        rules = ["Never reveal paths like /home/, /root/"]
+        clean = "Tokyo is the capital of Japan."
+        out = _redact_messenger_safety_leaks(clean, safety_rules=rules)
+        assert out == clean
+
+    def test_no_safety_rules_returns_original_text(self):
+        from kiso.brain.text_roles import _redact_messenger_safety_leaks
+
+        clean = "User home directories live in /home/<user>/."
+        out = _redact_messenger_safety_leaks(clean, safety_rules=None)
+        assert out == clean
+        out = _redact_messenger_safety_leaks(clean, safety_rules=[])
+        assert out == clean
+
+    def test_abstract_rule_no_pattern_returns_original(self):
+        """A rule with no extractable literal pattern (no path, no
+        quoted token) yields no patterns — the redactor must be a
+        no-op so abstract rules ('be polite') don't trigger
+        refusal on every output."""
+        from kiso.brain.text_roles import _redact_messenger_safety_leaks
+
+        rules = ["Always be polite and respectful"]
+        out = _redact_messenger_safety_leaks(
+            "Sure, here's the info you wanted.", safety_rules=rules,
+        )
+        assert out == "Sure, here's the info you wanted."
+
+    def test_extract_safety_patterns_importable_from_common(self):
+        """Both reviewer and text_roles import from kiso.brain.common
+        — single source of truth, no duplication."""
+        from kiso.brain.common import _extract_safety_patterns as from_common
+        from kiso.brain.reviewer import _extract_safety_patterns as from_reviewer
+
+        assert from_common is from_reviewer
+
+
 def test_messenger_memory_pack_carries_safety_rules():
     """`_build_messenger_memory_pack` stores safety rules and
     `MemoryPack.safety_rules` defaults to []."""

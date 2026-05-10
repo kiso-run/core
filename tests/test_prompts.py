@@ -207,7 +207,14 @@ class TestPromptBudgetSmoke:
         # violation of "no raw data". Bumped to 26200 to
         # accommodate the slightly longer rule with the generic
         # search→summarize illustrative example.
-        ("planner.md", 26200),
+        # Bumped 26200 → 27000 to accommodate the discovery+consume
+        # rule: when the next step's data is visible in workspace /
+        # plan outputs / a prior intra-plan task, the planner must
+        # emit `[exec, mcp(consume, args=...), msg]` directly rather
+        # than `[exec, replan]`. Without this carve-out the planner
+        # follows the generic "lack info → replan" rule and emits
+        # exec→replan loops that the circular-detector blocks.
+        ("planner.md", 27000),
         # Bumped 2500 → 2600 to fit a CRITICAL directive that pins
         # the messenger to refuse-generically when a "## Safety
         # Rules" context section is present. Required because
