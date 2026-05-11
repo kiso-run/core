@@ -73,3 +73,59 @@ Everything that happens in a session, including full task output inline.
 ```
 
 Session log is rotated at 2 MB (up to 2 backups: `session.log.1`, `session.log.2`). Server log is rotated at 5 MB (up to 3 backups). Full output inline — `grep` and `tail` are all you need.
+
+## Prompt-First Debugging
+
+When the planner emits a plan you don't understand — a wrong server name, a missing MCP, a strange path, an unexpected `replan` — the first thing to look at is **the prompt that reached the model**, not the model itself. Kiso uses modern top-tier models; reproducible weirdness almost always means the assembled prompt had a contradiction, a missing rule, or an unexpected context section. (Project rule: see `CLAUDE.md` → "Prompt-first debugging".)
+
+### `KISO_DUMP_PLANNER_PROMPT`
+
+Set this env var to capture the full system + user prompt for every planner LLM call to disk. Off by default — zero overhead when unset.
+
+```bash
+# capture to a specific file (recommended)
+KISO_DUMP_PLANNER_PROMPT=/tmp/kiso-planner.log kiso ...
+
+# or use the default path (/tmp/kiso-planner-prompt.log)
+KISO_DUMP_PLANNER_PROMPT=1 kiso ...
+```
+
+Each planner turn appends a timestamped block:
+
+```
+===== PLANNER PROMPT DUMP @ 2026-05-10T23:49:45 =====
+--- session=func-9cc041fbcb74 replan=False user_msg_preview='naviga a https://example.com ...' ---
+--- SYSTEM PROMPT ---
+<full system prompt, including all modules selected by the briefer>
+--- USER CONTEXT ---
+<assembled user context: facts, recent messages, workspace, briefing, MCP catalog, ...>
+===== END PROMPT DUMP =====
+```
+
+### Inside Docker tests
+
+The functional/extended tier runs pytest inside a container. To pipe the env var through and extract the dump, override docker-compose:
+
+```bash
+docker compose -f docker-compose.test.yml run --build --rm \
+  -e OPENROUTER_API_KEY \
+  -e KISO_DUMP_PLANNER_PROMPT=/dumps/dump.log \
+  -v /tmp/kiso-audit:/dumps \
+  test-functional \
+  uv run pytest tests/functional/test_<failing>.py --functional --extended
+```
+
+`docker-compose.test.yml` already forwards `KISO_DUMP_PLANNER_PROMPT` to the container — only the volume mount is needed.
+
+### What to look for
+
+The dump is the ground truth. Read it end-to-end and compare what the planner saw against the plan it emitted:
+
+- **Path issues** (`ENOENT`, wrong base dir): check `Exec CWD` line + `## Session Workspace` listing. If those are correct but the file ended up elsewhere, the MCP's own `cwd` is the culprit, not the planner.
+- **Wrong MCP routing**: check the `## MCP Methods` section of the briefing — was the right method even visible? If not, the augmenter (`_augment_capability_matches` in `kiso/brain/common.py`) dropped it.
+- **Server-name hallucination** (e.g. `playwright` instead of `browser`): the resolver at `validate_plan` normalizes by method when method is unique. Confirm by grepping the dump for both names.
+- **Contradictory rules**: scan the system prompt for pairs of rules that produce opposite outputs on the same input. Real prompt contradictions hide in 20k+ char prompts; the dump makes them readable.
+
+### When NOT to use
+
+For unit tests, mock LLM calls — there's no real prompt to dump. For deterministic bugs (validator errors, schema mismatches, code paths that never reach the LLM), traditional logging beats prompt-dumping. Reach for `KISO_DUMP_PLANNER_PROMPT` when the model is involved and you'd otherwise be tempted to blame "LLM variance".
