@@ -736,13 +736,22 @@ async def run_message_e2e(func_db, func_session):
         mcp_manager = None
         if fresh_config.mcp_servers:
             mcp_manager = MCPManager(fresh_config.mcp_servers)
-            for _name in fresh_config.mcp_servers:
-                try:
-                    await mcp_manager.list_methods(_name)
-                except Exception as e:  # noqa: BLE001 — install in flight
-                    log.warning(
-                        "MCP %s warm-up failed (continuing): %s", _name, e,
-                    )
+            # Use the canonical warm_catalog path instead of a local
+            # list_methods loop. The shared helper handles
+            # session-scoped servers (browser-mcp via
+            # ${session:workspace} tokens) by spawning them under a
+            # synthetic warmup session id with a pre-created
+            # workspace dir. A bare `list_methods(name)` here would
+            # pass session=None, never resolve the tokens, and leave
+            # the catalog empty for those servers — exactly the
+            # regression M1668 closed on the daemon path.
+            from kiso.mcp.warmup import warm_catalog
+            try:
+                await warm_catalog(mcp_manager, deadline_s=30.0)
+            except Exception as e:  # noqa: BLE001 — install in flight
+                log.warning(
+                    "MCP warmup failed (continuing): %s", e,
+                )
 
         msg_id = await save_message(
             func_db, active_session, "testadmin", "user", content,
