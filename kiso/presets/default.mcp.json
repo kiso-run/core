@@ -19,7 +19,8 @@
         "--isolated",
         "--output-dir",
         "${session:workspace}/pub"
-      ]
+      ],
+      "cwd": "${session:workspace}"
     },
     "aider": {
       "command": "uvx",

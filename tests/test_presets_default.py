@@ -138,6 +138,25 @@ class TestDefaultPresetContents:
             f"auto-published dir; got {browser_args[idx + 1]!r}"
         )
 
+    def test_browser_launches_with_cwd_in_session_workspace(self):
+        """The planner correctly emits relative paths (e.g.
+        `pub/screenshot.png`) per planner.md's "use the exact path
+        shown in the Session Workspace listing" rule. But without an
+        explicit cwd, browser-mcp resolves those relative paths
+        against the parent process's cwd (Docker WORKDIR=/opt/kiso),
+        and writes fail with ENOENT. Setting
+        cwd=${session:workspace} makes relative-path resolution
+        match the planner's mental model. Confirmed by M1667 prompt
+        dump audit."""
+        servers = load_mcp_preset("default")["mcpServers"]
+        browser = servers["browser"]
+        assert browser.get("cwd") == "${session:workspace}", (
+            f"default preset's browser entry must set "
+            f"cwd=${{session:workspace}}; got {browser.get('cwd')!r}. "
+            f"Without it, relative-path MCP args resolve against the "
+            f"parent cwd (Docker WORKDIR), not the session workspace."
+        )
+
 
 class TestTrustRule:
     def test_default_preset_passes_trust(self):
@@ -291,3 +310,11 @@ class TestRenderToToml:
         assert "filesystem" in servers
         assert servers["filesystem"].transport == "stdio"
         assert servers["filesystem"].command == "npx"
+        # The browser entry's cwd must survive the JSON → TOML →
+        # parse round-trip. Earlier the renderer dropped cwd
+        # entirely (only command/args/env carried through), so the
+        # default preset's per-session cwd was silently lost.
+        assert servers["browser"].cwd == "${session:workspace}", (
+            f"browser cwd should round-trip through render_mcp_toml; "
+            f"got {servers['browser'].cwd!r}"
+        )

@@ -188,6 +188,7 @@ def _resolve_npm_pkg(pkg: str, name_hint: str | None) -> ResolvedServer:
         raise InstallResolverError(f"invalid npm package name: {pkg!r}")
     name = name_hint or _sanitize_name(pkg.split("/")[-1])
     args = ["-y", pkg]
+    cwd: str | None = None
     notes = [
         f"Installs ephemerally via npx on first use. No global install.",
         f"Package: {pkg}",
@@ -233,11 +234,25 @@ def _resolve_npm_pkg(pkg: str, name_hint: str | None) -> ResolvedServer:
             "directory — enables cross-plan MCP handoff (e.g. "
             "screenshot → OCR)."
         )
+        # cwd → relative paths in MCP args resolve against the session
+        # workspace, matching exec-task behaviour. M1667 prompt-dump
+        # audit confirmed the planner correctly emits relative
+        # `pub/screenshot.png`; without this cwd the browser MCP
+        # resolves it against /opt/kiso (Docker WORKDIR) and ENOENTs.
+        # Default cwd (None → inherits parent cwd, typically Docker
+        # WORKDIR) is the root cause of the screenshot ENOENT failure.
+        cwd = "${session:workspace}"
+        notes.append(
+            "Auto-added cwd=${session:workspace} so relative MCP-arg "
+            "paths (e.g. 'pub/screenshot.png') resolve against the "
+            "session workspace instead of the parent process's cwd."
+        )
     return ResolvedServer(
         name=name,
         transport="stdio",
         command="npx",
         args=args,
+        cwd=cwd,
         notes=notes,
     )
 

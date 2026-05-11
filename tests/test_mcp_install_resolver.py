@@ -76,6 +76,16 @@ class TestNpmResolvers:
             f"--output-dir must point to ${{session:workspace}}/pub; "
             f"got {r.args[idx + 1]!r}"
         )
+        # cwd → relative paths in MCP method args (e.g. the planner
+        # emits `filename: "pub/screenshot.png"`) resolve against the
+        # session workspace, not the parent process's cwd
+        # (typically the Docker WORKDIR `/opt/kiso/`). Without this,
+        # browser-mcp resolves relative paths against the WORKDIR and
+        # the file ends up outside the session, breaking handoff.
+        assert r.cwd == "${session:workspace}", (
+            f"@playwright/mcp must launch with "
+            f"cwd=${{session:workspace}}; got {r.cwd!r}"
+        )
 
 
 class TestPypiResolvers:

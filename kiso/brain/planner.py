@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -1298,6 +1299,32 @@ async def build_planner_messages(
     context_parts.append(f"## New Message\n{fence_content(new_message, 'USER_MSG')}")
 
     context_block = "\n\n".join(context_parts)
+
+    # Audit hook: when KISO_DUMP_PLANNER_PROMPT is set, write the
+    # assembled prompt to disk for prompt-first debugging (see
+    # CLAUDE.md "Prompt-first debugging" rule). No-op when env var
+    # is unset; never raises (diagnostics must not break a plan).
+    _dump_target = os.environ.get("KISO_DUMP_PLANNER_PROMPT")
+    if _dump_target:
+        from datetime import datetime as _dt
+        _dump_path = (
+            _dump_target
+            if _dump_target not in {"1", "true", "yes"}
+            else "/tmp/kiso-planner-prompt.log"
+        )
+        try:
+            with open(_dump_path, "a", encoding="utf-8") as _fh:
+                _fh.write(
+                    f"\n\n===== PLANNER PROMPT DUMP @ "
+                    f"{_dt.utcnow().isoformat()} =====\n"
+                    f"--- session={session} replan={is_replan} "
+                    f"user_msg_preview={new_message[:120]!r} ---\n"
+                    f"--- SYSTEM PROMPT ---\n{system_prompt}\n"
+                    f"--- USER CONTEXT ---\n{context_block}\n"
+                    f"===== END PROMPT DUMP =====\n"
+                )
+        except OSError:
+            pass
 
     return _build_messages(system_prompt, context_block)
 

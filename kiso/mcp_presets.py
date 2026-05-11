@@ -85,5 +85,10 @@ def render_mcp_toml(mcp_servers: dict[str, dict]) -> str:
             toml_section["args"] = list(entry["args"])
         if "env" in entry and entry["env"]:
             toml_section["env"] = dict(entry["env"])
+        # cwd carries through so presets can set a per-session
+        # working directory (e.g. "${session:workspace}") — required
+        # for MCPs whose tools take relative-path args.
+        if "cwd" in entry and entry["cwd"]:
+            toml_section["cwd"] = entry["cwd"]
         document["mcp"][name] = toml_section
     return tomli_w.dumps(document)
