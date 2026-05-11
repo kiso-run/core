@@ -165,6 +165,23 @@ class MCPManager:
             return False
         return name not in self._unhealthy
 
+    def is_session_scoped(self, name: str) -> bool:
+        """Return True when the server uses ${session:...} tokens
+        and therefore needs a real session id (with a created
+        workspace directory) to spawn correctly. The catalog warmup
+        path consults this to decide whether to pass a synthetic
+        warmup session id instead of None.
+        """
+        server = self._servers.get(name)
+        return bool(server is not None and server.is_session_scoped)
+
+    def workspace_for(self, session: str) -> Path:
+        """Resolve a session id to its workspace path via the
+        injected resolver. Public accessor for callers (warmup,
+        tests) that need to pre-create the workspace directory
+        before spawning a session-scoped server."""
+        return self._workspace_resolver(session)
+
     def set_session_env(self, session: str, env: dict[str, str]) -> None:
         """Register per-session env to inject into session-scoped spawns.
 

@@ -179,3 +179,78 @@ class TestWarmCatalog:
         mgr = OldManager()
         await warm_catalog(mgr)
         assert mgr.calls == ["a"]
+
+
+class TestWarmupSessionScoped:
+    """Servers whose args/cwd/env contain `${session:...}` tokens
+    cannot warm up with `session=None` — the tokens stay literal,
+    the process fails to launch, and the catalog stays empty for
+    that server. Warmup must pass a synthetic session id (and
+    pre-create the corresponding workspace dir) so the tokens
+    resolve to a real path."""
+
+    async def test_session_scoped_server_uses_warmup_session(
+        self, tmp_path,
+    ):
+        class TrackingManager:
+            def __init__(self):
+                self.calls: list[tuple[str, str | None]] = []
+
+            def available_servers(self):
+                return ["browser", "filesystem"]
+
+            def is_session_scoped(self, name):
+                return name == "browser"
+
+            def workspace_for(self, session):
+                return tmp_path / "sessions" / session
+
+            async def list_methods(self, name, *, session=None):
+                self.calls.append((name, session))
+                return []
+
+            async def list_resources(self, name, *, session=None):
+                return []
+
+            async def list_prompts(self, name, *, session=None):
+                return []
+
+        mgr = TrackingManager()
+        await warm_catalog(mgr)
+        sessions = {name: sess for name, sess in mgr.calls}
+        # session-scoped server gets the synthetic warmup session
+        assert sessions["browser"] == "__kiso_warmup__", (
+            f"browser is session-scoped → warmup must pass the "
+            f"synthetic id, got {sessions['browser']!r}"
+        )
+        # non-session-scoped server keeps the prior behaviour
+        assert sessions["filesystem"] is None
+        # Warmup workspace + pub/ subdir were pre-created so the
+        # spawn resolution of ${session:workspace} hits a real
+        # writable path
+        warmup_ws = tmp_path / "sessions" / "__kiso_warmup__"
+        assert warmup_ws.is_dir()
+        assert (warmup_ws / "pub").is_dir()
+
+    async def test_falls_back_to_none_when_manager_lacks_accessors(
+        self,
+    ):
+        """Test stubs / older managers that don't implement
+        `workspace_for` or `is_session_scoped` fall back to the
+        pre-M1668 behaviour (session=None). The warmup must not
+        crash on the missing methods."""
+
+        class BareManager:
+            def __init__(self):
+                self.calls: list[str | None] = []
+
+            def available_servers(self):
+                return ["a"]
+
+            async def list_methods(self, name, *, session=None):
+                self.calls.append(session)
+                return []
+
+        mgr = BareManager()
+        await warm_catalog(mgr)
+        assert mgr.calls == [None]
