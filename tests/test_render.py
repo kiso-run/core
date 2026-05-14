@@ -1884,3 +1884,59 @@ class TestRenderPartialContent:
         text = "short\nlines\nhere"
         rendered, vlines = render_partial_content(text, caps)
         assert vlines == 3  # no wrapping needed
+
+    def test_wide_chars_counted_by_display_width(self):
+        """A line with emoji whose code-point count fits the terminal but
+        whose display width overflows must be counted as 2 visual lines.
+
+        With the old ``len()``-based measurement this returned 1 → the
+        caller's cursor-up redraw left the wrapped row on screen.
+        """
+        from cli.render import render_partial_content, TermCaps
+        caps = TermCaps(color=False, unicode=True, tty=True, width=40, height=24)
+        # "  ▸ " prefix = 4 cells. body: 30 "x" + 4 "✅" =
+        #   34 code-points (fits 40) but 30 + 8 = 38 cells; +4 prefix = 42 cells.
+        # 42 cells on a 40-col terminal soft-wraps to 2 rows.
+        text = "x" * 30 + "✅" * 4
+        rendered, vlines = render_partial_content(text, caps)
+        assert rendered.count("\n") == 0  # single logical line
+        assert vlines == 2
+
+
+# --- _visible_len ---
+
+
+class TestVisibleLen:
+    """_visible_len measures terminal display width, not code-point count."""
+
+    def test_plain_ascii(self):
+        from cli.render import _visible_len
+        assert _visible_len("hello") == 5
+
+    def test_strips_ansi(self):
+        from cli.render import _visible_len
+        assert _visible_len("\033[33mhello\033[0m") == 5
+
+    def test_wide_chars_count_two_cells(self):
+        from cli.render import _visible_len
+        # emoji and CJK render two columns wide
+        assert _visible_len("✅") == 2  # ✅
+        assert _visible_len("日本語") == 6  # 日本語
+
+    def test_narrow_unicode_counts_one_cell(self):
+        from cli.render import _visible_len
+        # em-dash and arrow are single-width
+        assert _visible_len("a—b→c") == 5
+
+
+# --- render_task_header wide-char truncation ────────────────
+
+
+def test_render_task_header_truncates_on_wide_chars():
+    """A header whose code-point count fits but whose display width
+    overflows the narrow TTY must still be truncated."""
+    caps = _caps(width=40, tty=True)
+    # 30 wide emoji = 30 code-points but 60 display cells — well over 40.
+    task = {"type": "exec", "detail": "✅" * 30, "status": "running"}
+    result = render_task_header(task, 1, 2, caps)
+    assert "..." in result

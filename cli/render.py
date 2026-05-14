@@ -399,10 +399,14 @@ def render_task_header(
 
     styled = _style(text, color, caps=caps)
 
-    # Truncate to width - 2 to avoid line-wrap artifacts with \r
-    if caps.tty and len(text) > caps.width - 2:
-        # Truncate the unstyled text, then re-style
-        truncated = text[: caps.width - 5] + "..."
+    # Truncate to width - 2 to avoid line-wrap artifacts with \r.
+    # Measure by display width, not code-point count, so wide
+    # characters (emoji, CJK) don't slip past the limit.
+    from rich.cells import cell_len, set_cell_size
+
+    if caps.tty and cell_len(text) > caps.width - 2:
+        # Truncate the unstyled text by display width, then re-style
+        truncated = set_cell_size(text, caps.width - 5) + "..."
         styled = _style(truncated, color, caps=caps)
 
     return styled
@@ -892,9 +896,16 @@ def render_inflight_indicator(call: dict, caps: TermCaps) -> str:
 
 
 def _visible_len(text: str) -> int:
-    """Return the visible length of *text*, stripping ANSI escape codes."""
+    """Return the visible width of *text* in terminal cells.
+
+    Strips ANSI escape codes, then measures display width — wide
+    characters (emoji, CJK) count as 2 columns, not 1. Code-point
+    count (``len()``) would undercount these and throw off the
+    soft-wrap math in :func:`render_partial_content`.
+    """
     import re
-    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+    from rich.cells import cell_len
+    return cell_len(re.sub(r"\033\[[0-9;]*m", "", text))
 
 
 def render_partial_content(
