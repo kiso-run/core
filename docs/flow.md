@@ -57,30 +57,18 @@ On startup, kiso queries `SELECT * FROM messages WHERE processed=0 AND trusted=1
 
 ## 3. Worker Picks Up the Message
 
-When the worker picks up a message, it marks it `processed=1` and proceeds:
+When the worker picks up a message, it marks it `processed=1` and proceeds.
+Every message routes through the same pipeline — briefer → planner → execute.
+There is no message-level classifier or fast-path: the planner emits msg-only
+plans for conversational / knowledge-recall intents (see
+[llm-roles.md — Planner](llm-roles.md#planner)), so the messenger is invoked
+as a regular `msg` task within the plan.
 
-### a) Classifier Dispatch (fast-path entry)
-
-If `fast_path_enabled` is true, the worker first calls the **classifier** role on the new message, with a small recent-conversation snippet and the list of known entity names for disambiguation. The classifier returns one of four categories plus a detected language: `plan`, `investigate`, `chat_kb`, or `chat`. See [llm-roles.md — Classifier](llm-roles.md#classifier).
-
-Routing:
-
-- `plan` → full planner pipeline (steps b–g below)
-- `investigate` → full planner pipeline with `investigate=True` — a modular section is injected into the planner prompt that constrains the plan to read-only tasks plus a final diagnose `msg`. No mutations are proposed.
-- `chat` → fast path: skip the planner, run briefer + messenger directly with the user message
-- `chat_kb` → **pre-flight facts check first**, then either chat fast path (if facts exist) or transparent fallback to investigate (if facts are empty)
-
-The `chat_kb` pre-flight (M1291): the dispatcher in `kiso/worker/loop.py:handle_message` runs a quick `search_facts_scored` against the KB using raw keywords from the user message (`content.lower().split()[:10]`). If the result is empty, it persists a deterministic transition message to the user (*"I don't have this in my knowledge base — let me check the live system."* / Italian variant) as a real `msg` task on the existing plan, reassigns `msg_class = "investigate"`, and falls through to the planner branch. If the result has at least one fact, the chat_kb fast path runs as normal. If the pre-flight raises (DB error), the fast path runs as normal — the fallback is reserved for empty results, not failed queries.
-
-The classifier itself cannot know in advance whether a fact exists; the dispatcher checks before committing to the chat_kb path. This trade-off uses keyword search at the dispatcher (slightly less precise than the briefer-driven query inside the messenger pipeline) in exchange for zero rollback complexity. Worst case: a false negative produces an investigate plan instead of a chat response — verbose but never wrong.
-
-If the classifier times out or errors, kiso falls back to `plan` (safe — the planner handles everything).
-
-### b) Paraphrases Untrusted Messages
+### a) Paraphrases Untrusted Messages
 
 If there are untrusted messages (`trusted=0`) in the context window, the worker calls the paraphraser (batch LLM call using the summarizer model) to rewrite them in third person. See [security.md — Prompt Injection Defense](security.md#6-prompt-injection-defense).
 
-### c) Builds Planner Context
+### b) Builds Planner Context
 
 Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Facts (session-scoped, from `store.facts` — see [Knowledge / Fact scoping](#facts-are-session-scoped))
@@ -94,7 +82,7 @@ Only what the planner needs (see [llm-roles.md](llm-roles.md)):
 - Caller role (admin | user)
 - New message
 
-### d) Calls the Planner
+### c) Calls the Planner
 
 Uses structured output (`response_format` with strict JSON schema — see [llm-roles.md — Planner](llm-roles.md#planner) for the full schema). The provider guarantees valid JSON at decoding level.
 
@@ -115,13 +103,13 @@ Before execution, Kiso normalizes each raw planner task into an internal
 The planner still communicates through natural-language `detail`, but the worker
 no longer treats free-form text as the only execution boundary.
 
-### e) Validates and Persists the Plan
+### d) Validates and Persists the Plan
 
 Before execution, kiso validates the plan semantically (see [llm-roles.md — Validation After Parsing](llm-roles.md#validation-after-parsing) for the full rule list and error example). On failure, retries up to `max_validation_retries` (see [config.md](config.md)) with specific error feedback. If exhausted: fail the message, notify user. No silent fallback.
 
 After validation, kiso creates a **plan** entity in `store.plans` (with `goal`, `message_id`, and `status=running`) and persists all tasks to `store.tasks` linked to that plan via `plan_id`. See [database.md — plans](database.md#plans).
 
-### f) Executes Tasks One by One
+### e) Executes Tasks One by One
 
 For each task, kiso first checks the **cancel flag** — if set, remaining tasks are marked `cancelled`, a cancel summary is delivered to the user, and execution stops (see [Cancel](#cancel)). Then kiso **re-validates the user's role and permissions** from `config.toml` (see [security.md — Runtime Permission Re-validation](security.md#runtime-permission-re-validation)). For `exec` tasks, the command is checked against the destructive command deny list (see [security.md — Exec Command Validation](security.md#exec-command-validation)). Then (status updated to `running` in DB):
 
@@ -137,7 +125,7 @@ Output is sanitized (known secret values stripped — plaintext, base64, URL-enc
 
 All LLM calls, task executions, and webhook deliveries are logged to the audit trail. See [audit.md](audit.md).
 
-### g) Reviews and Delivers
+### f) Reviews and Delivers
 
 **For `exec` and `mcp` tasks** (always reviewed):
 
@@ -151,7 +139,7 @@ All LLM calls, task executions, and webhook deliveries are logged to the audit t
 1. **Deliver**: POSTed to webhook (if set) and available via `GET /status/{session}`. `final: true` only on the last `msg` task in the plan, and only after all preceding tasks (including reviews) have completed successfully.
 2. If the webhook POST fails, kiso retries (3 attempts, backoff 1s/3s/9s). If all fail, logs and continues. Outputs remain available via `/status`. See [api.md — Webhook Callback](api.md#webhook-callback).
 
-### h) Replan Flow
+### g) Replan Flow
 
 Replans can be triggered two ways:
 

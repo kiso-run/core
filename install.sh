@@ -504,7 +504,7 @@ for role in MODEL_DEFAULTS:
     print(f'{role}|{desc}|{default}')
 " 2>/dev/null || cat <<'FALLBACK'
 briefer|selects relevant context for planner|google/gemini-2.5-flash
-classifier|classifies messages as plan or chat|google/gemini-2.5-flash
+classifier|classifies follow-up messages sent mid-execution|google/gemini-2.5-flash
 planner|interprets requests, creates task plans|deepseek/deepseek-v3.2
 reviewer|checks task output, decides replan|google/gemini-2.5-flash-lite
 curator|manages learned knowledge|google/gemini-2.5-flash

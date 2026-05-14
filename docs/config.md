@@ -97,7 +97,6 @@ max_plan_tasks            = 20
 planner_fallback_model    = "minimax/minimax-m2.7"          # fallback when primary planner model fails
 
 # --- execution ---
-classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
 llm_timeout               = 600      # seconds; timeout for all LLM calls
 stall_timeout             = 60       # seconds; SSE stall detection per chunk
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)
@@ -153,7 +152,7 @@ webhook_max_payload       = 1048576
 | `users.*.role` | Required. `"admin"` or `"user"`. |
 | `[users.<name>.mcp]` | Optional per-user MCP method filter (role-scoped visibility). See [mcp.md](mcp.md#per-user-role-filters). |
 | `[users.<name>.skills]` | Optional per-user skill filter (role-scoped visibility). See [skills.md](skills.md). |
-| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `consolidator`, `sampler`. The `classifier` only returns "plan" or "chat" — use a fast/cheap model. The `sampler` role fulfils `sampling/createMessage` requests coming back from MCP servers (see [mcp.md](mcp.md#sampling)). |
+| `[models]` | All 11 roles required: `briefer`, `classifier`, `planner`, `reviewer`, `curator`, `worker`, `summarizer`, `paraphraser`, `messenger`, `consolidator`, `sampler`. The `classifier` model is used only by the in-flight classifier (classifies follow-up messages sent while a plan is executing) — use a fast/cheap model. The `sampler` role fulfils `sampling/createMessage` requests coming back from MCP servers (see [mcp.md](mcp.md#sampling)). |
 | `[settings]` | All fields required. See table below. |
 
 ### Settings reference
@@ -180,7 +179,6 @@ webhook_max_payload       = 1048576
 | `max_llm_retries` | `3` | Max retries on LLM HTTP errors or SSE stalls per call. |
 | `max_plan_tasks` | `20` | Max tasks per plan. Plans exceeding this fail validation. See [security.md — Plan Task Limit](security.md#plan-task-limit). |
 | `planner_fallback_model` | `"minimax/minimax-m2.7"` | Fallback model when primary planner model exhausts retries. |
-| `classifier_timeout` | `30` | Seconds before classifier LLM call is cancelled. Falls back to planner path on timeout. |
 | `llm_timeout` | `600` | Seconds before any LLM call is cancelled. Also used for graceful shutdown per worker. |
 | `stall_timeout` | `60` | Seconds without SSE data before declaring a stall. Triggers model switch to fallback. |
 | `max_output_size` | `1048576` | Max characters of stdout/stderr per exec task before truncation (0 = unlimited). See [security.md — Output Size Limits](security.md#output-size-limits). |
@@ -196,7 +194,7 @@ webhook_max_payload       = 1048576
 | `host` | `"0.0.0.0"` | Server bind address. |
 | `port` | `8333` | Server port. |
 | `worker_idle_timeout` | `300` | Seconds before idle worker shuts down. |
-| `fast_path_enabled` | `true` | Skip planner for conversational messages (classifier decides). |
+| `fast_path_enabled` | `true` | Legacy flag from the retired classifier fast-path. Every message now routes briefer → planner → execute regardless. |
 | `briefer_enabled` | `true` | LLM-based context selection for each pipeline stage. When disabled, all context is passed to every LLM call. |
 | `briefer_mcp_method_filter_threshold` | `10` | When the catalog of eligible MCP methods exceeds this count, the briefer selects the final subset for the planner. Below it, the planner sees them all. |
 | `briefer_skill_filter_threshold` | `10` | Same threshold, applied to skills. Keeps the planner prompt bounded without shutting off small-catalog scenarios. |

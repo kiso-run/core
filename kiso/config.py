@@ -75,7 +75,6 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
     ("max_plan_tasks", 20),
     ("planner_fallback_model", "minimax/minimax-m2.7"),
     # execution
-    ("classifier_timeout", 30),
     ("llm_timeout", 600),
     ("stall_timeout", 60),
     ("max_output_size", 1048576),
@@ -120,7 +119,7 @@ _SETTINGS_METADATA: tuple[tuple[str, int | float | str | bool | list], ...] = (
 # interactive install.
 _MODEL_METADATA: tuple[tuple[str, str, str], ...] = (
     ("briefer",      "deepseek/deepseek-v4-flash",   "selects relevant context for each LLM role"),
-    ("classifier",   "deepseek/deepseek-v4-flash",   "classifies messages as plan or chat"),
+    ("classifier",   "deepseek/deepseek-v4-flash",   "classifies follow-up messages sent mid-execution"),
     ("planner",      "deepseek/deepseek-v4-flash",   "interprets requests, creates task plans"),
     ("reviewer",     "google/gemini-2.5-flash-lite", "checks task output, decides replan"),
     ("curator",      "deepseek/deepseek-v4-flash",   "manages learned knowledge"),
@@ -191,7 +190,7 @@ role = "admin"
 # otherwise be eaten by reasoning-native models like DeepSeek V4); other roles
 # inherit the provider default. To override, edit REASONING_DEFAULTS in config.py.
 briefer     = "deepseek/deepseek-v4-flash"    # context selection (V4-Flash, json_object via M1552)
-classifier  = "deepseek/deepseek-v4-flash"    # message classification (V4-Flash, reasoning-disabled by REASONING_DEFAULTS)
+classifier  = "deepseek/deepseek-v4-flash"    # in-flight follow-up classification (V4-Flash, reasoning-disabled by REASONING_DEFAULTS)
 planner     = "deepseek/deepseek-v4-flash"    # plan generation (V4-Flash, json_object via M1552)
 reviewer    = "google/gemini-2.5-flash-lite"  # output review (json_schema native, high frequency)
 curator     = "deepseek/deepseek-v4-flash"    # knowledge curation (V4-Flash, json_object via M1552)
@@ -228,7 +227,6 @@ max_plan_tasks            = 20
 planner_fallback_model    = "minimax/minimax-m2.7"  # secondary model used when the primary planner times out / stalls
 
 # --- execution ---
-classifier_timeout        = 30       # seconds for classifier LLM call; falls back to planner on timeout
 llm_timeout               = 600      # seconds; hard timeout for all LLM calls
 stall_timeout             = 60       # seconds; abort streaming if no chunk arrives within this window
 max_output_size           = 1048576  # max chars per task output (0 = unlimited)

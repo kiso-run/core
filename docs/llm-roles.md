@@ -6,8 +6,8 @@ Each LLM call has its own role. Each role has its own model (from `config.toml`)
 
 Kiso never asks one big model to "do everything". Each step of the loop is a small role with a narrow contract:
 
-- **Cheaper.** Routing tasks to a small fast model where possible (classifier, briefer, reviewer, summarizer, paraphraser, consolidator) keeps the expensive reasoning models reserved for the planner / worker / messenger steps that actually need them.
-- **More accurate.** A role that only has to choose between 4 categories beats a role that has to plan, classify, review, and write the response in a single call. Smaller surface = fewer plausible failure modes.
+- **Cheaper.** Routing tasks to a small fast model where possible (briefer, reviewer, summarizer, paraphraser, consolidator, inflight-classifier) keeps the expensive reasoning models reserved for the planner / worker / messenger steps that actually need them.
+- **More accurate.** A role that only has to choose between a few categories beats a role that has to plan, classify, review, and write the response in a single call. Smaller surface = fewer plausible failure modes.
 - **Debuggable.** Every LLM call has a single role label, a single model, a single prompt file, and a single output schema. When something goes wrong you can read exactly which role failed and replay it in isolation.
 - **User-extensible.** Role prompts live in `~/.kiso/roles/` after first boot. Editing one role does not affect the others. The bundled defaults can be restored at any time with `kiso roles reset NAME`.
 
@@ -37,34 +37,33 @@ This two-layer scheme is what makes kiso resilient to role-file corruption at ru
 
 ## Context per Role
 
-| Context piece | Classifier | Briefer | Planner | Reviewer | Worker | Messenger | Summarizer | Curator | Paraphraser |
-|---|---|---|---|---|---|---|---|---|---|
-| User message (raw) | yes | - | - | - | - | - | - | - | - |
-| Session summary | - | yes | briefer-filtered | - | - | briefer-filtered | yes (existing) | yes | - |
-| Last N raw messages | - | yes | briefer-filtered | - | - | - | - | - | - |
-| Recent msg outputs | - | yes | briefer-filtered | - | - | - | - | - | - |
-| Paraphrased untrusted messages | - | yes | briefer-filtered | - | - | - | - | - | generates |
-| New message | - | yes | yes | - | - | - | - | - | - |
-| Facts (session-scoped; admin sees all) | - | yes | briefer-filtered | - | - | briefer-filtered | - | yes | - |
-| Pending items (global + session) | - | yes | briefer-filtered | - | - | - | - | yes | - |
-| Skill role slices + MCP method catalog | - | yes | briefer-filtered | yes (reviewer slice) | yes (worker slice) | yes (messenger slice) | - | - | - |
-| Caller role (admin/user) | - | - | yes | - | - | - | - | - | - |
-| System environment | - | yes | briefer-filtered | - | yes | - | - | - | - |
-| Capability analysis | - | yes | briefer-filtered | - | - | - | - | - | - |
-| Plan context (goal) | - | - | generates | yes (as background) | - | - | - | - | - |
-| Preceding plan outputs (fenced) | - | yes (msg) | - | - | yes | briefer-filtered | - | - | - |
-| Current task detail | - | - | - | yes | yes | yes | - | - | - |
-| Current task expect | - | - | - | yes | - | - | - | - | - |
-| Current task output (fenced) | - | - | - | yes | - | - | - | - | - |
-| Original user request | - | - | - | yes | - | - | - | - | - |
-| Messages to compress + their msg outputs | - | - | - | - | - | - | yes | - | - |
-| Pending learnings | - | - | - | - | - | - | - | yes | - |
-| Completed tasks + outputs (fenced) | - | - | replan only | - | - | - | - | - | - |
-| Remaining tasks | - | - | replan only | - | - | - | - | - | - |
-| Failure reason | - | - | replan only | - | - | - | - | - | - |
-| Replan history | - | - | replan only | - | - | - | - | - | - |
-| Confirmed facts | - | - | replan only | - | - | - | - | - | - |
-| Raw untrusted messages (batch) | - | - | - | - | - | - | - | - | yes |
+| Context piece | Briefer | Planner | Reviewer | Worker | Messenger | Summarizer | Curator | Paraphraser |
+|---|---|---|---|---|---|---|---|---|
+| Session summary | yes | briefer-filtered | - | - | briefer-filtered | yes (existing) | yes | - |
+| Last N raw messages | yes | briefer-filtered | - | - | - | - | - | - |
+| Recent msg outputs | yes | briefer-filtered | - | - | - | - | - | - |
+| Paraphrased untrusted messages | yes | briefer-filtered | - | - | - | - | - | generates |
+| New message | yes | yes | - | - | - | - | - | - |
+| Facts (session-scoped; admin sees all) | yes | briefer-filtered | - | - | briefer-filtered | - | yes | - |
+| Pending items (global + session) | yes | briefer-filtered | - | - | - | - | yes | - |
+| Skill role slices + MCP method catalog | yes | briefer-filtered | yes (reviewer slice) | yes (worker slice) | yes (messenger slice) | - | - | - |
+| Caller role (admin/user) | - | yes | - | - | - | - | - | - |
+| System environment | yes | briefer-filtered | - | yes | - | - | - | - |
+| Capability analysis | yes | briefer-filtered | - | - | - | - | - | - |
+| Plan context (goal) | - | generates | yes (as background) | - | - | - | - | - |
+| Preceding plan outputs (fenced) | yes (msg) | - | - | yes | briefer-filtered | - | - | - |
+| Current task detail | - | - | yes | yes | yes | - | - | - |
+| Current task expect | - | - | yes | - | - | - | - | - |
+| Current task output (fenced) | - | - | yes | - | - | - | - | - |
+| Original user request | - | - | yes | - | - | - | - | - |
+| Messages to compress + their msg outputs | - | - | - | - | - | yes | - | - |
+| Pending learnings | - | - | - | - | - | - | yes | - |
+| Completed tasks + outputs (fenced) | - | replan only | - | - | - | - | - | - |
+| Remaining tasks | - | replan only | - | - | - | - | - | - |
+| Failure reason | - | replan only | - | - | - | - | - | - |
+| Replan history | - | replan only | - | - | - | - | - | - |
+| Confirmed facts | - | replan only | - | - | - | - | - | - |
+| Raw untrusted messages (batch) | - | - | - | - | - | - | - | yes |
 
 Key principle: the planner must put everything the messenger / worker needs into the task `detail` — neither will see the raw conversation (see [Why the messenger doesn't see the raw conversation](#why-the-messenger-doesnt-see-the-raw-conversation)). For `exec` tasks, `detail` is a natural-language description; the **worker** role (an LLM step) converts it to the actual shell command before execution (architect/editor pattern).
 
@@ -124,50 +123,6 @@ When `briefer_enabled` is false or the briefer fails, the system falls back to k
 
 ---
 
-## Classifier
-
-**When**: a new message arrives and `fast_path_enabled` is true.
-
-**Input**: the user message (raw text), recent conversation snippet, known entity names — assembled by `build_classifier_messages` in `kiso/brain/common.py`. The system prompt is `kiso/roles/classifier.md`.
-
-**Output**: `"category:Language"` where *category* is one of four values and *Language* is the full English name of the detected language (e.g. `chat_kb:Italian`, `investigate:English`).
-
-**Categories**:
-
-| Category | Meaning | What happens next |
-|---|---|---|
-| `plan` | The user wants an action — file ops, code, install, run, configure, manage wrappers/connectors/plugins. The user is issuing a command or asking for a change. | Full planner runs (see [Planner](#planner)). |
-| `investigate` | The user wants to understand the live system state, diagnose an error, or get evidence about how something currently behaves. The answer requires running read-only commands or reading files but NOT changing them. Examples: *"why is X failing"*, *"show me the current config"*, isolated error reports. | Planner runs in `investigate=True` mode — a modular section is injected that constrains the plan to read-only tasks and a final diagnose `msg`. No mutations are proposed. |
-| `chat_kb` | The user is asking about something stored in memory (entities, facts, previously discussed topics). | Pre-flight facts check (see below). If facts exist → fast path through messenger with the briefer-selected facts in context. If facts are empty → transparent fallback to `investigate`. |
-| `chat` | Small talk: greetings, thanks, opinions, follow-up comments. No wrappers, no commands. | Fast path through messenger with the standard briefer pipeline. |
-
-**Boundary rules** (built into the prompt):
-
-- Imperative verb (*fix*, *install*, *restart*, *create*, *delete*, *run*) → `plan`
-- Question or report without a fix verb (*why*, *what's wrong*, *show me*, *X is broken*) → `investigate`
-- Mixed message (*"X is broken, fix it"*) → `plan` — the imperative wins
-- *"What do you know about X"* → `chat_kb` (memory) vs *"What's the current X"* → `investigate` (live state)
-- Self-referential knowledge (*"what do you know"*, *"your capabilities"*) → `chat_kb`
-- General knowledge questions not about stored entities → `chat`
-- When in doubt between `plan` and `investigate` → prefer `investigate` (preserves user autonomy)
-
-**chat_kb empty-retrieval pre-flight**: when the classifier returns `chat_kb`, the worker dispatcher in `kiso/worker/loop.py:handle_message` runs a fast keyword-based facts query (`search_facts_scored` with `content.lower().split()[:10]`) BEFORE entering the chat_kb fast path. If the query returns zero facts, the worker:
-
-1. Persists a deterministic transition message to the user (*"I don't have this in my knowledge base — let me check the live system."* / Italian variant) as a real msg task on the existing plan, with the standard webhook delivery.
-2. Reassigns `msg_class = "investigate"` and falls through to the planner branch with `investigate=True`.
-
-This is the **transparent fallback** designed in M1291. The classifier itself cannot know in advance whether a fact exists; the dispatcher checks before committing to the chat_kb path. If the facts query raises (DB error), the fallback is NOT triggered — the worker proceeds with the original chat_kb path. Fallback is reserved for *empty result*, not *failed query*.
-
-**Trade-off**: the pre-flight uses raw keywords, while the full chat_kb path adds `entity_id` + `relevant_tags` derived from the briefer. The pre-flight is strictly less precise, so it can produce false negatives (briefer would have found something the keyword search missed). In that case the user gets an investigate plan instead of a chat response — verbose but never wrong.
-
-**Model**: use a fast, cheap model — the task is a single-token classification with a small fixed vocabulary. Using a reasoning model here wastes time and tokens. See [config.md](config.md) for the default.
-
-**Fallback on LLM error**: returns `("plan", "")`. The planner handles everything and the messenger detects the language from the user message.
-
-**Prompt file**: `kiso/roles/classifier.md`
-
----
-
 ## Inflight Classifier
 
 **When**: a message arrives on a session that already has a job running. Used by the API layer in `kiso/api/sessions.py` before deciding whether to queue the new message, cancel the running job, or merge the request.
@@ -185,16 +140,16 @@ This is the **transparent fallback** designed in M1291. The classifier itself ca
 | `independent` | Unrelated request that can wait until the current job finishes | Queued normally (drained after the current plan completes). |
 | `conflict` | Contradicts or replaces the current job entirely (e.g. *"no, do X instead"*) | Cancels the running job and starts fresh on the new message. |
 
-**Why it is a separate role from the initial classifier**: the two
-prompts share less than 5% of their text, the categories are
-completely disjoint, and merging them would force a single LLM call
-to choose between 8 categories — strictly worse for accuracy. They
-share only the model assignment via the `classifier` model key in
-`_MODEL_METADATA`.
+**Naming note**: this role uses the `classifier` model key in
+`_MODEL_METADATA` (a fast, cheap model — the task is a single bare
+category word). The key is named `classifier` for historical
+reasons; the message-level classifier it once also served was
+retired in v0.12, so the `classifier` model key now belongs solely
+to this in-flight role.
 
 **Stop pattern fast-path**: pure stop words (*"stop"*, *"ferma"*, *"basta"*, *"cancel"*, ALL-CAPS urgent messages ≥4 chars) are matched by `is_stop_message()` in `kiso/brain/common.py` BEFORE the LLM is called — the inflight classifier is skipped entirely for these. This keeps the urgent path latency-free.
 
-**Model**: same as the initial classifier. See [config.md](config.md).
+**Model**: the `classifier` model key. See [config.md](config.md).
 
 **Fallback on LLM error**: returns `"independent"` (safe — message gets queued for later).
 
@@ -467,7 +422,7 @@ If translation fails (LLM error or `CANNOT_TRANSLATE`), the task is marked `fail
 
 **When**: executing `msg` type tasks (text generation). This is the role that produces the actual reply the user sees.
 
-**Input**: see [Context per Role](#context-per-role) table. Includes preceding plan outputs (fenced) — outputs from earlier tasks in the same plan, so the messenger can reference results when writing responses. Also includes a `briefing_context` from the briefer (filtered facts and entities relevant to the current message), and a `response_lang` hint propagated from the classifier so the reply uses the user's detected language.
+**Input**: see [Context per Role](#context-per-role) table. Includes preceding plan outputs (fenced) — outputs from earlier tasks in the same plan, so the messenger can reference results when writing responses. Also includes a `briefing_context` from the briefer (filtered facts and entities relevant to the current message), and a `response_lang` hint propagated from the briefer (which emits the user message's detected language) so the reply uses the user's language.
 
 **Output**: free-form text. Sanitized through `_sanitize_messenger_output` to strip any hallucinated `<tool_call>` / `<function_call>` markup before delivery.
 
