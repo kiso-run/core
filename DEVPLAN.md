@@ -1,8 +1,9 @@
 # Development Plan
 
-Active devplan: [devplan/v0.12-wip.md](devplan/v0.12-wip.md)
+Active devplan: [devplan/v0.13-wip.md](devplan/v0.13-wip.md)
 
 Previous:
+- [devplan/v0.12.md](devplan/v0.12.md) (M1615-M1671 completed except M1664; M1664 carries over to v0.13)
 - [devplan/v0.11.md](devplan/v0.11.md) (M1567-M1614 completed; M1615/M1617 carry over to v0.12)
 - [devplan/v0.10.md](devplan/v0.10.md) (M1500-M1566 completed)
 - [devplan/v0.9.md](devplan/v0.9.md) (M1267-M1374 completed)
